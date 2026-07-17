@@ -1,0 +1,3 @@
+tara(
+    hisse_listesi
+)

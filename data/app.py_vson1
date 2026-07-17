@@ -1,0 +1,582 @@
+from __future__ import annotations
+
+import math
+from io import BytesIO
+from datetime import datetime
+from typing import Any
+
+import pandas as pd
+import streamlit as st
+
+try:
+    import yfinance as yf
+except Exception:
+    yf = None
+
+APP_TITLE = "Portföy Karar Destek V1"
+
+SECTOR_MAP = {
+    "AKBNK": "Banka", "GARAN": "Banka", "HALKB": "Banka", "ISCTR": "Banka", "TSKB": "Banka", "VAKBN": "Banka", "YKBNK": "Banka",
+    "BIMAS": "Perakende", "MGROS": "Perakende", "SOKM": "Perakende", "MAVI": "Perakende",
+    "TUPRS": "Enerji", "AKSEN": "Enerji", "ENJSA": "Enerji", "ASTOR": "Enerji", "ODAS": "Enerji", "PETKM": "Enerji", "ALFAS": "Enerji", "GESAN": "Enerji", "EUPWR": "Enerji", "ORGE": "Enerji/Taahhüt",
+    "KCHOL": "Holding", "SAHOL": "Holding", "AGHOL": "Holding", "ALARK": "Holding", "ENKAI": "Holding/İnşaat",
+    "FROTO": "Otomotiv", "DOAS": "Otomotiv", "TOASO": "Otomotiv", "TTRAK": "Otomotiv",
+    "THYAO": "Ulaştırma", "PGSUS": "Ulaştırma", "TAVHL": "Ulaştırma",
+    "ASELS": "Savunma", "SDTTR": "Savunma", "PAPIL": "Savunma/Teknoloji", "ALTNY": "Savunma/Teknoloji",
+    "KONTR": "Teknoloji", "FONET": "Teknoloji", "EDATA": "Teknoloji", "FORTE": "Teknoloji", "LINK": "Teknoloji", "MIATK": "Teknoloji",
+    "CVKMD": "Maden", "KOZAA": "Maden", "KOZAL": "Maden", "GUBRF": "Gübre/Kimya",
+    "EREGL": "Sanayi", "KRDMD": "Sanayi", "SISE": "Sanayi", "AKSA": "Sanayi", "BRSAN": "Sanayi", "CIMSA": "Sanayi", "OYAKC": "Sanayi", "KORDS": "Sanayi", "TKFEN": "Sanayi/Taahhüt",
+    "AEFES": "Gıda/İçecek", "CCOLA": "Gıda/İçecek", "ULKER": "Gıda/İçecek",
+    "EKGYO": "GYO", "TRGYO": "GYO", "RGYAS": "GYO", "TRGYO": "GYO", "TCELL": "Telekom", "TTKOM": "Telekom",
+    "MPARK": "Sağlık", "SELEC": "Sağlık", "DEVA": "Sağlık", "ECILC": "Sağlık",
+    "TURSG": "Sigorta", "ANSGR": "Sigorta", "AGESA": "Sigorta",
+    "ISMEN": "Aracı Kurum", "INFO": "Aracı Kurum",
+    "METRO": "Spekülatif", "TUREX": "Ulaştırma", "BASGZ": "Enerji",
+}
+
+PORTFOLIO_ALIASES = {
+    "Hisse": "symbol", "Sembol": "symbol", "Kod": "symbol", "Hisse Kodu": "symbol",
+    "Kalan Adet": "quantity", "Adet": "quantity", "Lot": "quantity", "Miktar": "quantity",
+    "Ortalama Maliyet": "avg_cost", "Maliyet": "avg_cost", "Ort. Maliyet": "avg_cost",
+    "Güncel Fiyat": "current_price", "Fiyat": "current_price", "Son Fiyat": "current_price",
+    "Maliyet Toplamı": "cost_total", "Maliyet Toplam": "cost_total",
+    "Piyasa Değeri": "market_value", "Güncel Değer": "market_value",
+    "Gerç. K/Z": "pnl", "Gerçekleşen K/Z": "pnl", "K/Z": "pnl",
+    "Getiri %": "return_pct", "Getiri": "return_pct",
+    "Portföy %": "weight_pct", "Portföy Ağırlığı %": "weight_pct",
+}
+
+DEFAULT_UNIVERSE = [
+    "BIMAS", "MGROS", "ULKER", "CCOLA", "TUPRS", "THYAO", "FROTO", "TOASO", "ASTOR", "AKSEN", "CVKMD", "MPARK", "SELEC", "ORGE", "TURSG", "ENKAI", "TCELL", "KCHOL", "SISE", "EREGL", "KORDS", "PETKM", "AKSA", "TKFEN", "EDATA", "FORTE", "FONET", "ALTNY", "EKGYO", "TRGYO", "ISMEN", "INFO"
+]
+
+
+def normalize_symbol(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().upper().replace(".IS", "")
+
+
+def clean_number(value: Any) -> float:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace("₺", "").replace("TL", "").replace("%", "").replace(" ", "")
+    if text.count(",") == 1:
+        text = text.replace(".", "").replace(",", ".")
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    new_cols = {}
+    for col in out.columns:
+        raw = str(col).strip()
+        new_cols[col] = PORTFOLIO_ALIASES.get(raw, raw)
+    out = out.rename(columns=new_cols)
+    return out
+
+
+def _find_header_row(raw: pd.DataFrame) -> int | None:
+    """Excel'de başlık satırı ilk satır değilse Hisse/Kalan Adet satırını bulur."""
+    keywords = {"Hisse", "Sembol", "Kod", "Kalan Adet", "Ortalama Maliyet", "Güncel Fiyat", "Piyasa Değeri"}
+    max_rows = min(len(raw), 12)
+    for idx in range(max_rows):
+        values = [str(x).strip() for x in raw.iloc[idx].tolist() if str(x).strip() and str(x) != "nan"]
+        hit = sum(1 for v in values if v in keywords)
+        if hit >= 2 or any(v == "Hisse" for v in values):
+            return idx
+    return None
+
+
+def _read_excel_sheets(uploaded_file) -> dict[str, pd.DataFrame]:
+    """Tüm sekmeleri okur. Her sekmede tek hisse/tüm tablo olabilir."""
+    # Önce normal şekilde oku. Başlıklar düzgünse bu yeterli.
+    sheets = pd.read_excel(uploaded_file, sheet_name=None)
+    fixed: dict[str, pd.DataFrame] = {}
+    uploaded_file.seek(0)
+
+    for sheet_name, df in sheets.items():
+        if df is None or df.dropna(how="all").empty:
+            continue
+
+        normalized_preview = normalize_columns(df)
+        if "symbol" in normalized_preview.columns or "quantity" in normalized_preview.columns:
+            fixed[sheet_name] = df
+            continue
+
+        # Başlık satırı aşağıdaysa yeniden oku.
+        raw = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=None)
+        header_row = _find_header_row(raw)
+        uploaded_file.seek(0)
+        if header_row is not None:
+            fixed[sheet_name] = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=header_row)
+            uploaded_file.seek(0)
+        else:
+            fixed[sheet_name] = df
+    return fixed
+
+
+def _normalize_portfolio_frame(df: pd.DataFrame, sheet_name: str | None = None) -> pd.DataFrame:
+    df = df.dropna(how="all").copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    df = normalize_columns(df)
+
+    # Her sekmede tek hisse varsa ve Hisse sütunu yoksa, sekme adını hisse kodu kabul et.
+    if "symbol" not in df.columns and sheet_name:
+        possible_symbol = normalize_symbol(sheet_name)
+        # Örn: BIMAS, TOASO gibi sekme isimleri için uygula; boş/özet sekmeleri atla.
+        if possible_symbol and not any(x in possible_symbol for x in ["ÖZET", "OZET", "HEDEF", "TOPLAM", "DASHBOARD"]):
+            df["symbol"] = possible_symbol
+
+    if "symbol" not in df.columns:
+        return pd.DataFrame()
+
+    df["symbol"] = df["symbol"].apply(normalize_symbol)
+    df = df[df["symbol"].ne("") & ~df["symbol"].str.contains("GENEL|TOPLAM", na=False)].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    for col in ["quantity", "avg_cost", "current_price", "cost_total", "market_value", "pnl", "return_pct", "weight_pct"]:
+        if col in df.columns:
+            df[col] = df[col].apply(clean_number)
+
+    if "quantity" not in df.columns:
+        df["quantity"] = 0.0
+    if "avg_cost" not in df.columns:
+        df["avg_cost"] = 0.0
+    if "current_price" not in df.columns:
+        df["current_price"] = 0.0
+    if "market_value" not in df.columns or df["market_value"].fillna(0).sum() == 0:
+        df["market_value"] = df["quantity"] * df["current_price"]
+    if "cost_total" not in df.columns or df["cost_total"].fillna(0).sum() == 0:
+        df["cost_total"] = df["quantity"] * df["avg_cost"]
+
+    # Aynı hisse aynı sekmede birden fazla satırsa son dolu satırı değil; toplam tabloyu tek satıra indir.
+    # Midas portföy tablosu gibi her hisse tek satırsa bu zaten değişmez.
+    keep_cols = [c for c in ["symbol", "quantity", "avg_cost", "current_price", "cost_total", "market_value", "pnl", "return_pct", "weight_pct"] if c in df.columns]
+    df = df[keep_cols].copy()
+    df["sector"] = df["symbol"].map(SECTOR_MAP).fillna("Diğer")
+    return df.reset_index(drop=True)
+
+
+def load_portfolio(uploaded_file) -> pd.DataFrame:
+    suffix = uploaded_file.name.split(".")[-1].lower()
+
+    frames: list[pd.DataFrame] = []
+    if suffix in ["xlsx", "xls", "xlsm"]:
+        sheets = _read_excel_sheets(uploaded_file)
+        for sheet_name, sheet_df in sheets.items():
+            frame = _normalize_portfolio_frame(sheet_df, sheet_name=sheet_name)
+            if not frame.empty:
+                frame["source_sheet"] = sheet_name
+                frames.append(frame)
+    else:
+        df = pd.read_csv(uploaded_file, sep=None, engine="python")
+        frame = _normalize_portfolio_frame(df)
+        if not frame.empty:
+            frame["source_sheet"] = "CSV"
+            frames.append(frame)
+
+    if not frames:
+        raise ValueError("Dosyada okunabilir portföy tablosu bulunamadı. Sütunlar: Hisse, Kalan Adet, Ortalama Maliyet, Güncel Fiyat, Piyasa Değeri olmalı. Her sekme tek hisseyse sekme adı hisse kodu olabilir.")
+
+    portfolio = pd.concat(frames, ignore_index=True)
+
+    # Aynı hisse birden çok sekmede/satırda varsa birleştir.
+    def weighted_avg_cost(g: pd.DataFrame) -> float:
+        q = g["quantity"].sum()
+        return float(g["cost_total"].sum() / q) if q else float(g["avg_cost"].iloc[-1])
+
+    grouped = []
+    for symbol, g in portfolio.groupby("symbol", sort=True):
+        quantity = float(g["quantity"].sum())
+        cost_total = float(g["cost_total"].sum())
+        market_value = float(g["market_value"].sum())
+        current_price = float(market_value / quantity) if quantity else float(g["current_price"].iloc[-1])
+        avg_cost = float(cost_total / quantity) if quantity else weighted_avg_cost(g)
+        grouped.append({
+            "symbol": symbol,
+            "quantity": quantity,
+            "avg_cost": avg_cost,
+            "current_price": current_price,
+            "cost_total": cost_total,
+            "market_value": market_value,
+            "pnl": market_value - cost_total,
+            "return_pct": ((market_value - cost_total) / cost_total * 100) if cost_total else 0.0,
+            "sector": SECTOR_MAP.get(symbol, "Diğer"),
+            "source_sheet": ", ".join(sorted(set(g.get("source_sheet", pd.Series(dtype=str)).astype(str))))
+        })
+
+    return pd.DataFrame(grouped).reset_index(drop=True)
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_history(symbol: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
+    if yf is None:
+        return pd.DataFrame()
+    try:
+        data = yf.Ticker(f"{symbol}.IS").history(period=period, interval=interval, auto_adjust=False)
+        return data.dropna(how="all")
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_info(symbol: str) -> dict:
+    if yf is None:
+        return {}
+    try:
+        return yf.Ticker(f"{symbol}.IS").info or {}
+    except Exception:
+        return {}
+
+
+def rsi(series: pd.Series, period: int = 14) -> float | None:
+    close = series.dropna()
+    if len(close) < period + 2:
+        return None
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = gain / loss.replace(0, pd.NA)
+    value = 100 - (100 / (1 + rs))
+    if value.dropna().empty:
+        return None
+    return float(value.dropna().iloc[-1])
+
+
+def atr_percent(df: pd.DataFrame, period: int = 14) -> float | None:
+    if df.empty or not {"High", "Low", "Close"}.issubset(df.columns) or len(df) < period + 2:
+        return None
+    high, low, close = df["High"], df["Low"], df["Close"]
+    prev_close = close.shift(1)
+    tr = pd.concat([(high - low).abs(), (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
+    atr = tr.rolling(period).mean().dropna()
+    if atr.empty or close.iloc[-1] == 0:
+        return None
+    return float(atr.iloc[-1] / close.iloc[-1] * 100)
+
+
+def score_range(value: float | None, good_min: float, good_max: float, hard_min: float, hard_max: float) -> float:
+    if value is None or pd.isna(value):
+        return 50.0
+    if good_min <= value <= good_max:
+        return 100.0
+    if value < good_min:
+        if value <= hard_min:
+            return 25.0
+        return 25.0 + (value - hard_min) / (good_min - hard_min) * 75.0
+    if value >= hard_max:
+        return 25.0
+    return 100.0 - (value - good_max) / (hard_max - good_max) * 75.0
+
+
+def clamp(x: float, low: float = 0, high: float = 100) -> float:
+    return max(low, min(high, x))
+
+
+def analyze_symbol(symbol: str) -> dict:
+    hist = fetch_history(symbol)
+    info = fetch_info(symbol)
+    result = {
+        "symbol": symbol,
+        "sector": SECTOR_MAP.get(symbol, "Diğer"),
+        "price": None,
+        "rsi_14": None,
+        "ema20": None,
+        "ema50": None,
+        "ema200": None,
+        "volume_ratio": None,
+        "perf_1m": None,
+        "perf_3m": None,
+        "perf_1y": None,
+        "atr_pct": None,
+        "pe": None,
+        "pb": None,
+        "dividend_yield": None,
+        "trend_label": "Veri yok",
+        "technical_score": 50.0,
+        "momentum_score": 50.0,
+        "fundamental_score": 50.0,
+        "silent_score": 0,
+        "silent_points": 0.0,
+        "error": "",
+    }
+    if hist.empty or "Close" not in hist.columns:
+        result["error"] = "Fiyat verisi yok"
+        return result
+    close = hist["Close"].dropna()
+    vol = hist["Volume"].dropna() if "Volume" in hist else pd.Series(dtype=float)
+    if close.empty:
+        result["error"] = "Kapanış verisi yok"
+        return result
+    price = float(close.iloc[-1])
+    result["price"] = price
+    result["rsi_14"] = rsi(close)
+    result["ema20"] = float(close.ewm(span=20, adjust=False).mean().iloc[-1]) if len(close) >= 20 else None
+    result["ema50"] = float(close.ewm(span=50, adjust=False).mean().iloc[-1]) if len(close) >= 50 else None
+    result["ema200"] = float(close.ewm(span=200, adjust=False).mean().iloc[-1]) if len(close) >= 200 else None
+    if len(vol) >= 20 and float(vol.tail(20).mean()) > 0:
+        result["volume_ratio"] = float(vol.iloc[-1] / vol.tail(20).mean())
+    if len(close) >= 22 and close.iloc[-22] != 0:
+        result["perf_1m"] = float((price / close.iloc[-22] - 1) * 100)
+    if len(close) >= 66 and close.iloc[-66] != 0:
+        result["perf_3m"] = float((price / close.iloc[-66] - 1) * 100)
+    if len(close) >= 252 and close.iloc[-252] != 0:
+        result["perf_1y"] = float((price / close.iloc[-252] - 1) * 100)
+    result["atr_pct"] = atr_percent(hist)
+    result["pe"] = clean_number(info.get("trailingPE")) or None
+    result["pb"] = clean_number(info.get("priceToBook")) or None
+    dy = clean_number(info.get("dividendYield"))
+    result["dividend_yield"] = dy * 100 if dy and dy < 1 else (dy or None)
+
+    ema20, ema50, ema200 = result["ema20"], result["ema50"], result["ema200"]
+    if ema20 and ema50 and ema200:
+        if price > ema20 > ema50 > ema200:
+            result["trend_label"] = "Güçlü yükseliş"
+            trend_score = 100
+        elif price > ema50 and ema20 > ema50:
+            result["trend_label"] = "Pozitif"
+            trend_score = 80
+        elif price < ema20 < ema50:
+            result["trend_label"] = "Zayıf"
+            trend_score = 30
+        else:
+            result["trend_label"] = "Karışık"
+            trend_score = 55
+    elif ema20 and ema50:
+        trend_score = 80 if price > ema20 > ema50 else (35 if price < ema20 < ema50 else 55)
+        result["trend_label"] = "Pozitif" if trend_score >= 75 else ("Zayıf" if trend_score <= 40 else "Karışık")
+    else:
+        trend_score = 50
+
+    rsi_score = score_range(result["rsi_14"], 40, 65, 20, 85)
+    technical_score = trend_score * 0.55 + rsi_score * 0.25 + (100 if (ema20 and price > ema20) else 40) * 0.20
+    result["technical_score"] = round(technical_score, 1)
+
+    perf1m = result["perf_1m"] or 0
+    perf3m = result["perf_3m"] or 0
+    volume_component = clamp(((result["volume_ratio"] or 1) / 2.0) * 100)
+    result["momentum_score"] = round(clamp(50 + perf1m * 1.8 + perf3m * 0.7) * 0.65 + volume_component * 0.35, 1)
+
+    pe_score = score_range(result["pe"], 4, 18, 0, 45)
+    pb_score = score_range(result["pb"], 0.4, 3.5, 0, 10)
+    div_score = clamp((result["dividend_yield"] or 0) * 12) if result["dividend_yield"] is not None else 50
+    result["fundamental_score"] = round(pe_score * 0.45 + pb_score * 0.35 + div_score * 0.20, 1)
+
+    silent_criteria = [
+        bool(ema50 and price > ema50),
+        bool(ema20 and ema50 and ema20 > ema50),
+        bool(result["atr_pct"] is not None and result["atr_pct"] < 3.0),
+        bool(result["volume_ratio"] is not None and result["volume_ratio"] > 1.2),
+        bool(result["rsi_14"] is not None and 48 < result["rsi_14"] < 68),
+        bool(ema20 and price > ema20),
+        bool(ema20 and price / ema20 < 1.06),
+        bool(result["perf_1m"] is not None and result["perf_1m"] > -3),
+    ]
+    result["silent_score"] = int(sum(silent_criteria))
+    result["silent_points"] = round(result["silent_score"] / len(silent_criteria) * 100, 1)
+    return result
+
+
+def macro_adjustment(row: pd.Series, macro: dict[str, str]) -> tuple[float, str]:
+    sector = row.get("sector", "Diğer")
+    score = 0.0
+    reasons = []
+    if macro["jeopolitik"] == "Yüksek":
+        if sector in ["Enerji", "Savunma", "Savunma/Teknoloji", "Gıda/İçecek", "Perakende"]:
+            score += 5; reasons.append("jeopolitik ortamda dirençli tema")
+        if sector in ["Ulaştırma", "Otomotiv"]:
+            score -= 3; reasons.append("jeopolitik/hammadde hassasiyeti")
+    if macro["petrol"] == "Yükseliyor":
+        if sector in ["Enerji", "Maden"]:
+            score += 4; reasons.append("petrol/emtia desteği")
+        if sector in ["Ulaştırma", "Otomotiv"]:
+            score -= 2; reasons.append("petrol maliyet baskısı")
+    elif macro["petrol"] == "Düşüyor":
+        if sector in ["Ulaştırma", "Otomotiv", "Sanayi"]:
+            score += 3; reasons.append("petrol düşüşü maliyet avantajı")
+    if macro["enflasyon"] == "Yüksek":
+        if sector in ["Perakende", "Gıda/İçecek", "Enerji", "Sağlık"]:
+            score += 4; reasons.append("enflasyonda fiyatlama gücü")
+        if sector == "GYO":
+            score -= 2; reasons.append("yüksek faiz/GYO baskısı")
+    if macro["tcmb"] == "İndirim bekleniyor":
+        if sector in ["GYO", "Otomotiv", "Sanayi", "Banka", "Aracı Kurum"]:
+            score += 4; reasons.append("faiz indirimi beklentisi")
+    elif macro["tcmb"] == "Sıkı duruş":
+        if sector in ["GYO", "Otomotiv"]:
+            score -= 2; reasons.append("sıkı para politikası")
+    if macro["fed"] == "Şahin":
+        if sector in ["Teknoloji", "Savunma/Teknoloji", "GYO"]:
+            score -= 3; reasons.append("küresel faiz baskısı")
+    elif macro["fed"] == "Güvercin":
+        if sector in ["Teknoloji", "Otomotiv", "Sanayi"]:
+            score += 3; reasons.append("küresel risk iştahı")
+    return round(score, 1), "; ".join(reasons[:3]) or "Makro nötr"
+
+
+def decision(score: float) -> str:
+    if score >= 80:
+        return "GÜÇLÜ AL"
+    if score >= 65:
+        return "AL/TAKİP"
+    if score >= 50:
+        return "TUT"
+    if score >= 35:
+        return "AZALT"
+    return "UZAK DUR"
+
+
+def build_decision_table(portfolio: pd.DataFrame, extra_symbols: list[str], macro: dict[str, str], target_count: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    symbols = sorted(set(portfolio["symbol"].tolist() + [normalize_symbol(s) for s in extra_symbols if normalize_symbol(s)]))
+    rows = [analyze_symbol(s) for s in symbols]
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df, df
+    pos_cols = portfolio[["symbol", "quantity", "avg_cost", "market_value", "sector"]].copy()
+    total_value = float(portfolio["market_value"].sum()) if not portfolio.empty else 0
+    pos_cols["current_weight"] = pos_cols["market_value"] / total_value * 100 if total_value else 0
+    df = df.merge(pos_cols[["symbol", "quantity", "avg_cost", "market_value", "current_weight"]], on="symbol", how="left")
+    df[["quantity", "avg_cost", "market_value", "current_weight"]] = df[["quantity", "avg_cost", "market_value", "current_weight"]].fillna(0)
+    macro_results = df.apply(lambda r: macro_adjustment(r, macro), axis=1)
+    df["macro_score"] = [x[0] for x in macro_results]
+    df["macro_reason"] = [x[1] for x in macro_results]
+    df["risk_score"] = df.apply(lambda r: min(100, max(0, (r["current_weight"] - 12) * 4 + (10 if r["sector"] in ["Teknoloji", "Maden", "Spekülatif"] else 0) + (8 if (r["atr_pct"] or 0) > 4 else 0))), axis=1)
+    df["final_score"] = (
+        df["technical_score"] * 0.25 +
+        df["silent_points"] * 0.20 +
+        df["momentum_score"] * 0.20 +
+        df["fundamental_score"] * 0.15 +
+        (50 + df["macro_score"] * 5).clip(0, 100) * 0.10 +
+        (100 - df["risk_score"]) * 0.10
+    ).round(1)
+    df["decision"] = df["final_score"].apply(decision)
+
+    eligible = df[df["final_score"] >= 50].sort_values("final_score", ascending=False).head(target_count).copy()
+    score_sum = float(eligible["final_score"].sum())
+    eligible["target_weight"] = eligible["final_score"] / score_sum * 100 if score_sum else 0
+    eligible["target_value"] = total_value * eligible["target_weight"] / 100 if total_value else 0
+    eligible["trade_value"] = eligible["target_value"] - eligible["market_value"]
+    eligible["lot_change"] = eligible.apply(lambda r: int(round(r["trade_value"] / r["price"])) if (r.get("price") or 0) > 0 else 0, axis=1)
+    eligible["action"] = eligible["trade_value"].apply(lambda v: "AL" if v > total_value * 0.015 else ("SAT/AZALT" if v < -total_value * 0.015 else "KORU"))
+
+    df = df.sort_values("final_score", ascending=False).reset_index(drop=True)
+    eligible = eligible.sort_values("target_weight", ascending=False).reset_index(drop=True)
+    return df, eligible
+
+
+def excel_bytes(tables: dict[str, pd.DataFrame]) -> bytes:
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        for name, table in tables.items():
+            table.to_excel(writer, sheet_name=name[:31], index=False)
+    return output.getvalue()
+
+
+def fmt_pct(x):
+    try:
+        return f"{float(x):.2f}%"
+    except Exception:
+        return ""
+
+
+def main():
+    st.set_page_config(page_title=APP_TITLE, layout="wide")
+    st.title("📊 Portföy Karar Destek V1")
+    st.caption("Excel yükle → teknik/temel/sessiz toplama/makro/risk skorla → hedef portföy ve lot önerisi üret.")
+
+    with st.sidebar:
+        st.header("1) Excel Yükle")
+        uploaded = st.file_uploader("Portföy Excel/CSV dosyası", type=["xlsx", "xls", "xlsm", "csv"])
+        st.header("2) Makro Senaryo")
+        macro = {
+            "jeopolitik": st.selectbox("Jeopolitik", ["Orta", "Yüksek", "Düşük"], index=0),
+            "fed": st.selectbox("FED", ["Nötr", "Şahin", "Güvercin"], index=0),
+            "petrol": st.selectbox("Petrol", ["Stabil", "Yükseliyor", "Düşüyor"], index=0),
+            "enflasyon": st.selectbox("Enflasyon", ["Yüksek", "Düşüyor", "Düşük"], index=0),
+            "tcmb": st.selectbox("TCMB", ["Sıkı duruş", "İndirim bekleniyor", "Nötr"], index=0),
+        }
+        target_count = st.slider("Hedef portföy kaç hisse olsun?", 5, 15, 8)
+        extra_text = st.text_area("Ek radar hisseleri", value="ORGE,TURSG,TOASO,FROTO,MPARK,SELEC,TUPRS,ENKAI")
+        extra_symbols = [x.strip() for x in extra_text.replace("\n", ",").split(",") if x.strip()]
+        run = st.button("Analiz Et", type="primary")
+
+    if not uploaded:
+        st.info("Başlamak için Midas/Excel portföy dosyanı yükle. Sütunlar: Hisse, Kalan Adet, Ortalama Maliyet, Güncel Fiyat, Maliyet Toplamı, Piyasa Değeri vb. olabilir.")
+        st.subheader("V1 karar skoru ağırlıkları")
+        st.table(pd.DataFrame({"Kriter": ["Teknik trend", "Sessiz toplama", "Momentum/hacim", "Temel değerleme", "Makro uyum", "Portföy riski"], "Ağırlık": ["%25", "%20", "%20", "%15", "%10", "%10"]}))
+        return
+
+    try:
+        portfolio = load_portfolio(uploaded)
+    except Exception as exc:
+        st.error(f"Dosya okunamadı: {exc}")
+        return
+
+    total_value = float(portfolio["market_value"].sum())
+    portfolio["weight_pct_calc"] = portfolio["market_value"] / total_value * 100 if total_value else 0
+
+    st.subheader("Mevcut Portföy")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Toplam Piyasa Değeri", f"₺{total_value:,.0f}".replace(",", "."))
+    c2.metric("Hisse Sayısı", len(portfolio))
+    c3.metric("En Büyük Ağırlık", f"{portfolio['weight_pct_calc'].max():.1f}%")
+    st.dataframe(portfolio[["symbol", "sector", "quantity", "avg_cost", "current_price", "market_value", "weight_pct_calc"]], use_container_width=True)
+
+    if not run:
+        return
+
+    if yf is None:
+        st.error("yfinance kurulu değil. Kurulum: pip install yfinance")
+        return
+
+    with st.spinner("Veriler çekiliyor ve skorlar hesaplanıyor..."):
+        all_scores, target = build_decision_table(portfolio, extra_symbols, macro, target_count)
+
+    st.subheader("Karar Skor Tablosu")
+    view_cols = ["symbol", "sector", "price", "trend_label", "rsi_14", "volume_ratio", "perf_1m", "perf_3m", "technical_score", "silent_score", "silent_points", "momentum_score", "fundamental_score", "macro_score", "risk_score", "final_score", "decision", "macro_reason"]
+    st.dataframe(all_scores[view_cols], use_container_width=True)
+
+    st.subheader("Hedef Portföy ve Lot Planı")
+    if target.empty:
+        st.warning("Hedef portföy için yeterli skorlu hisse bulunamadı.")
+    else:
+        target_cols = ["symbol", "sector", "final_score", "decision", "current_weight", "target_weight", "quantity", "price", "market_value", "target_value", "trade_value", "lot_change", "action"]
+        st.dataframe(target[target_cols], use_container_width=True)
+
+    st.subheader("Sektör Dağılımı")
+    sector_df = portfolio.groupby("sector", as_index=False)["market_value"].sum()
+    sector_df["weight"] = sector_df["market_value"] / total_value * 100 if total_value else 0
+    st.bar_chart(sector_df.set_index("sector")["weight"])
+
+    st.subheader("Risk Uyarıları")
+    warnings = []
+    if portfolio["weight_pct_calc"].max() > 20:
+        max_row = portfolio.loc[portfolio["weight_pct_calc"].idxmax()]
+        warnings.append(f"{max_row['symbol']} ağırlığı %{max_row['weight_pct_calc']:.1f}; tek hisse yoğunluğu yüksek.")
+    sector_max = sector_df["weight"].max() if not sector_df.empty else 0
+    if sector_max > 40:
+        sec = sector_df.loc[sector_df["weight"].idxmax(), "sector"]
+        warnings.append(f"{sec} sektörü %{sector_max:.1f}; tema yoğunlaşması yüksek.")
+    weak = all_scores[(all_scores["final_score"] < 45) & (all_scores["market_value"] > 0)]["symbol"].tolist()
+    if weak:
+        warnings.append("Zayıf skorlu açık pozisyonlar: " + ", ".join(weak[:10]))
+    if not warnings:
+        warnings.append("Kritik risk uyarısı yok; yine de haber akışı ve stop planı kontrol edilmeli.")
+    for w in warnings:
+        st.warning(w)
+
+    output = excel_bytes({"Mevcut_Portfoy": portfolio, "Skor_Tablosu": all_scores, "Hedef_Portfoy": target, "Sektor_Dagilimi": sector_df})
+    st.download_button("Analiz Excel çıktısını indir", output, file_name=f"portfoy_karar_destek_v1_{datetime.now():%Y%m%d_%H%M}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+if __name__ == "__main__":
+    main()

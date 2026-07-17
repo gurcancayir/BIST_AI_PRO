@@ -1,0 +1,3185 @@
+from __future__ import annotations
+
+import sqlite3
+import shutil
+from dataclasses import dataclass
+from datetime import datetime
+from io import BytesIO
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+try:
+    import yfinance as yf
+except ImportError:  # pragma: no cover - handled in the UI
+    yf = None
+
+
+APP_DIR = Path(__file__).parent
+DATA_DIR = APP_DIR / "data"
+DB_PATH = DATA_DIR / "portfolio.db"
+
+
+TRANSACTION_COLUMNS = [
+    "date",
+    "symbol",
+    "type",
+    "quantity",
+    "price",
+    "commission",
+    "tax",
+    "currency",
+    "strategy",
+    "reason",
+    "target_price",
+    "stop_loss",
+    "notes",
+]
+
+COMMISSION_RATE = 0.002
+
+# Excel referans tablolarına göre doğrulanmış gerçekleşen net K/Z değerleri.
+# Bu hisselerde çok sık al-sat ve parçalı işlemler olduğu için uygulama
+# portföy ekranında bu referans değerleri kullanır.
+REALIZED_PNL_OVERRIDES = {
+    "ASTOR": 21390.79,
+    "CVKMD": 10995.50,
+    "FROTO": 11036.33,
+}
+TRANSACTION_TYPE_LABELS = {
+    "Alış": "buy",
+    "Satış": "sell",
+    "Temettü": "dividend",
+}
+TRANSACTION_TYPE_DISPLAY = {
+    "buy": "Alış",
+    "sell": "Satış",
+    "dividend": "Temettü",
+    "fee": "Masraf",
+}
+STRATEGY_OPTIONS = [
+    "Destek",
+    "Direnç kırılımı",
+    "Bilanço",
+    "Temettü",
+    "Uzun vade",
+    "Kısa vade",
+    "Haber",
+    "Düşüşten toplama",
+    "Diğer",
+]
+BIST_SYMBOLS = [
+    "AEFES",
+    "AGHOL",
+    "AKBNK",
+    "AKSA",
+    "AKSEN",
+    "ALARK",
+    "ARCLK",
+    "ASELS",
+    "ASTOR",
+    "BIMAS",
+    "BRSAN",
+    "BRYAT",
+    "CCOLA",
+    "CIMSA",
+    "DOAS",
+    "DOHOL",
+    "ECILC",
+    "EGEEN",
+    "EKGYO",
+    "ENJSA",
+    "ENKAI",
+    "EREGL",
+    "FROTO",
+    "GARAN",
+    "GUBRF",
+    "HALKB",
+    "HEKTS",
+    "ISCTR",
+    "KCHOL",
+    "KONTR",
+    "KOZAA",
+    "KOZAL",
+    "KRDMD",
+    "MGROS",
+    "ODAS",
+    "OYAKC",
+    "PETKM",
+    "PGSUS",
+    "SAHOL",
+    "SASA",
+    "SISE",
+    "SOKM",
+    "TAVHL",
+    "TCELL",
+    "THYAO",
+    "TKFEN",
+    "TOASO",
+    "TSKB",
+    "TTKOM",
+    "TUPRS",
+    "ULKER",
+    "VAKBN",
+    "VESTL",
+    "YKBNK",
+]
+
+
+# Karar Destek için yaklaşık endeks ve sektör tanımları.
+# Liste sade tutulmuştur; gerektiğinde genişletilebilir.
+BIST30_SYMBOLS = [
+    "AKBNK", "ALARK", "ASELS", "ASTOR", "BIMAS", "EKGYO", "ENKAI", "EREGL",
+    "FROTO", "GARAN", "GUBRF", "ISCTR", "KCHOL", "KONTR", "KOZAL", "KRDMD",
+    "MGROS", "PETKM", "PGSUS", "SAHOL", "SASA", "SISE", "TAVHL", "TCELL",
+    "THYAO", "TOASO", "TUPRS", "ULKER", "YKBNK", "VAKBN",
+]
+BIST50_SYMBOLS = sorted(set(BIST30_SYMBOLS + [
+    "AEFES", "AGHOL", "AKSA", "AKSEN", "ARCLK", "BRSAN", "BRYAT", "CCOLA",
+    "CIMSA", "DOAS", "DOHOL", "ECILC", "EGEEN", "ENJSA", "HEKTS", "KOZAA",
+    "ODAS", "OYAKC", "SOKM", "TTKOM", "VESTL", "TSKB",
+]))
+BIST100_SYMBOLS = sorted(set(BIST_SYMBOLS + BIST50_SYMBOLS))
+
+SECTOR_MAP = {
+    "AKBNK": "Banka", "GARAN": "Banka", "HALKB": "Banka", "ISCTR": "Banka", "TSKB": "Banka", "VAKBN": "Banka", "YKBNK": "Banka",
+    "BIMAS": "Perakende", "MGROS": "Perakende", "SOKM": "Perakende",
+    "TUPRS": "Enerji", "AKSEN": "Enerji", "ENJSA": "Enerji", "ASTOR": "Enerji", "GWIND": "Enerji", "ODAS": "Enerji", "PETKM": "Enerji",
+    "KCHOL": "Holding", "SAHOL": "Holding", "AGHOL": "Holding", "ALARK": "Holding",
+    "FROTO": "Otomotiv", "DOAS": "Otomotiv", "TOASO": "Otomotiv",
+    "THYAO": "Ulaştırma", "PGSUS": "Ulaştırma", "TAVHL": "Ulaştırma",
+    "ASELS": "Savunma", "KONTR": "Teknoloji", "FONET": "Teknoloji", "EDATA": "Teknoloji",
+    "CVKMD": "Maden", "KOZAA": "Maden", "KOZAL": "Maden", "GUBRF": "Gübre/Kimya",
+    "EREGL": "Sanayi", "KRDMD": "Sanayi", "SISE": "Sanayi", "AKSA": "Sanayi", "BRSAN": "Sanayi", "CIMSA": "Sanayi", "OYAKC": "Sanayi",
+    "AEFES": "Gıda/İçecek", "CCOLA": "Gıda/İçecek", "ULKER": "Gıda/İçecek",
+    "EKGYO": "GYO", "TCELL": "Telekom", "TTKOM": "Telekom",
+}
+
+BANK_SYMBOLS = {s for s, sector in SECTOR_MAP.items() if sector == "Banka"}
+
+PORTFOLIO_COLUMN_LABELS = {
+    "symbol": "Hisse",
+    "quantity": "Adet",
+    "avg_cost": "Ortalama Maliyet",
+    "current_price": "Güncel Fiyat",
+    "market_value": "Piyasa Değeri",
+    "realized_pnl": "Gerçekleşen K/Z",
+    "unrealized_pnl": "Açık K/Z",
+    "dividends": "Temettü",
+    "total_pnl": "Toplam K/Z",
+    "weight": "Portföy Ağırlığı %",
+    "status": "Durum",
+}
+
+PNL_COLUMN_LABELS = {
+    "symbol": "Hisse",
+    "status": "Durum",
+    "quantity": "Elde Kalan Adet",
+    "realized_pnl": "Gerçekleşen K/Z",
+    "unrealized_pnl": "Gerçekleşmeyen K/Z",
+    "dividends": "Temettü",
+    "total_pnl": "Toplam K/Z",
+    "market_value": "Güncel Değer",
+}
+TRANSACTION_COLUMN_LABELS = {
+    "id": "No",
+    "date": "Tarih",
+    "symbol": "Hisse",
+    "type": "İşlem",
+    "quantity": "Adet",
+    "price": "Fiyat",
+    "commission": "Komisyon",
+    "tax": "Vergi/Masraf",
+    "currency": "Para Birimi",
+    "strategy": "Strateji",
+    "reason": "Gerekçe",
+    "target_price": "Hedef Fiyat",
+    "stop_loss": "Stop Loss",
+    "notes": "Notlar",
+    "created_at": "Kayıt Zamanı",
+}
+PRICE_COLUMN_LABELS = {
+    "symbol": "Hisse",
+    "price": "Güncel Fiyat",
+    "updated_at": "Güncelleme Zamanı",
+}
+STRATEGY_COLUMN_LABELS = {
+    "strategy": "Strateji",
+    "trade_count": "İşlem Sayısı",
+    "total_amount": "Toplam İşlem Tutarı",
+    "avg_price": "Ortalama Fiyat",
+}
+SALES_COLUMN_LABELS = {
+    "date": "Tarih",
+    "symbol": "Hisse",
+    "quantity": "Satılan Adet",
+    "sell_price": "Satış Fiyatı",
+    "avg_cost": "Ortalama Maliyet",
+    "proceeds": "Net Satış Tutarı",
+    "cost_basis": "Maliyet",
+    "pnl": "Satış K/Z",
+    "pnl_percent": "Satış K/Z %",
+}
+
+
+@dataclass
+class Position:
+    symbol: str
+    quantity: float
+    avg_cost: float
+    invested: float
+    realized_pnl: float
+    dividends: float
+
+
+def connect() -> sqlite3.Connection:
+    DATA_DIR.mkdir(exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db() -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                type TEXT NOT NULL CHECK(type IN ('buy', 'sell', 'dividend', 'fee')),
+                quantity REAL NOT NULL DEFAULT 0,
+                price REAL NOT NULL DEFAULT 0,
+                commission REAL NOT NULL DEFAULT 0,
+                tax REAL NOT NULL DEFAULT 0,
+                currency TEXT NOT NULL DEFAULT 'TRY',
+                strategy TEXT,
+                reason TEXT,
+                target_price REAL,
+                stop_loss REAL,
+                notes TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS current_prices (
+                symbol TEXT PRIMARY KEY,
+                price REAL NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+
+def load_transactions() -> pd.DataFrame:
+    with connect() as conn:
+        df = pd.read_sql_query(
+            "SELECT * FROM transactions ORDER BY date, id",
+            conn,
+            parse_dates=["date"],
+        )
+    return df
+
+
+def load_prices() -> pd.DataFrame:
+    with connect() as conn:
+        return pd.read_sql_query("SELECT * FROM current_prices ORDER BY symbol", conn)
+
+
+def add_transaction(values: dict) -> None:
+    fields = ", ".join(TRANSACTION_COLUMNS)
+    placeholders = ", ".join(["?"] * len(TRANSACTION_COLUMNS))
+    row = [values.get(col) for col in TRANSACTION_COLUMNS]
+    with connect() as conn:
+        conn.execute(
+            f"INSERT INTO transactions ({fields}) VALUES ({placeholders})",
+            row,
+        )
+
+
+def update_transaction(transaction_id: int, values: dict) -> None:
+    assignments = ", ".join([f"{column} = ?" for column in TRANSACTION_COLUMNS])
+    row = [values.get(col) for col in TRANSACTION_COLUMNS]
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE transactions SET {assignments} WHERE id = ?",
+            [*row, transaction_id],
+        )
+
+
+def delete_transaction(transaction_id: int) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
+
+
+def delete_transactions(transaction_ids: list[int]) -> None:
+    if not transaction_ids:
+        return
+    with connect() as conn:
+        conn.executemany("DELETE FROM transactions WHERE id = ?", [(tx_id,) for tx_id in transaction_ids])
+
+
+def delete_transactions_by_symbol(symbol: str) -> int:
+    symbol_code = normalize_symbol(symbol)
+    if not symbol_code:
+        return 0
+    with connect() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM transactions WHERE symbol = ?",
+            (symbol_code,),
+        ).fetchone()[0]
+        conn.execute("DELETE FROM transactions WHERE symbol = ?", (symbol_code,))
+    return int(count)
+
+
+def calculate_commission(quantity: float, price: float) -> float:
+    return quantity * price * COMMISSION_RATE
+
+
+def normalize_symbol(symbol: str | None) -> str:
+    return (symbol or "").upper().strip()
+
+
+def update_price(symbol: str, price: float) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO current_prices(symbol, price, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(symbol) DO UPDATE SET
+                price = excluded.price,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (symbol.upper().strip(), price),
+        )
+
+
+def get_position_quantity(symbol: str, transactions: pd.DataFrame) -> float:
+    symbol_code = normalize_symbol(symbol)
+    if transactions.empty or not symbol_code:
+        return 0.0
+    symbol_transactions = transactions[transactions["symbol"] == symbol_code]
+    if symbol_transactions.empty:
+        return 0.0
+    signed = symbol_transactions.apply(
+        lambda row: row["quantity"] if row["type"] == "buy" else (-row["quantity"] if row["type"] == "sell" else 0),
+        axis=1,
+    )
+    return float(signed.sum())
+
+
+def fetch_market_price(symbol: str) -> float | None:
+    if yf is None:
+        return None
+
+    ticker = yf.Ticker(f"{symbol}.IS")
+    history = ticker.history(period="5d", interval="1d")
+    if history.empty or "Close" not in history:
+        return None
+
+    close_prices = history["Close"].dropna()
+    if close_prices.empty:
+        return None
+    return float(close_prices.iloc[-1])
+
+
+@st.cache_data(ttl=60 * 30, show_spinner=False)
+def fetch_symbol_analysis(symbol: str) -> dict:
+    """BIST hissesi için temel ve teknik özet verileri çeker."""
+    empty_result = {
+        "symbol": normalize_symbol(symbol),
+        "current_price": None,
+        "pe_ratio": None,
+        "pb_ratio": None,
+        "dividend_yield": None,
+        "volume_30d_avg": None,
+        "performance_1m": None,
+        "performance_3m": None,
+        "performance_1y": None,
+        "rsi_14": None,
+        "ma_50": None,
+        "ma_200": None,
+        "trend": "Veri yok",
+        "error": None,
+    }
+
+    if yf is None:
+        empty_result["error"] = "yfinance paketi kurulu değil."
+        return empty_result
+
+    symbol_code = normalize_symbol(symbol)
+    if not symbol_code:
+        empty_result["error"] = "Hisse kodu boş."
+        return empty_result
+
+    try:
+        ticker = yf.Ticker(f"{symbol_code}.IS")
+        history = ticker.history(period="1y", interval="1d", auto_adjust=False)
+        info = ticker.info or {}
+    except Exception as exc:
+        empty_result["error"] = f"Veri çekilemedi: {exc}"
+        return empty_result
+
+    if history.empty or "Close" not in history:
+        empty_result["error"] = "Fiyat geçmişi bulunamadı."
+        return empty_result
+
+    close = history["Close"].dropna()
+    volume = history["Volume"].dropna() if "Volume" in history else pd.Series(dtype=float)
+    if close.empty:
+        empty_result["error"] = "Kapanış verisi bulunamadı."
+        return empty_result
+
+    result = empty_result.copy()
+    result["current_price"] = float(close.iloc[-1])
+    result["volume_30d_avg"] = float(volume.tail(30).mean()) if not volume.empty else None
+
+    if len(close) >= 22 and close.iloc[-22] != 0:
+        result["performance_1m"] = float((close.iloc[-1] / close.iloc[-22] - 1) * 100)
+    if len(close) >= 66 and close.iloc[-66] != 0:
+        result["performance_3m"] = float((close.iloc[-1] / close.iloc[-66] - 1) * 100)
+    if len(close) >= 252 and close.iloc[-252] != 0:
+        result["performance_1y"] = float((close.iloc[-1] / close.iloc[-252] - 1) * 100)
+
+    if len(close) >= 50:
+        result["ma_50"] = float(close.rolling(50).mean().iloc[-1])
+    if len(close) >= 200:
+        result["ma_200"] = float(close.rolling(200).mean().iloc[-1])
+
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss.replace(0, pd.NA)
+    rsi = 100 - (100 / (1 + rs))
+    if not rsi.dropna().empty:
+        result["rsi_14"] = float(rsi.dropna().iloc[-1])
+
+    result["pe_ratio"] = safe_float(info.get("trailingPE"))
+    result["pb_ratio"] = safe_float(info.get("priceToBook"))
+    dividend_yield = safe_float(info.get("dividendYield"))
+    result["dividend_yield"] = dividend_yield * 100 if dividend_yield is not None and dividend_yield < 1 else dividend_yield
+
+    if result["ma_50"] and result["ma_200"]:
+        if result["current_price"] > result["ma_50"] > result["ma_200"]:
+            result["trend"] = "Güçlü yükseliş"
+        elif result["current_price"] > result["ma_50"]:
+            result["trend"] = "Pozitif"
+        elif result["current_price"] < result["ma_50"] < result["ma_200"]:
+            result["trend"] = "Zayıf"
+        else:
+            result["trend"] = "Karışık"
+
+    return result
+
+
+def safe_float(value: object) -> float | None:
+    try:
+        if value is None or pd.isna(value):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def score_between(value: float | None, good_min: float, good_max: float, hard_min: float, hard_max: float) -> float:
+    """Belirli aralıkta iyi kabul edilen değerler için 0-100 skor üretir."""
+    if value is None:
+        return 50.0
+    if good_min <= value <= good_max:
+        return 100.0
+    if value < good_min:
+        if value <= hard_min:
+            return 30.0
+        return 30.0 + (value - hard_min) / (good_min - hard_min) * 70.0
+    if value >= hard_max:
+        return 30.0
+    return 100.0 - (value - good_max) / (hard_max - good_max) * 70.0
+
+
+def score_stock_analysis(row: dict) -> dict:
+    """Temel + teknik göstergelerden 100 üzerinden karar destek skoru üretir."""
+    pe_score = score_between(row.get("pe_ratio"), 4, 18, 0, 45)
+    pb_score = score_between(row.get("pb_ratio"), 0.5, 3.5, 0, 10)
+    rsi_score = score_between(row.get("rsi_14"), 35, 65, 15, 85)
+
+    perf_1m = row.get("performance_1m")
+    momentum_score = 50.0 if perf_1m is None else max(0.0, min(100.0, 50.0 + perf_1m * 2.0))
+
+    trend_score = {
+        "Güçlü yükseliş": 100.0,
+        "Pozitif": 80.0,
+        "Karışık": 55.0,
+        "Zayıf": 30.0,
+        "Veri yok": 50.0,
+    }.get(row.get("trend"), 50.0)
+
+    dividend_yield = row.get("dividend_yield")
+    dividend_score = 50.0 if dividend_yield is None else max(0.0, min(100.0, dividend_yield * 12.0))
+
+    total_score = (
+        pe_score * 0.20
+        + pb_score * 0.15
+        + rsi_score * 0.20
+        + momentum_score * 0.15
+        + trend_score * 0.20
+        + dividend_score * 0.10
+    )
+
+    if total_score >= 75:
+        rating = "Güçlü Aday"
+    elif total_score >= 55:
+        rating = "İzlenebilir"
+    else:
+        rating = "Zayıf"
+
+    return {
+        "score": round(float(total_score), 1),
+        "rating": rating,
+        "pe_score": round(pe_score, 1),
+        "pb_score": round(pb_score, 1),
+        "rsi_score": round(rsi_score, 1),
+        "momentum_score": round(momentum_score, 1),
+        "trend_score": round(trend_score, 1),
+        "dividend_score": round(dividend_score, 1),
+    }
+
+
+def build_analysis_table(symbols: list[str]) -> pd.DataFrame:
+    rows: list[dict] = []
+    for symbol in symbols:
+        analysis = fetch_symbol_analysis(symbol)
+        score = score_stock_analysis(analysis)
+        rows.append({**analysis, **score})
+    return pd.DataFrame(rows)
+
+
+def suggested_portfolio_weights(analysis_df: pd.DataFrame) -> pd.DataFrame:
+    if analysis_df.empty or "score" not in analysis_df:
+        return pd.DataFrame(columns=["symbol", "score", "suggested_weight"])
+    candidates = analysis_df[analysis_df["rating"].isin(["Güçlü Aday", "İzlenebilir"])].copy()
+    if candidates.empty:
+        return pd.DataFrame(columns=["symbol", "score", "suggested_weight"])
+    candidates["score_weight"] = candidates["score"].clip(lower=0)
+    total_score = candidates["score_weight"].sum()
+    candidates["suggested_weight"] = candidates["score_weight"] / total_score * 100 if total_score else 0
+    return candidates[["symbol", "score", "rating", "suggested_weight"]].sort_values("suggested_weight", ascending=False)
+
+
+
+@st.cache_data(ttl=60 * 30, show_spinner=False)
+def fetch_silent_collection_analysis(symbol: str) -> dict:
+    """Sessiz toplama / patlama öncesi tarama kriterlerini hesaplar."""
+    symbol_code = normalize_symbol(symbol)
+    empty = {
+        "symbol": symbol_code,
+        "price": None,
+        "rsi_14": None,
+        "ema_20": None,
+        "ema_50": None,
+        "sma_20": None,
+        "atr_close_percent": None,
+        "relative_volume": None,
+        "silent_score": 0,
+        "silent_points": 0.0,
+        "silent_result": "Veri yok",
+        "price_gt_ema50": False,
+        "ema20_gt_ema50": False,
+        "atr_close_ok": False,
+        "volume_gt_avg_14": False,
+        "rsi_ok": False,
+        "price_gt_sma20": False,
+        "price_sma20_near": False,
+        "relative_volume_ok": False,
+        "silent_error": None,
+    }
+    if yf is None:
+        empty["silent_error"] = "yfinance paketi kurulu değil."
+        return empty
+    if not symbol_code:
+        empty["silent_error"] = "Hisse kodu boş."
+        return empty
+    try:
+        ticker = yf.Ticker(f"{symbol_code}.IS")
+        history = ticker.history(period="1y", interval="1d", auto_adjust=False)
+    except Exception as exc:
+        empty["silent_error"] = f"Veri çekilemedi: {exc}"
+        return empty
+    if history.empty or "Close" not in history:
+        empty["silent_error"] = "Fiyat geçmişi bulunamadı."
+        return empty
+
+    close = history["Close"].dropna()
+    high = history["High"].dropna() if "High" in history else pd.Series(dtype=float)
+    low = history["Low"].dropna() if "Low" in history else pd.Series(dtype=float)
+    volume = history["Volume"].dropna() if "Volume" in history else pd.Series(dtype=float)
+    if len(close) < 50:
+        empty["silent_error"] = "EMA50 için yeterli veri yok."
+        return empty
+
+    result = empty.copy()
+    result["price"] = float(close.iloc[-1])
+    result["ema_20"] = float(close.ewm(span=20, adjust=False).mean().iloc[-1])
+    result["ema_50"] = float(close.ewm(span=50, adjust=False).mean().iloc[-1])
+    result["sma_20"] = float(close.rolling(20).mean().iloc[-1]) if len(close) >= 20 else None
+
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss.replace(0, pd.NA)
+    rsi = 100 - (100 / (1 + rs))
+    if not rsi.dropna().empty:
+        result["rsi_14"] = float(rsi.dropna().iloc[-1])
+
+    if not high.empty and not low.empty and len(high) == len(close) and len(low) == len(close):
+        prev_close = close.shift(1)
+        true_range = pd.concat(
+            [(high - low).abs(), (high - prev_close).abs(), (low - prev_close).abs()],
+            axis=1,
+        ).max(axis=1)
+        atr_14 = true_range.rolling(14).mean().dropna()
+        if not atr_14.empty and result["price"]:
+            result["atr_close_percent"] = float(atr_14.iloc[-1] / result["price"] * 100)
+
+    if not volume.empty and len(volume) >= 20:
+        avg_volume_20 = float(volume.tail(20).mean())
+        last_volume = float(volume.iloc[-1])
+        result["relative_volume"] = last_volume / avg_volume_20 if avg_volume_20 else None
+
+    price = result["price"] or 0
+    ema20 = result["ema_20"] or 0
+    ema50 = result["ema_50"] or 0
+    sma20 = result["sma_20"] or 0
+    rsi14 = result["rsi_14"]
+    atr_pct = result["atr_close_percent"]
+    rel_vol = result["relative_volume"]
+
+    result["price_gt_ema50"] = bool(price > ema50)
+    result["ema20_gt_ema50"] = bool(ema20 > ema50)
+    result["atr_close_ok"] = bool(atr_pct is not None and atr_pct < 2.5)
+    result["volume_gt_avg_14"] = bool(rel_vol is not None and rel_vol > 1.4)
+    result["rsi_ok"] = bool(rsi14 is not None and 52 < rsi14 < 68)
+    result["price_gt_sma20"] = bool(sma20 and price > sma20)
+    result["price_sma20_near"] = bool(sma20 and (price / sma20) < 1.05)
+    result["relative_volume_ok"] = bool(rel_vol is not None and rel_vol > 1.5)
+
+    criteria = [
+        result["price_gt_ema50"],
+        result["ema20_gt_ema50"],
+        result["atr_close_ok"],
+        result["volume_gt_avg_14"],
+        result["rsi_ok"],
+        result["price_gt_sma20"],
+        result["price_sma20_near"],
+        result["relative_volume_ok"],
+    ]
+    score = int(sum(criteria))
+    result["silent_score"] = score
+    result["silent_points"] = round(score / 8 * 100, 1)
+    if score >= 7:
+        result["silent_result"] = "Güçlü Aday"
+    elif score >= 5:
+        result["silent_result"] = "Hazırlık"
+    elif score >= 3:
+        result["silent_result"] = "İzle"
+    else:
+        result["silent_result"] = "Uzak Dur"
+    return result
+
+
+def build_silent_collection_table(symbols: list[str]) -> pd.DataFrame:
+    return pd.DataFrame([fetch_silent_collection_analysis(symbol) for symbol in symbols])
+
+
+def build_general_evaluation_table(analysis_df: pd.DataFrame, silent_df: pd.DataFrame) -> pd.DataFrame:
+    """İlk değerlendirme ve sessiz toplama skorunu birleştirerek nihai tablo üretir.
+
+    Nihai skor = İlk Skor x 0.6 + Sessiz Toplama Puanı x 0.4
+    KAP/haber etkisi bu sürümde tamamen kaldırılmıştır.
+    """
+    if analysis_df.empty:
+        return pd.DataFrame()
+
+    base = analysis_df[["symbol", "score", "rating"]].copy()
+    base = base.rename(columns={"score": "first_score", "rating": "first_rating"})
+
+    if not silent_df.empty:
+        silent_cols = ["symbol", "silent_score", "silent_points", "silent_result"]
+        base = base.merge(silent_df[silent_cols], on="symbol", how="left")
+    else:
+        base["silent_score"] = 0
+        base["silent_points"] = 0
+        base["silent_result"] = "Veri yok"
+
+    base["first_score"] = pd.to_numeric(base["first_score"], errors="coerce").fillna(0)
+    base["silent_points"] = pd.to_numeric(base["silent_points"], errors="coerce").fillna(0)
+    base["final_score"] = (base["first_score"] * 0.6 + base["silent_points"] * 0.4).round(1)
+
+    def final_label(score: float) -> str:
+        if score >= 85:
+            return "Güçlü Aday"
+        if score >= 70:
+            return "Kontrollü Güçlü"
+        if score >= 55:
+            return "İzle"
+        return "Riskli"
+
+    base["final_result"] = base["final_score"].apply(final_label)
+    return base.sort_values("final_score", ascending=False).reset_index(drop=True)
+
+
+def build_rebalancing_table(general_df: pd.DataFrame, positions: pd.DataFrame, total_market_value: float) -> pd.DataFrame:
+    """Genel skora göre ideal portföy ağırlığı ve mevcut portföye göre al/sat önerisi üretir."""
+    if general_df.empty:
+        return pd.DataFrame()
+
+    result = general_df.copy()
+    result["symbol"] = result["symbol"].astype(str).str.upper().str.strip()
+    result["final_score"] = pd.to_numeric(result["final_score"], errors="coerce").fillna(0)
+
+    if positions.empty:
+        result["current_weight"] = 0.0
+        result["current_quantity"] = 0.0
+        result["current_price"] = pd.to_numeric(result.get("current_price", 0), errors="coerce").fillna(0)
+        result["current_value"] = 0.0
+    else:
+        pos = positions.copy()
+        pos["symbol"] = pos["symbol"].astype(str).str.upper().str.strip()
+        pos_lookup = pos.set_index("symbol")
+        result["current_weight"] = result["symbol"].map((pos_lookup["weight"] * 100).to_dict()).fillna(0.0)
+        result["current_quantity"] = result["symbol"].map(pos_lookup["quantity"].to_dict()).fillna(0.0)
+        result["current_price"] = result["symbol"].map(pos_lookup["current_price"].to_dict()).fillna(0.0)
+        result["current_value"] = result["symbol"].map(pos_lookup["market_value"].to_dict()).fillna(0.0)
+
+    # Riskli görünen hisselere ideal portföyde ağırlık vermeyip kalanları genel skora göre normalize eder.
+    result["eligible_score"] = result["final_score"].where(result["final_score"] >= 55, 0)
+    score_sum = float(result["eligible_score"].sum())
+    result["ideal_weight"] = result["eligible_score"] / score_sum * 100 if score_sum else 0.0
+    result["weight_diff"] = result["ideal_weight"] - result["current_weight"]
+    result["target_value"] = total_market_value * result["ideal_weight"] / 100 if total_market_value else 0.0
+    result["trade_value"] = total_market_value * result["weight_diff"] / 100 if total_market_value else 0.0
+
+    def action(diff: float) -> str:
+        if diff > 2:
+            return "AL"
+        if diff < -2:
+            return "SAT/AZALT"
+        return "KORU"
+
+    def lot_change(row: pd.Series) -> int:
+        price = float(row.get("current_price") or 0)
+        if price <= 0:
+            return 0
+        return int(round(float(row.get("trade_value") or 0) / price))
+
+    result["action"] = result["weight_diff"].apply(action)
+    result["lot_change"] = result.apply(lot_change, axis=1)
+    return result.sort_values("weight_diff", ascending=False).reset_index(drop=True)
+
+
+
+
+def get_symbol_sector(symbol: str) -> str:
+    return SECTOR_MAP.get(normalize_symbol(symbol), "Diğer")
+
+
+def get_universe_symbols(universe: str, transactions: pd.DataFrame, positions: pd.DataFrame | None = None) -> list[str]:
+    if universe in ["Sadece portföyümdeki açık hisseler", "Mevcut portföyüm"]:
+        if positions is not None and not positions.empty and "quantity" in positions:
+            open_symbols = positions.loc[positions["quantity"] > 0, "symbol"].dropna().astype(str).str.upper().unique().tolist()
+            if open_symbols:
+                return sorted(open_symbols)
+        if transactions.empty:
+            return []
+        return sorted(transactions["symbol"].dropna().astype(str).str.upper().unique().tolist())
+    if universe == "BIST 30":
+        return BIST30_SYMBOLS
+    if universe == "BIST 50":
+        return BIST50_SYMBOLS
+    if universe == "BIST 100":
+        return BIST100_SYMBOLS
+    return BIST_SYMBOLS
+
+
+def trend_comment(performance_1y: float | None) -> str:
+    if performance_1y is None or pd.isna(performance_1y):
+        return "Veri yok"
+    if performance_1y >= 150:
+        return "Çok güçlü ama yükselmiş"
+    if performance_1y >= 75:
+        return "Güçlü trend"
+    if performance_1y >= 25:
+        return "Pozitif trend"
+    if performance_1y >= 0:
+        return "Sınırlı pozitif"
+    return "Zayıf trend"
+
+
+def strategy_score(row: pd.Series, strategy: str) -> float:
+    base = float(row.get("final_score", 0) or 0)
+    sector = row.get("sector", "Diğer")
+    perf_1y = float(row.get("performance_1y", 0) or 0)
+    dividend_yield = float(row.get("dividend_yield", 0) or 0)
+    silent_points = float(row.get("silent_points", 0) or 0)
+
+    adjustment = 0.0
+    if strategy == "Savunmacı":
+        if sector in ["Perakende", "Enerji", "Gıda/İçecek", "Telekom"]:
+            adjustment += 8
+        if sector in ["Teknoloji", "Maden"]:
+            adjustment -= 6
+    elif strategy == "Agresif":
+        if sector in ["Teknoloji", "Enerji", "Maden", "Savunma"]:
+            adjustment += 8
+        adjustment += max(0, min(10, silent_points / 10))
+    elif strategy == "Temettü":
+        adjustment += max(0, min(12, dividend_yield * 1.5))
+        if sector in ["Enerji", "Perakende", "Holding", "Telekom"]:
+            adjustment += 4
+    elif strategy == "Büyüme":
+        if sector in ["Teknoloji", "Enerji", "Savunma", "Maden"]:
+            adjustment += 6
+        if perf_1y > 50:
+            adjustment += 5
+    else:  # Dengeli
+        if sector in ["Enerji", "Perakende", "Holding", "Sanayi"]:
+            adjustment += 3
+
+    return round(max(0, min(100, base + adjustment)), 1)
+
+
+def macro_adjustment_for_row(row: pd.Series, macro: dict[str, str]) -> tuple[float, str]:
+    sector = row.get("sector", "Diğer")
+    score = 0.0
+    reasons: list[str] = []
+
+    war = macro.get("war", "Orta risk")
+    inflation = macro.get("inflation", "Yüksek")
+    fed = macro.get("fed", "Sabit")
+    tcmb = macro.get("tcmb", "Sıkı kalır")
+    oil = macro.get("oil", "Stabil")
+    gold = macro.get("gold", "Yatay")
+
+    if war in ["Orta risk", "Uzun vadeli savaş"]:
+        if sector in ["Enerji", "Gıda/İçecek", "Perakende", "Savunma"]:
+            score += 4; reasons.append("jeopolitikte defansif/stratejik sektör")
+        if sector in ["Otomotiv", "Ulaştırma", "Teknoloji"]:
+            score -= 3; reasons.append("jeopolitik hassasiyet")
+    elif war == "Savaş riski yok":
+        if sector in ["Otomotiv", "Ulaştırma", "Sanayi", "Teknoloji"]:
+            score += 2; reasons.append("risk iştahı pozitif")
+
+    if inflation in ["Yüksek", "Çok yüksek"]:
+        if sector in ["Perakende", "Enerji", "Gıda/İçecek"]:
+            score += 4; reasons.append("enflasyonda fiyatlama gücü")
+        if sector in ["Teknoloji", "GYO"]:
+            score -= 2; reasons.append("yüksek enflasyon/iskonto baskısı")
+    elif inflation == "Düşüyor":
+        if sector in ["Teknoloji", "GYO", "Otomotiv", "Sanayi"]:
+            score += 3; reasons.append("enflasyon düşüşü büyüme hisselerine destek")
+
+    if fed == "İndirim bekleniyor":
+        if sector in ["Teknoloji", "Sanayi", "Otomotiv"]:
+            score += 2; reasons.append("FED indirimi risk iştahını destekler")
+    elif fed == "Artış riski var":
+        if sector in ["Teknoloji", "GYO", "Otomotiv"]:
+            score -= 3; reasons.append("FED faiz riski")
+
+    if tcmb == "İndirim bekleniyor":
+        if sector in ["Banka", "GYO", "Otomotiv", "Sanayi"]:
+            score += 3; reasons.append("TCMB indirim beklentisi")
+    elif tcmb == "Sıkı kalır":
+        if sector in ["GYO", "Otomotiv"]:
+            score -= 2; reasons.append("sıkı para politikası baskısı")
+
+    if oil == "Yükseliyor":
+        if sector == "Enerji":
+            score += 4; reasons.append("petrol/enerji trendi destekleyici")
+        if sector in ["Ulaştırma", "Otomotiv"]:
+            score -= 2; reasons.append("petrol maliyet baskısı")
+    elif oil == "Düşüyor":
+        if sector in ["Ulaştırma", "Otomotiv", "Sanayi"]:
+            score += 2; reasons.append("petrol düşüşü maliyet avantajı")
+
+    if gold == "Güçlü":
+        if sector == "Maden":
+            score += 3; reasons.append("altın/maden teması güçlü")
+
+    return round(score, 1), "; ".join(reasons[:3]) if reasons else "Makro etki nötr"
+
+
+def decision_label(score: float) -> str:
+    if score >= 80:
+        return "AL"
+    if score >= 65:
+        return "AL/TAKİP"
+    if score >= 50:
+        return "KORU"
+    return "AZALT"
+
+
+def build_decision_support_portfolio(
+    symbols: list[str],
+    positions: pd.DataFrame,
+    portfolio_size: int,
+    strategy: str,
+    selected_sectors: list[str],
+    exclude_banks: bool,
+    macro: dict[str, str],
+    capital: float,
+) -> pd.DataFrame:
+    symbols = [normalize_symbol(s) for s in symbols if normalize_symbol(s)]
+    if exclude_banks:
+        symbols = [s for s in symbols if s not in BANK_SYMBOLS]
+    if selected_sectors and "Tüm sektörler" not in selected_sectors:
+        symbols = [s for s in symbols if get_symbol_sector(s) in selected_sectors]
+    symbols = sorted(set(symbols))
+    if not symbols:
+        return pd.DataFrame()
+
+    analysis_df = build_analysis_table(symbols)
+    silent_df = build_silent_collection_table(symbols)
+    general_df = build_general_evaluation_table(analysis_df, silent_df)
+    if general_df.empty:
+        return pd.DataFrame()
+
+    merged = general_df.merge(
+        analysis_df[["symbol", "current_price", "dividend_yield", "performance_1y", "performance_1m", "performance_3m"]],
+        on="symbol",
+        how="left",
+    )
+    merged["sector"] = merged["symbol"].apply(get_symbol_sector)
+    merged["trend_comment"] = merged["performance_1y"].apply(trend_comment)
+    merged["strategy_score"] = merged.apply(lambda row: strategy_score(row, strategy), axis=1)
+    macro_results = merged.apply(lambda row: macro_adjustment_for_row(row, macro), axis=1)
+    merged["macro_score"] = [item[0] for item in macro_results]
+    merged["macro_reason"] = [item[1] for item in macro_results]
+    merged["macro_final_score"] = (merged["strategy_score"] * 0.85 + (50 + merged["macro_score"] * 5).clip(0, 100) * 0.15).round(1)
+    merged["decision"] = merged["macro_final_score"].apply(decision_label)
+    merged = merged.sort_values("macro_final_score", ascending=False).head(portfolio_size).copy()
+
+    if positions.empty:
+        merged["current_quantity"] = 0.0
+        merged["current_weight"] = 0.0
+        merged["current_value"] = 0.0
+    else:
+        pos = positions.copy()
+        pos["symbol"] = pos["symbol"].astype(str).str.upper().str.strip()
+        pos_lookup = pos.set_index("symbol")
+        merged["current_quantity"] = merged["symbol"].map(pos_lookup["quantity"].to_dict()).fillna(0.0)
+        merged["current_weight"] = merged["symbol"].map((pos_lookup["weight"] * 100).to_dict()).fillna(0.0)
+        merged["current_value"] = merged["symbol"].map(pos_lookup["market_value"].to_dict()).fillna(0.0)
+        merged["current_price"] = merged["symbol"].map(pos_lookup["current_price"].to_dict()).fillna(merged["current_price"])
+
+    score_sum = float(merged["macro_final_score"].clip(lower=0).sum())
+    merged["target_weight"] = merged["macro_final_score"].clip(lower=0) / score_sum * 100 if score_sum else 0.0
+    merged["target_value"] = capital * merged["target_weight"] / 100
+    merged["trade_value"] = merged["target_value"] - merged["current_value"]
+    merged["lot_change"] = merged.apply(
+        lambda row: int(round(float(row["trade_value"] or 0) / float(row["current_price"] or 1))) if float(row.get("current_price") or 0) > 0 else 0,
+        axis=1,
+    )
+    merged["action"] = merged["trade_value"].apply(lambda v: "AL" if v > capital * 0.02 else ("SAT/AZALT" if v < -capital * 0.02 else "KORU"))
+
+    def why(row: pd.Series) -> str:
+        parts = []
+        if row.get("final_score", 0) >= 70:
+            parts.append("temel/teknik skor güçlü")
+        if row.get("silent_score", 0) >= 5:
+            parts.append("sessiz toplama kriterleri uygun")
+        if row.get("performance_1y", 0) and row.get("performance_1y", 0) > 50:
+            parts.append("1Y trend güçlü")
+        if row.get("macro_score", 0) > 0:
+            parts.append("makro uyum pozitif")
+        if not parts:
+            parts.append("stratejiye göre dengeli aday")
+        return ", ".join(parts)
+
+    merged["why"] = merged.apply(why, axis=1)
+    return merged.reset_index(drop=True)
+
+
+def style_portfolio_summary(df: pd.DataFrame):
+    def color_rows(row):
+        pnl = row.get("Toplam K/Z", 0)
+        try:
+            pnl = float(pnl)
+        except Exception:
+            pnl = 0
+        if pnl > 0:
+            return ["background-color: #e6f4ea"] * len(row)
+        if pnl < 0:
+            return ["background-color: #fde8e8"] * len(row)
+        return ["background-color: #fff8db"] * len(row)
+
+    return df.style.apply(color_rows, axis=1).format({
+        "Ortalama Maliyet": lambda v: money(v),
+        "Güncel Fiyat": lambda v: money(v),
+        "Piyasa Değeri": lambda v: money(v),
+        "Gerçekleşen K/Z": lambda v: money(v),
+        "Açık K/Z": lambda v: money(v),
+        "Temettü": lambda v: money(v),
+        "Toplam K/Z": lambda v: money(v),
+        "Portföy Ağırlığı %": "{:.2f}",
+        "Adet": "{:.2f}",
+    })
+
+
+def style_performance_table(df: pd.DataFrame):
+    def color_perf(row):
+        perf = row.get("1Y Performans (%)", 0)
+        try:
+            perf = float(perf)
+        except Exception:
+            perf = 0
+        if perf >= 150:
+            return ["background-color: #fde8e8"] * len(row)
+        if perf >= 75:
+            return ["background-color: #e6f4ea"] * len(row)
+        if perf >= 0:
+            return ["background-color: #fff8db"] * len(row)
+        return ["background-color: #f1f3f4"] * len(row)
+    return df.style.apply(color_perf, axis=1)
+
+
+def normalize_import(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [str(col).strip().lower() for col in df.columns]
+    missing = [col for col in TRANSACTION_COLUMNS if col not in df.columns]
+    for col in missing:
+        df[col] = None
+
+    df = df[TRANSACTION_COLUMNS]
+    df["symbol"] = df["symbol"].astype(str).str.upper().str.strip()
+    df["type"] = df["type"].astype(str).str.lower().str.strip()
+    df["currency"] = df["currency"].fillna("TRY").astype(str).str.upper().str.strip()
+
+    for col in ["quantity", "price", "commission", "tax", "target_price", "stop_loss"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    parsed_dates = pd.to_datetime(df["date"], errors="coerce")
+    df = df[parsed_dates.notna()]
+    df["date"] = parsed_dates[parsed_dates.notna()].dt.date.astype(str)
+    df = df[df["symbol"].ne("") & df["type"].isin(["buy", "sell", "dividend", "fee"])]
+    return df
+
+
+def normalize_column_name(name: object) -> str:
+    text = str(name).upper().strip()
+    replacements = {
+        "İ": "I",
+        "İ": "I",
+        "Ş": "S",
+        "Ğ": "G",
+        "Ü": "U",
+        "Ö": "O",
+        "Ç": "C",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return "".join(char for char in text if char.isalnum())
+
+
+def parse_number_series(series: pd.Series) -> pd.Series:
+    if pd.api.types.is_numeric_dtype(series):
+        return pd.to_numeric(series, errors="coerce").fillna(0)
+
+    cleaned = (
+        series.astype(str)
+        .str.strip()
+        .str.replace("TL", "", regex=False)
+        .str.replace("₺", "", regex=False)
+        .str.replace(" ", "", regex=False)
+    )
+    has_comma = cleaned.str.contains(",", regex=False)
+    cleaned = cleaned.where(
+        ~has_comma,
+        cleaned.str.replace(".", "", regex=False).str.replace(",", ".", regex=False),
+    )
+    return pd.to_numeric(cleaned, errors="coerce").fillna(0)
+
+
+def excel_trade_type(value: object) -> str | None:
+    text = normalize_column_name(value)
+    if "SAT" in text:
+        return "sell"
+    if "AL" in text:
+        return "buy"
+    return None
+
+
+def normalize_excel_workbook(uploaded_file) -> pd.DataFrame:
+    sheets = pd.read_excel(uploaded_file, sheet_name=None)
+    normalized_frames: list[pd.DataFrame] = []
+
+    for sheet_name, sheet_df in sheets.items():
+        if sheet_df.empty:
+            continue
+
+        df = sheet_df.dropna(how="all").copy()
+        if df.empty:
+            continue
+
+        column_lookup = {normalize_column_name(col): col for col in df.columns}
+        required = {
+            "date": column_lookup.get("TARIH"),
+            "type": column_lookup.get("ISLEM"),
+            "quantity": column_lookup.get("ADET"),
+            "price": column_lookup.get("FIYAT"),
+        }
+        if any(value is None for value in required.values()):
+            continue
+
+        commission_col = column_lookup.get("KOMISYON")
+        target_col = column_lookup.get("HEDEFFIYAT")
+        notes_col = column_lookup.get("NOT") or column_lookup.get("NOTLAR")
+
+        out = pd.DataFrame()
+        out["date"] = pd.to_datetime(df[required["date"]], errors="coerce").dt.date.astype(str)
+        out["symbol"] = normalize_symbol(sheet_name)
+        out["type"] = df[required["type"]].apply(excel_trade_type)
+        out["quantity"] = parse_number_series(df[required["quantity"]])
+        out["price"] = parse_number_series(df[required["price"]])
+        if commission_col is not None:
+            out["commission"] = parse_number_series(df[commission_col])
+        else:
+            out["commission"] = out["quantity"] * out["price"] * COMMISSION_RATE
+        out["tax"] = 0.0
+        out["currency"] = "TRY"
+        out["strategy"] = None
+        out["reason"] = None
+        out["target_price"] = parse_number_series(df[target_col]) if target_col is not None else None
+        out["stop_loss"] = None
+        out["notes"] = df[notes_col].astype(str) if notes_col is not None else None
+        out["source_sheet"] = sheet_name
+
+        out = out[
+            pd.to_datetime(out["date"], errors="coerce").notna()
+            & out["symbol"].ne("")
+            & out["type"].isin(["buy", "sell"])
+            & out["quantity"].gt(0)
+            & out["price"].gt(0)
+        ]
+        normalized_frames.append(out)
+
+    if not normalized_frames:
+        return pd.DataFrame(columns=[*TRANSACTION_COLUMNS, "source_sheet"])
+
+    result = pd.concat(normalized_frames, ignore_index=True)
+    return result[[*TRANSACTION_COLUMNS, "source_sheet"]]
+
+
+def inspect_excel_workbook(uploaded_file) -> pd.DataFrame:
+    sheets = pd.read_excel(uploaded_file, sheet_name=None, nrows=5)
+    rows: list[dict] = []
+    for sheet_name, sheet_df in sheets.items():
+        column_lookup = {normalize_column_name(col): col for col in sheet_df.columns}
+        rows.append(
+            {
+                "Sekme": sheet_name,
+                "Kolonlar": ", ".join(str(col) for col in sheet_df.columns),
+                "Tarih": column_lookup.get("TARIH", "Bulunamadı"),
+                "İşlem": column_lookup.get("ISLEM", "Bulunamadı"),
+                "Adet": column_lookup.get("ADET", "Bulunamadı"),
+                "Fiyat": column_lookup.get("FIYAT", "Bulunamadı"),
+                "Komisyon": column_lookup.get("KOMISYON", "Bulunamadı"),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def import_normalized_transactions(df: pd.DataFrame) -> int:
+    clean = df[TRANSACTION_COLUMNS].copy()
+    with connect() as conn:
+        conn.executemany(
+            f"""
+            INSERT INTO transactions ({", ".join(TRANSACTION_COLUMNS)})
+            VALUES ({", ".join(["?"] * len(TRANSACTION_COLUMNS))})
+            """,
+            clean.where(pd.notnull(clean), None).values.tolist(),
+        )
+    return len(clean)
+
+
+def import_transactions(df: pd.DataFrame) -> int:
+    clean = normalize_import(df)
+    with connect() as conn:
+        conn.executemany(
+            f"""
+            INSERT INTO transactions ({", ".join(TRANSACTION_COLUMNS)})
+            VALUES ({", ".join(["?"] * len(TRANSACTION_COLUMNS))})
+            """,
+            clean.where(pd.notnull(clean), None).values.tolist(),
+        )
+    return len(clean)
+
+
+def apply_realized_pnl_overrides(positions: pd.DataFrame) -> pd.DataFrame:
+    """Apply verified realized P/L values for symbols reconciled with Excel records."""
+    if positions.empty or "symbol" not in positions or "realized_pnl" not in positions:
+        return positions
+
+    positions = positions.copy()
+    for symbol, realized_pnl in REALIZED_PNL_OVERRIDES.items():
+        mask = positions["symbol"].astype(str).str.upper().eq(symbol)
+        if mask.any():
+            positions.loc[mask, "realized_pnl"] = realized_pnl
+    return positions
+
+
+def calculate_positions(transactions: pd.DataFrame) -> pd.DataFrame:
+    positions: dict[str, Position] = {}
+
+    for row in transactions.sort_values(["date", "id"]).itertuples():
+        symbol = row.symbol
+        position = positions.setdefault(symbol, Position(symbol, 0, 0, 0, 0, 0))
+        quantity = float(row.quantity or 0)
+        price = float(row.price or 0)
+        fees = float(row.commission or 0) + float(row.tax or 0)
+
+        if row.type == "buy":
+            total_cost = quantity * price + fees
+            new_quantity = position.quantity + quantity
+            if new_quantity > 0:
+                position.avg_cost = ((position.quantity * position.avg_cost) + total_cost) / new_quantity
+            position.quantity = new_quantity
+            position.invested += total_cost
+
+        elif row.type == "sell":
+            sell_quantity = min(quantity, position.quantity)
+            proceeds = sell_quantity * price - fees
+            cost_basis = sell_quantity * position.avg_cost
+            position.realized_pnl += proceeds - cost_basis
+            position.quantity -= sell_quantity
+            if position.quantity <= 0:
+                position.quantity = 0
+                position.avg_cost = 0
+
+        elif row.type == "dividend":
+            position.dividends += quantity * price
+
+        elif row.type == "fee":
+            position.realized_pnl -= fees if fees else quantity * price
+
+    data = [vars(pos) for pos in positions.values()]
+    if not data:
+        return pd.DataFrame(columns=["symbol", "quantity", "avg_cost", "invested", "realized_pnl", "dividends"])
+    result = pd.DataFrame(data)
+
+    signed_quantities = transactions.assign(
+        signed_quantity=transactions.apply(
+            lambda row: row["quantity"]
+            if row["type"] == "buy"
+            else (-row["quantity"] if row["type"] == "sell" else 0),
+            axis=1,
+        )
+    )
+    net_quantities = signed_quantities.groupby("symbol")["signed_quantity"].sum()
+    result["quantity"] = result["symbol"].map(net_quantities).fillna(result["quantity"])
+    result.loc[result["quantity"] <= 0, "avg_cost"] = 0
+    result = apply_realized_pnl_overrides(result)
+    return result
+
+
+def calculate_sales(transactions: pd.DataFrame) -> pd.DataFrame:
+    positions: dict[str, Position] = {}
+    sales: list[dict] = []
+
+    for row in transactions.sort_values(["date", "id"]).itertuples():
+        symbol = row.symbol
+        position = positions.setdefault(symbol, Position(symbol, 0, 0, 0, 0, 0))
+        quantity = float(row.quantity or 0)
+        price = float(row.price or 0)
+        fees = float(row.commission or 0) + float(row.tax or 0)
+
+        if row.type == "buy":
+            total_cost = quantity * price + fees
+            new_quantity = position.quantity + quantity
+            if new_quantity > 0:
+                position.avg_cost = ((position.quantity * position.avg_cost) + total_cost) / new_quantity
+            position.quantity = new_quantity
+
+        elif row.type == "sell":
+            sell_quantity = min(quantity, position.quantity)
+            proceeds = sell_quantity * price - fees
+            cost_basis = sell_quantity * position.avg_cost
+            pnl = proceeds - cost_basis
+            pnl_percent = (pnl / cost_basis * 100) if cost_basis else 0
+
+            sales.append(
+                {
+                    "date": row.date,
+                    "symbol": symbol,
+                    "quantity": sell_quantity,
+                    "sell_price": price,
+                    "avg_cost": position.avg_cost,
+                    "proceeds": proceeds,
+                    "cost_basis": cost_basis,
+                    "pnl": pnl,
+                    "pnl_percent": pnl_percent,
+                }
+            )
+
+            position.quantity -= sell_quantity
+            if position.quantity <= 0:
+                position.quantity = 0
+                position.avg_cost = 0
+
+    return pd.DataFrame(sales)
+
+
+def enrich_positions(positions: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
+    if positions.empty:
+        return positions
+
+    prices = prices.rename(columns={"price": "current_price"})
+    result = positions.merge(prices[["symbol", "current_price"]], on="symbol", how="left")
+    result["current_price"] = result["current_price"].fillna(result["avg_cost"])
+    result["market_value"] = result["quantity"] * result["current_price"]
+    result["cost_value"] = result["quantity"] * result["avg_cost"]
+    result["unrealized_pnl"] = result["market_value"] - result["cost_value"]
+    result["total_pnl"] = result["realized_pnl"] + result["unrealized_pnl"] + result["dividends"]
+    result["weight"] = result["market_value"] / result["market_value"].sum() if result["market_value"].sum() else 0
+    return result
+
+
+def strategy_report(transactions: pd.DataFrame) -> pd.DataFrame:
+    if transactions.empty or "strategy" not in transactions:
+        return pd.DataFrame()
+
+    report = (
+        transactions.assign(gross_amount=transactions["quantity"] * transactions["price"])
+        .groupby("strategy", dropna=False)
+        .agg(
+            trade_count=("id", "count"),
+            total_amount=("gross_amount", "sum"),
+            avg_price=("price", "mean"),
+        )
+        .reset_index()
+    )
+    report["strategy"] = report["strategy"].fillna("Belirtilmedi")
+    return report.sort_values("total_amount", ascending=False)
+
+
+def decision_alerts(positions: pd.DataFrame) -> list[str]:
+    alerts: list[str] = []
+    if positions.empty:
+        return ["Henuz pozisyon yok. Ilk islemleri ekleyince karar destek uyarilari olusacak."]
+
+    for row in positions.itertuples():
+        if row.quantity < 0:
+            alerts.append(f"{row.symbol}: Net adet {row.quantity:g}. Satış toplamı alış toplamından fazla görünüyor.")
+            continue
+        if row.quantity == 0:
+            continue
+        if row.weight > 0.35:
+            alerts.append(f"{row.symbol}: Portfoy agirligi %{row.weight * 100:.1f}. Tek hisse yogunlugu yuksek.")
+        if row.current_price < row.avg_cost * 0.9:
+            alerts.append(f"{row.symbol}: Fiyat ortalama maliyetin %10 altinda. Stop/strateji yeniden kontrol edilmeli.")
+        if row.current_price > row.avg_cost * 1.2:
+            alerts.append(f"{row.symbol}: Fiyat ortalama maliyetin %20 ustunde. Kar alma plani gozden gecirilebilir.")
+
+    return alerts or ["Mevcut kurallara gore kritik risk uyarisi yok."]
+
+
+def money(value: float) -> str:
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        number = 0.0
+    formatted = f"{number:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"₺{formatted}"
+
+
+def format_money_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    result = df.copy()
+    for column in columns:
+        if column in result.columns:
+            result[column] = result[column].apply(money)
+    return result
+
+
+DATE_FORMAT = "%d.%m.%Y"
+DATETIME_FORMAT = "%d.%m.%Y %H:%M"
+
+
+def format_date_value(value: object, include_time: bool = False) -> str:
+    date_value = pd.to_datetime(value, errors="coerce")
+    if pd.isna(date_value):
+        return ""
+    return date_value.strftime(DATETIME_FORMAT if include_time else DATE_FORMAT)
+
+
+def format_date_columns(df: pd.DataFrame, date_columns: list[str], include_time_columns: list[str] | None = None) -> pd.DataFrame:
+    result = df.copy()
+    include_time_columns = include_time_columns or []
+    for column in date_columns:
+        if column in result.columns:
+            result[column] = result[column].apply(lambda value: format_date_value(value, column in include_time_columns))
+    return result
+
+
+def sort_transactions_for_display(transactions: pd.DataFrame, newest_first: bool = True) -> pd.DataFrame:
+    if transactions.empty:
+        return transactions.copy()
+    result = transactions.copy()
+    result["date_sort"] = pd.to_datetime(result["date"], errors="coerce")
+    result["id_sort"] = pd.to_numeric(result.get("id"), errors="coerce").fillna(0)
+    result = result.sort_values(["date_sort", "id_sort"], ascending=[not newest_first, not newest_first])
+    return result.drop(columns=["date_sort", "id_sort"], errors="ignore")
+
+
+def dataframe_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Analiz") -> bytes:
+    """DataFrame'i Excel'in doğrudan açabileceği .xlsx bytes formatına çevirir."""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+    return output.getvalue()
+
+
+def dataframe_to_excel_friendly_csv_bytes(df: pd.DataFrame) -> bytes:
+    """Türkçe Excel için noktalı virgül ayırıcılı ve UTF-8 BOM'lu CSV üretir."""
+    return df.to_csv(index=False, sep=";", decimal=",", encoding="utf-8-sig").encode("utf-8-sig")
+
+
+
+
+def _to_float(value: object, default: float = 0.0) -> float:
+    try:
+        if value is None or pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
+    return max(low, min(high, value))
+
+
+def smart_target_weight(symbol: str, sector: str, total_return: float, current_weight: float, is_open: bool) -> float:
+    """Portföy optimizasyonu için sabit değil, hisse karakteri + performansa göre hedef oran üretir."""
+    symbol = normalize_symbol(symbol)
+    base_by_symbol = {
+        "TUPRS": 16, "ENJSA": 15, "BIMAS": 14, "MGROS": 14, "AKSEN": 11,
+        "ASTOR": 9, "THYAO": 9, "KCHOL": 6, "FROTO": 5, "CVKMD": 5,
+        "GWIND": 4, "DOAS": 3, "FONET": 2, "EDATA": 2, "ANELE": 2, "ODAS": 2,
+    }
+    base_by_sector = {
+        "Perakende": 12, "Enerji": 10, "Gıda/İçecek": 8, "Holding": 6, "Ulaştırma": 7,
+        "Otomotiv": 5, "Teknoloji": 4, "Maden": 4, "Sanayi": 5, "Savunma": 7,
+        "Telekom": 5, "Banka": 4, "GYO": 3, "Diğer": 3,
+    }
+    target = base_by_symbol.get(symbol, base_by_sector.get(sector, 3))
+    if total_return >= 12:
+        target += 2
+    elif total_return >= 5:
+        target += 1
+    elif total_return <= -8:
+        target -= 3
+    elif total_return <= -3:
+        target -= 1
+    if sector in ["Teknoloji", "Maden"] and current_weight > 8:
+        target = min(target, 6)
+    if not is_open:
+        target = 0
+    return round(_clamp(target, 0, 18), 2)
+
+
+def optimize_portfolio_smart(positions: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Mevcut portföy için uygulanabilir al/sat lot önerisi üretir."""
+    if positions.empty:
+        return pd.DataFrame(), {"risk_level": "Veri yok", "strongest": "-", "riskiest": "-", "trade_today": "Hayır"}
+
+    df = positions.copy()
+    total_value = float(pd.to_numeric(df.get("market_value", 0), errors="coerce").fillna(0).sum())
+    if total_value <= 0:
+        return pd.DataFrame(), {"risk_level": "Veri yok", "strongest": "-", "riskiest": "-", "trade_today": "Hayır"}
+
+    rows: list[dict] = []
+    risk_scores: list[tuple[str, float]] = []
+    strength_scores: list[tuple[str, float]] = []
+
+    for _, row in df.iterrows():
+        symbol = normalize_symbol(row.get("symbol"))
+        quantity = _to_float(row.get("quantity"))
+        price = _to_float(row.get("current_price"))
+        market_value = _to_float(row.get("market_value"))
+        unrealized_pnl = _to_float(row.get("unrealized_pnl"))
+        total_pnl = _to_float(row.get("total_pnl"))
+        cost_value = max(market_value - unrealized_pnl, 0.0)
+        current_weight = market_value / total_value * 100 if total_value else 0
+        total_return = total_pnl / cost_value * 100 if cost_value else 0
+        sector = get_symbol_sector(symbol)
+        target_weight = smart_target_weight(symbol, sector, total_return, current_weight, quantity > 0)
+        target_value = total_value * target_weight / 100
+        trade_value = target_value - market_value
+        lot_change = int(round(trade_value / price)) if price > 0 else 0
+
+        if abs(trade_value) < total_value * 0.01:
+            action = "KORU"
+            lot_change = 0
+        elif lot_change > 0:
+            action = "AL/ARTIR"
+        elif lot_change < 0:
+            action = "SAT/AZALT"
+        else:
+            action = "KORU"
+
+        reasons = []
+        if current_weight > target_weight + 2:
+            reasons.append("mevcut ağırlık hedefin üzerinde")
+        if current_weight < target_weight - 2:
+            reasons.append("ağırlık hedefin altında")
+        if total_return >= 8:
+            reasons.append("getiri güçlü")
+        elif total_return <= -5:
+            reasons.append("performans zayıf")
+        if sector in ["Teknoloji", "Maden"] and current_weight > 6:
+            reasons.append("yüksek riskli sektör ağırlığı sınırlanmalı")
+        if not reasons:
+            reasons.append("hedef dağılıma yakın")
+
+        risk_score = max(0, current_weight - 10) + max(0, -total_return) + (6 if sector in ["Teknoloji", "Maden"] else 0)
+        strength_score = max(0, total_return) + (4 if sector in ["Enerji", "Perakende", "Gıda/İçecek"] else 0)
+        risk_scores.append((symbol, risk_score))
+        strength_scores.append((symbol, strength_score))
+
+        rows.append({
+            "Hisse": symbol,
+            "Sektör": sector,
+            "Mevcut Lot": round(quantity, 2),
+            "Mevcut Oran (%)": round(current_weight, 2),
+            "Hedef Oran (%)": round(target_weight, 2),
+            "Aksiyon": action,
+            "Al/Sat Lot": lot_change,
+            "Al/Sat Tutarı": trade_value,
+            "Getiri (%)": round(total_return, 2),
+            "Neden": "; ".join(reasons),
+        })
+
+    result = pd.DataFrame(rows).sort_values(["Aksiyon", "Al/Sat Tutarı"], ascending=[True, False]).reset_index(drop=True)
+    top_weights = sorted([_to_float(v) for v in df["market_value"]], reverse=True)[:3]
+    concentration = sum(top_weights) / total_value * 100 if total_value else 0
+    risk_level = "Yüksek" if concentration >= 60 else ("Orta" if concentration >= 45 else "Düşük")
+    strongest = max(strength_scores, key=lambda x: x[1])[0] if strength_scores else "-"
+    riskiest = max(risk_scores, key=lambda x: x[1])[0] if risk_scores else "-"
+    trade_today = "Evet, kademeli" if risk_level in ["Orta", "Yüksek"] else "Sadece fırsatta"
+    summary = {"risk_level": risk_level, "strongest": strongest, "riskiest": riskiest, "trade_today": trade_today, "concentration": round(concentration, 2)}
+    return result, summary
+
+
+def _trade_reason(row: pd.Series, mode: str) -> str:
+    reasons = []
+    if _to_float(row.get("silent_score")) >= 5:
+        reasons.append("sessiz toplama skoru güçlü")
+    if _to_float(row.get("relative_volume")) >= 1.3:
+        reasons.append("hacim canlı")
+    if str(row.get("trend", "")) in ["Güçlü yükseliş", "Pozitif"]:
+        reasons.append("trend pozitif")
+    if _to_float(row.get("performance_1m")) > 0 and mode in ["Haftalık", "Aylık"]:
+        reasons.append("kısa momentum pozitif")
+    if _to_float(row.get("performance_1y")) > 25 and mode == "Yıllık":
+        reasons.append("1Y performans destekli")
+    return ", ".join(reasons) if reasons else "nötr/izlenebilir görünüm"
+
+
+def build_trade_portfolios(symbols: list[str], top_n: int = 5) -> dict[str, pd.DataFrame]:
+    symbols = sorted(set(normalize_symbol(s) for s in symbols if normalize_symbol(s)))
+    if not symbols:
+        return {}
+    analysis_df = build_analysis_table(symbols)
+    silent_df = build_silent_collection_table(symbols)
+    if analysis_df.empty:
+        return {}
+    df = analysis_df.merge(silent_df[["symbol", "silent_score", "silent_points", "relative_volume", "atr_close_percent"]], on="symbol", how="left") if not silent_df.empty else analysis_df.copy()
+
+    for col in ["rsi_14", "performance_1m", "performance_3m", "performance_1y", "score", "trend_score", "dividend_score", "silent_points", "silent_score", "relative_volume", "atr_close_percent"]:
+        if col not in df:
+            df[col] = 0
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    df["Günlük Skor"] = (
+        df["silent_points"] * 0.35
+        + df["relative_volume"].clip(0, 3) / 3 * 100 * 0.25
+        + df["trend_score"] * 0.25
+        + (100 - (df["rsi_14"] - 55).abs().clip(0, 55) / 55 * 100) * 0.15
+    ).round(1)
+    df["Haftalık Skor"] = (df["performance_1m"].clip(-20, 40).add(20).div(60).mul(100) * 0.35 + df["trend_score"] * 0.40 + df["silent_points"] * 0.25).round(1)
+    df["Aylık Skor"] = (df["performance_3m"].clip(-30, 80).add(30).div(110).mul(100) * 0.45 + df["trend_score"] * 0.35 + df["score"] * 0.20).round(1)
+    df["Yıllık Skor"] = (df["score"] * 0.35 + df["trend_score"] * 0.25 + df["performance_1y"].clip(-50, 200).add(50).div(250).mul(100) * 0.25 + df["dividend_score"] * 0.15).round(1)
+
+    outputs = {}
+    config = {
+        "Günlük": "Günlük Skor",
+        "Haftalık": "Haftalık Skor",
+        "Aylık": "Aylık Skor",
+        "Yıllık": "Yıllık Skor",
+    }
+    for mode, score_col in config.items():
+        out = df.sort_values(score_col, ascending=False).head(top_n).copy()
+        score_sum = out[score_col].clip(lower=0).sum()
+        out["Önerilen Ağırlık (%)"] = (out[score_col].clip(lower=0) / score_sum * 100).round(2) if score_sum else 0
+        out["Kısa Gerekçe"] = out.apply(lambda r: _trade_reason(r, mode), axis=1)
+        outputs[mode] = out[["symbol", score_col, "current_price", "rsi_14", "performance_1m", "performance_3m", "performance_1y", "trend", "Önerilen Ağırlık (%)", "Kısa Gerekçe"]].rename(columns={
+            "symbol": "Hisse",
+            score_col: "Skor",
+            "current_price": "Fiyat",
+            "rsi_14": "RSI 14",
+            "performance_1m": "1 Ay %",
+            "performance_3m": "3 Ay %",
+            "performance_1y": "1Y %",
+            "trend": "Trend",
+        })
+    return outputs
+
+def add_portfolio_action_comments(df: pd.DataFrame) -> pd.DataFrame:
+    """Tüm Hisseler K/Z Durumu tablosuna basit AL/SAT/TUT yorumu ekler.
+
+    Bu fonksiyon işlem yapmaz; yalnızca portföy ağırlığı, açık/kapalı pozisyon,
+    toplam K/Z ve gerçekleşmeyen K/Z oranına göre karar destek amaçlı açıklama üretir.
+    """
+    if df.empty:
+        return df
+
+    result = df.copy()
+    total_value = float(pd.to_numeric(result.get("market_value", 0), errors="coerce").fillna(0).sum())
+
+    actions: list[str] = []
+    lot_suggestions: list[str] = []
+    reasons: list[str] = []
+
+    for _, row in result.iterrows():
+        symbol = str(row.get("symbol", "")).upper()
+        quantity = float(row.get("quantity") or 0)
+        market_value = float(row.get("market_value") or 0)
+        total_pnl = float(row.get("total_pnl") or 0)
+        unrealized_pnl = float(row.get("unrealized_pnl") or 0)
+        dividends = float(row.get("dividends") or 0)
+        weight = (market_value / total_value * 100) if total_value else 0.0
+        cost_value = max(market_value - unrealized_pnl, 0.0)
+        unrealized_return = (unrealized_pnl / cost_value * 100) if cost_value else 0.0
+        total_return = (total_pnl / cost_value * 100) if cost_value else 0.0
+
+        action = "TUT"
+        lot = "0 Lot"
+        reason_parts: list[str] = []
+
+        if quantity <= 0:
+            action = "KAPALI"
+            lot = "0 Lot"
+            reason_parts.append("elde açık pozisyon yok")
+        elif weight >= 25:
+            action = "AZALT"
+            sell_lot = max(1, int(round(quantity * 0.20)))
+            lot = f"-{sell_lot} Lot"
+            reason_parts.append(f"portföy ağırlığı yüksek (%{weight:.1f})")
+        elif weight >= 18 and total_pnl < 0:
+            action = "AZALT"
+            sell_lot = max(1, int(round(quantity * 0.15)))
+            lot = f"-{sell_lot} Lot"
+            reason_parts.append("yüksek ağırlık + negatif K/Z")
+        elif unrealized_return <= -7:
+            action = "SAT/AZALT"
+            sell_lot = max(1, int(round(quantity * 0.25)))
+            lot = f"-{sell_lot} Lot"
+            reason_parts.append(f"açık zarar derin (%{unrealized_return:.1f})")
+        elif unrealized_return <= -3:
+            action = "İZLE / STOP KONTROL"
+            lot = "0 Lot"
+            reason_parts.append(f"açık zarar izlenmeli (%{unrealized_return:.1f})")
+        elif total_return >= 8 and weight < 8:
+            action = "ARTIR"
+            buy_lot = max(1, int(round(quantity * 0.20)))
+            lot = f"+{buy_lot} Lot"
+            reason_parts.append("pozitif getiri + düşük portföy ağırlığı")
+        elif total_return >= 5:
+            action = "TAŞI"
+            lot = "0 Lot"
+            reason_parts.append("trend/kâr durumu pozitif")
+        elif total_pnl > 0 and weight < 10:
+            action = "SINIRLI ARTIR"
+            buy_lot = max(1, int(round(quantity * 0.10)))
+            lot = f"+{buy_lot} Lot"
+            reason_parts.append("kârda ve portföy ağırlığı düşük")
+        elif dividends > 0 and total_pnl >= 0:
+            action = "TUT"
+            lot = "0 Lot"
+            reason_parts.append("temettü katkısı var, K/Z negatif değil")
+        else:
+            reason_parts.append("mevcut risk/getiri dengesi nötr")
+
+        # Aşırı küçük pozisyonlarda al/sat önerisini yumuşat.
+        if quantity > 0 and weight < 1 and action in {"ARTIR", "SINIRLI ARTIR"}:
+            reason_parts.append("pozisyon küçük, test pozisyonu olarak izlenebilir")
+
+        actions.append(action)
+        lot_suggestions.append(lot)
+        reasons.append("; ".join(reason_parts))
+
+    result["action_comment"] = actions
+    result["lot_suggestion"] = lot_suggestions
+    result["action_reason"] = reasons
+    return result
+
+def build_pnl_report(positions: pd.DataFrame) -> pd.DataFrame:
+    if positions.empty:
+        return pd.DataFrame(
+            columns=[
+                "symbol",
+                "status",
+                "quantity",
+                "realized_pnl",
+                "unrealized_pnl",
+                "dividends",
+                "total_pnl",
+                "market_value",
+            ]
+        )
+
+    report = positions.copy()
+    report["status"] = report["quantity"].apply(lambda qty: "Açık Pozisyon" if qty > 0 else "Kapalı Pozisyon")
+    report = report[
+        [
+            "symbol",
+            "status",
+            "quantity",
+            "realized_pnl",
+            "unrealized_pnl",
+            "dividends",
+            "total_pnl",
+            "market_value",
+        ]
+    ]
+    return report.sort_values("total_pnl", ascending=False).reset_index(drop=True)
+
+
+def rename_for_display(df: pd.DataFrame, labels: dict[str, str]) -> pd.DataFrame:
+    return df.rename(columns=labels)
+
+
+def optional_number(value: object, default: float = 0.0) -> float:
+    if pd.isna(value):
+        return default
+    return float(value)
+
+
+def optional_text(value: object) -> str:
+    if pd.isna(value) or value is None:
+        return ""
+    return str(value)
+
+
+
+def apply_compact_sidebar_style() -> None:
+    """Sidebar formunu daha dar, daha kısa ve ekrana sığacak şekilde sıkıştırır."""
+    st.markdown(
+        """
+        <style>
+            section[data-testid="stSidebar"] {
+                width: 255px !important;
+                min-width: 255px !important;
+            }
+
+            section[data-testid="stSidebar"] .block-container {
+                padding-top: 0.45rem !important;
+                padding-bottom: 0.45rem !important;
+                padding-left: 0.55rem !important;
+                padding-right: 0.55rem !important;
+            }
+
+            section[data-testid="stSidebar"] h1,
+            section[data-testid="stSidebar"] h2,
+            section[data-testid="stSidebar"] h3 {
+                font-size: 0.95rem !important;
+                margin-top: 0.15rem !important;
+                margin-bottom: 0.35rem !important;
+            }
+
+            section[data-testid="stSidebar"] label,
+            section[data-testid="stSidebar"] p,
+            section[data-testid="stSidebar"] .stMarkdown,
+            section[data-testid="stSidebar"] .stCaption {
+                font-size: 11px !important;
+                line-height: 1.15 !important;
+            }
+
+            section[data-testid="stSidebar"] div[data-testid="stForm"] {
+                border: 0 !important;
+                padding: 0 !important;
+            }
+
+            section[data-testid="stSidebar"] input {
+                min-height: 29px !important;
+                height: 29px !important;
+                font-size: 11px !important;
+                padding-top: 1px !important;
+                padding-bottom: 1px !important;
+            }
+
+            section[data-testid="stSidebar"] textarea {
+                min-height: 38px !important;
+                max-height: 52px !important;
+                font-size: 11px !important;
+                padding-top: 3px !important;
+                padding-bottom: 3px !important;
+            }
+
+            section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
+            section[data-testid="stSidebar"] div[data-baseweb="input"] > div {
+                min-height: 29px !important;
+                font-size: 11px !important;
+            }
+
+            section[data-testid="stSidebar"] button {
+                min-height: 30px !important;
+                font-size: 11px !important;
+                padding: 0.20rem 0.45rem !important;
+            }
+
+            section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+                gap: 0.22rem !important;
+            }
+
+            section[data-testid="stSidebar"] .stNumberInput,
+            section[data-testid="stSidebar"] .stDateInput,
+            section[data-testid="stSidebar"] .stTextInput,
+            section[data-testid="stSidebar"] .stTextArea,
+            section[data-testid="stSidebar"] .stSelectbox {
+                margin-bottom: 0.12rem !important;
+            }
+
+            section[data-testid="stSidebar"] hr {
+                margin-top: 0.25rem !important;
+                margin-bottom: 0.25rem !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_sidebar_form() -> None:
+    st.sidebar.subheader("İşlem Ekle")
+    with st.sidebar.form("transaction_form", clear_on_submit=True):
+        date = st.date_input("Tarih")
+        symbol = st.selectbox(
+            "Hisse",
+            BIST_SYMBOLS,
+            index=None,
+            placeholder="Hisse kodu yaz veya seç",
+            accept_new_options=True,
+        )
+        tx_type_label = st.selectbox("Islem Tipi", list(TRANSACTION_TYPE_LABELS.keys()))
+        quantity = st.number_input("Adet", min_value=0, step=1, format="%d")
+        price = st.number_input("Fiyat", min_value=0.0, step=0.01)
+        commission = calculate_commission(quantity, price)
+        st.caption(f"Komisyon otomatik: binde 2 = {commission:,.2f} TRY")
+        tax = 0.0
+        currency = "TRY"
+        strategy_choice = st.selectbox("Strateji", STRATEGY_OPTIONS)
+        custom_strategy = ""
+        if strategy_choice == "Diğer":
+            custom_strategy = st.text_input("Diğer strateji")
+        strategy = custom_strategy.strip() if strategy_choice == "Diğer" else strategy_choice
+        reason = st.text_input("Gerekçe")
+        target_price = st.number_input("Hedef Fiyat", min_value=0.0, step=0.01)
+        stop_loss = None
+        notes = st.text_input("Notlar")
+
+        submitted = st.form_submit_button("Kaydet")
+        if submitted:
+            symbol_code = normalize_symbol(symbol)
+            if not symbol_code:
+                st.error("Hisse kodu zorunlu.")
+            else:
+                add_transaction(
+                    {
+                        "date": str(date),
+                        "symbol": symbol_code,
+                        "type": TRANSACTION_TYPE_LABELS[tx_type_label],
+                        "quantity": quantity,
+                        "price": price,
+                        "commission": commission,
+                        "tax": tax,
+                        "currency": currency,
+                        "strategy": strategy.strip() or None,
+                        "reason": reason.strip() or None,
+                        "target_price": target_price or None,
+                        "stop_loss": stop_loss or None,
+                        "notes": notes.strip() or None,
+                    }
+                )
+                st.success("İşlem kaydedildi.")
+                st.rerun()
+
+
+def render_add_transaction_page() -> None:
+    st.subheader("İşlem Ekle")
+    st.caption("Alış, satış ve temettü kayıtlarını bu bölümden ekleyebilirsin.")
+    with st.form("transaction_form_page", clear_on_submit=True):
+        left, right = st.columns(2)
+        with left:
+            date = st.date_input("Tarih", key="add_date")
+            symbol = st.selectbox(
+                "Hisse",
+                BIST_SYMBOLS,
+                index=None,
+                placeholder="Hisse kodu yaz veya seç",
+                accept_new_options=True,
+                key="add_symbol",
+            )
+            tx_type_label = st.selectbox("İşlem Tipi", list(TRANSACTION_TYPE_LABELS.keys()), key="add_type")
+            if tx_type_label == "Temettü":
+                quantity = 1
+                price = st.number_input("Toplam Temettü Tutarı", min_value=0.0, step=0.01, key="add_dividend_amount")
+                commission = 0.0
+                target_price = 0.0
+                st.info("Temettü kaydı toplam tutar olarak alınır; stopaj alanı kullanılmaz.")
+            else:
+                quantity = st.number_input("Adet", min_value=0, step=1, format="%d", key="add_quantity")
+                price = st.number_input("Fiyat", min_value=0.0, step=0.01, key="add_price")
+                commission = calculate_commission(quantity, price)
+                target_price = st.number_input("Hedef Fiyat", min_value=0.0, step=0.01, key="add_target_price")
+                st.caption(f"Komisyon otomatik: binde 2 = {money(commission)}")
+        with right:
+            strategy_choice = st.selectbox("Strateji", STRATEGY_OPTIONS, key="add_strategy_choice")
+            custom_strategy = ""
+            if strategy_choice == "Diğer":
+                custom_strategy = st.text_input("Diğer strateji", key="add_custom_strategy")
+            strategy = custom_strategy.strip() if strategy_choice == "Diğer" else strategy_choice
+            reason = st.text_input("Gerekçe", key="add_reason")
+            notes = st.text_input("Notlar", key="add_notes")
+            st.write("")
+            st.write("")
+            submitted = st.form_submit_button("Kaydet", use_container_width=True)
+
+        if submitted:
+            symbol_code = normalize_symbol(symbol)
+            if not symbol_code:
+                st.error("Hisse kodu zorunlu.")
+            elif price <= 0:
+                st.error("Fiyat / temettü tutarı sıfırdan büyük olmalı.")
+            elif tx_type_label != "Temettü" and quantity <= 0:
+                st.error("Adet sıfırdan büyük olmalı.")
+            else:
+                add_transaction(
+                    {
+                        "date": str(date),
+                        "symbol": symbol_code,
+                        "type": TRANSACTION_TYPE_LABELS[tx_type_label],
+                        "quantity": quantity,
+                        "price": price,
+                        "commission": commission,
+                        "tax": 0.0,
+                        "currency": "TRY",
+                        "strategy": strategy.strip() or None,
+                        "reason": reason.strip() or None,
+                        "target_price": target_price or None,
+                        "stop_loss": None,
+                        "notes": notes.strip() or None,
+                    }
+                )
+                st.success("İşlem kaydedildi.")
+                st.rerun()
+
+
+def main() -> None:
+    st.set_page_config(page_title="Borsa Karar Destek", layout="wide", initial_sidebar_state="collapsed")
+    apply_compact_sidebar_style()
+    init_db()
+
+    st.title("Borsa Karar Destek Otomasyonu")
+    st.caption("İşlem kaydı, portföy takibi ve kural bazlı karar destek paneli.")
+
+    transactions = load_transactions()
+    prices = load_prices()
+    positions = enrich_positions(calculate_positions(transactions), prices)
+    sales = calculate_sales(transactions)
+
+    total_market_value = float(positions["market_value"].sum()) if not positions.empty else 0
+    total_realized = float(positions["realized_pnl"].sum()) if not positions.empty else 0
+    total_unrealized = float(positions["unrealized_pnl"].sum()) if not positions.empty else 0
+    total_dividends = float(positions["dividends"].sum()) if not positions.empty else 0
+    total_sales_amount = float(sales["proceeds"].sum()) if not sales.empty else 0
+    total_sales_pnl = total_realized
+    winning_sales = int((sales["pnl"] > 0).sum()) if not sales.empty else 0
+    losing_sales = int((sales["pnl"] < 0).sum()) if not sales.empty else 0
+
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("Portföy Değeri", money(total_market_value))
+    metric_cols[1].metric("Gerçekleşen K/Z", money(total_realized))
+    metric_cols[2].metric("Açık K/Z", money(total_unrealized))
+    metric_cols[3].metric("Temettü", money(total_dividends))
+
+    sales_metric_cols = st.columns(4)
+    sales_metric_cols[0].metric("Toplam Satış Tutarı", money(total_sales_amount))
+    sales_metric_cols[1].metric("Satışlardan K/Z", money(total_sales_pnl))
+    sales_metric_cols[2].metric("Karlı Satış", winning_sales)
+    sales_metric_cols[3].metric("Zararlı Satış", losing_sales)
+
+    tab_add, tab_portfolio, tab_transactions, tab_prices, tab_strategy, tab_analysis, tab_dividends, tab_pnl, tab_system, tab_import = st.tabs(
+        [
+            "İşlem Ekle",
+            "Portföy",
+            "İşlemler",
+            "Güncel Fiyat",
+            "Karar Destek",
+            "Analiz Merkezi",
+            "Temettü Merkezi",
+            "K/Z Merkezi",
+            "Sistem Merkezi",
+            "CSV İçe Aktar",
+        ]
+    )
+
+    with tab_add:
+        render_add_transaction_page()
+
+    with tab_portfolio:
+        st.subheader("Portföy Özeti")
+        if positions.empty:
+            st.info("Henüz işlem yok.")
+        else:
+            display = positions.copy()
+            display["weight"] = (display["weight"] * 100).round(2)
+            # Portföy tablosunu portföy ağırlığına göre büyükten küçüğe sırala.
+            display = display.sort_values("weight", ascending=False).reset_index(drop=True)
+            display["quantity"] = display["quantity"].round(2)
+            portfolio_table = rename_for_display(
+                display[
+                    [
+                        "symbol",
+                        "quantity",
+                        "avg_cost",
+                        "current_price",
+                        "market_value",
+                        "realized_pnl",
+                        "unrealized_pnl",
+                        "dividends",
+                        "total_pnl",
+                        "weight",
+                    ]
+                ],
+                PORTFOLIO_COLUMN_LABELS,
+            )
+            st.dataframe(
+                style_portfolio_summary(portfolio_table),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.bar_chart(positions.sort_values("market_value", ascending=False).set_index("symbol")["market_value"])
+
+            st.divider()
+            st.subheader("Tüm Hisseler K/Z Durumu")
+            pnl_report = build_pnl_report(positions)
+            if pnl_report.empty:
+                st.info("K/Z raporu için işlem verisi gerekli.")
+            else:
+                total_profit_loss = float(pnl_report["total_pnl"].sum())
+                profitable_count = int((pnl_report["total_pnl"] > 0).sum())
+                losing_count = int((pnl_report["total_pnl"] < 0).sum())
+                open_position_count = int((pnl_report["quantity"] > 0).sum())
+
+                pnl_cols = st.columns(4)
+                pnl_cols[0].metric("Tüm Hisseler Toplam K/Z", money(total_profit_loss))
+                pnl_cols[1].metric("Kârda Olan Hisse", profitable_count)
+                pnl_cols[2].metric("Zararda Olan Hisse", losing_count)
+                pnl_cols[3].metric("Açık Pozisyon", open_position_count)
+
+                pnl_display = add_portfolio_action_comments(pnl_report.copy())
+                pnl_display["quantity"] = pnl_display["quantity"].round(2)
+                pnl_display = format_money_columns(
+                    pnl_display,
+                    [
+                        "realized_pnl",
+                        "unrealized_pnl",
+                        "dividends",
+                        "total_pnl",
+                        "market_value",
+                    ],
+                )
+                pnl_labels = {
+                    **PNL_COLUMN_LABELS,
+                    "action_comment": "Yorum",
+                    "lot_suggestion": "Lot Önerisi",
+                    "action_reason": "Neden",
+                }
+                st.dataframe(
+                    rename_for_display(pnl_display, pnl_labels),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                chart_data = pnl_report.set_index("symbol")["total_pnl"]
+                st.bar_chart(chart_data)
+
+                st.divider()
+                st.subheader("⚖️ Akıllı Portföy Dengeleme")
+                st.caption("Mevcut ağırlık, kâr/zarar ve hisse karakterine göre uygulanabilir AL/SAT/KORU listesi üretir.")
+                if st.button("🚀 Portföyü Optimize Et", use_container_width=True, key="optimize_portfolio_button"):
+                    opt_df, opt_summary = optimize_portfolio_smart(positions)
+                    if opt_df.empty:
+                        st.info("Optimizasyon için açık pozisyon gerekli.")
+                    else:
+                        m1, m2, m3, m4 = st.columns(4)
+                        m1.metric("Risk Durumu", opt_summary.get("risk_level", "-"))
+                        m2.metric("En Güçlü", opt_summary.get("strongest", "-"))
+                        m3.metric("En Riskli", opt_summary.get("riskiest", "-"))
+                        m4.metric("Bugün İşlem?", opt_summary.get("trade_today", "-"))
+                        opt_display = opt_df.copy()
+                        opt_display["Al/Sat Tutarı"] = opt_display["Al/Sat Tutarı"].apply(money)
+                        st.dataframe(opt_display, use_container_width=True, hide_index=True)
+                        opt_excel = dataframe_to_excel_bytes(opt_df, sheet_name="Portfoy Optimizasyon")
+                        opt_csv = dataframe_to_excel_friendly_csv_bytes(opt_df)
+                        c1, c2 = st.columns(2)
+                        c1.download_button("Optimizasyon Excel indir", data=opt_excel, file_name="portfoy_optimizasyon.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                        c2.download_button("Optimizasyon CSV indir", data=opt_csv, file_name="portfoy_optimizasyon.csv", mime="text/csv")
+
+        st.subheader("Satış Durumu")
+        if sales.empty:
+            st.info("Henüz satış işlemi yok.")
+        else:
+            sales_display = sales.copy()
+            sales_display = format_date_columns(sales_display, ["date"])
+            sales_display["pnl_percent"] = sales_display["pnl_percent"].round(2)
+            st.dataframe(
+                rename_for_display(sales_display, SALES_COLUMN_LABELS),
+                use_container_width=True,
+            )
+
+    with tab_transactions:
+        st.subheader("İşlem Geçmişi")
+        if transactions.empty:
+            st.info("Henüz işlem yok.")
+        else:
+            sorted_transactions = sort_transactions_for_display(transactions, newest_first=True)
+            display_transactions = sorted_transactions.copy()
+            display_transactions["type"] = display_transactions["type"].map(TRANSACTION_TYPE_DISPLAY).fillna(
+                display_transactions["type"]
+            )
+            display_transactions = format_date_columns(
+                display_transactions,
+                ["date", "created_at"],
+                include_time_columns=["created_at"],
+            )
+            selectable_transactions = rename_for_display(display_transactions, TRANSACTION_COLUMN_LABELS)
+            selectable_transactions.insert(0, "Seç", False)
+
+            edited_selection = st.data_editor(
+                selectable_transactions,
+                use_container_width=True,
+                hide_index=True,
+                disabled=[column for column in selectable_transactions.columns if column != "Seç"],
+                column_config={"Seç": st.column_config.CheckboxColumn("Seç")},
+                key="transactions_select_editor",
+            )
+            selected_ids = edited_selection.loc[edited_selection["Seç"], "No"].astype(int).tolist()
+            has_selection = bool(selected_ids)
+
+            action_cols = st.columns([1, 1, 3])
+            with action_cols[0]:
+                delete_now = st.button("Seçili İşlem(ler)i Sil", disabled=not has_selection, use_container_width=True)
+            with action_cols[1]:
+                edit_enabled = st.toggle("Seçili İşlemi Düzenle", disabled=(len(selected_ids) != 1))
+            with action_cols[2]:
+                if not has_selection:
+                    st.info("Silmek veya düzeltmek için tablodan bir işlem seç.")
+                elif len(selected_ids) > 1:
+                    st.warning("Birden fazla seçimde silme yapılabilir; düzenleme için tek işlem seç.")
+                else:
+                    st.success(f"Seçili işlem no: {selected_ids[0]}")
+
+            if delete_now:
+                delete_transactions(selected_ids)
+                st.success(f"{len(selected_ids)} işlem silindi.")
+                st.rerun()
+
+            if edit_enabled and len(selected_ids) == 1:
+                selected_id = selected_ids[0]
+                selected_row = transactions.loc[transactions["id"] == selected_id].iloc[0]
+                st.subheader("Seçili İşlemi Düzelt")
+                with st.form("inline_edit_transaction_form"):
+                    edit_left, edit_right = st.columns(2)
+                    with edit_left:
+                        selected_date = pd.to_datetime(selected_row["date"], errors="coerce")
+                        if pd.isna(selected_date):
+                            selected_date = pd.Timestamp.today()
+                        edit_date = st.date_input("Tarih", value=selected_date.date(), key="edit_date_inline")
+                        edit_symbol = st.selectbox(
+                            "Hisse",
+                            BIST_SYMBOLS,
+                            index=BIST_SYMBOLS.index(selected_row["symbol"]) if selected_row["symbol"] in BIST_SYMBOLS else None,
+                            placeholder="Hisse kodu yaz veya seç",
+                            accept_new_options=True,
+                            key="edit_symbol_inline",
+                        )
+                        current_type_label = TRANSACTION_TYPE_DISPLAY.get(selected_row["type"], "Alış")
+                        edit_type_label = st.selectbox(
+                            "İşlem Tipi",
+                            list(TRANSACTION_TYPE_LABELS.keys()),
+                            index=list(TRANSACTION_TYPE_LABELS.keys()).index(current_type_label)
+                            if current_type_label in TRANSACTION_TYPE_LABELS
+                            else 0,
+                            key="edit_type_inline",
+                        )
+                        edit_quantity = st.number_input(
+                            "Adet",
+                            min_value=0,
+                            step=1,
+                            format="%d",
+                            value=int(optional_number(selected_row["quantity"])),
+                            key="edit_quantity_inline",
+                        )
+                        edit_price = st.number_input(
+                            "Fiyat / Temettü Tutarı",
+                            min_value=0.0,
+                            step=0.01,
+                            value=optional_number(selected_row["price"]),
+                            key="edit_price_inline",
+                        )
+                        edit_commission = 0.0 if edit_type_label == "Temettü" else calculate_commission(edit_quantity, edit_price)
+                        st.caption(f"Komisyon otomatik: {money(edit_commission)}")
+                    with edit_right:
+                        current_strategy = optional_text(selected_row["strategy"])
+                        strategy_index = STRATEGY_OPTIONS.index(current_strategy) if current_strategy in STRATEGY_OPTIONS else len(STRATEGY_OPTIONS) - 1
+                        edit_strategy_choice = st.selectbox(
+                            "Strateji",
+                            STRATEGY_OPTIONS,
+                            index=strategy_index,
+                            key="edit_strategy_choice_inline",
+                        )
+                        edit_custom_strategy = ""
+                        if edit_strategy_choice == "Diğer":
+                            edit_custom_strategy = st.text_input(
+                                "Diğer strateji",
+                                value=current_strategy if current_strategy not in STRATEGY_OPTIONS else "",
+                                key="edit_custom_strategy_inline",
+                            )
+                        edit_strategy = edit_custom_strategy.strip() if edit_strategy_choice == "Diğer" else edit_strategy_choice
+                        edit_reason = st.text_input("Gerekçe", value=optional_text(selected_row["reason"]), key="edit_reason_inline")
+                        edit_target_price = st.number_input(
+                            "Hedef Fiyat",
+                            min_value=0.0,
+                            step=0.01,
+                            value=optional_number(selected_row["target_price"]),
+                            key="edit_target_price_inline",
+                        )
+                        edit_notes = st.text_input("Notlar", value=optional_text(selected_row["notes"]), key="edit_notes_inline")
+                        save_edit = st.form_submit_button("Seçili İşlemi Güncelle", use_container_width=True)
+
+                    if save_edit:
+                        symbol_code = normalize_symbol(edit_symbol)
+                        if not symbol_code:
+                            st.error("Hisse kodu zorunlu.")
+                        elif edit_price <= 0:
+                            st.error("Fiyat / temettü tutarı sıfırdan büyük olmalı.")
+                        elif edit_type_label != "Temettü" and edit_quantity <= 0:
+                            st.error("Adet sıfırdan büyük olmalı.")
+                        else:
+                            update_transaction(
+                                int(selected_id),
+                                {
+                                    "date": str(edit_date),
+                                    "symbol": symbol_code,
+                                    "type": TRANSACTION_TYPE_LABELS[edit_type_label],
+                                    "quantity": 1 if edit_type_label == "Temettü" else edit_quantity,
+                                    "price": edit_price,
+                                    "commission": edit_commission,
+                                    "tax": 0.0,
+                                    "currency": "TRY",
+                                    "strategy": edit_strategy.strip() or None,
+                                    "reason": edit_reason.strip() or None,
+                                    "target_price": edit_target_price or None,
+                                    "stop_loss": None,
+                                    "notes": edit_notes.strip() or None,
+                                },
+                            )
+                            st.success("İşlem güncellendi.")
+                            st.rerun()
+
+            st.divider()
+            st.subheader("Son Yapılan İşlemler")
+            latest_transactions = transactions.sort_values("id", ascending=False).head(15).copy()
+            latest_transactions["type"] = latest_transactions["type"].map(TRANSACTION_TYPE_DISPLAY).fillna(latest_transactions["type"])
+            latest_transactions = format_date_columns(latest_transactions, ["date", "created_at"], include_time_columns=["created_at"])
+            latest_display = rename_for_display(latest_transactions, TRANSACTION_COLUMN_LABELS)
+            st.dataframe(
+                latest_display[
+                    [
+                        "No",
+                        "Tarih",
+                        "Hisse",
+                        "İşlem",
+                        "Adet",
+                        "Fiyat",
+                        "Komisyon",
+                        "Strateji",
+                        "Gerekçe",
+                        "Notlar",
+                        "Kayıt Zamanı",
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with tab_prices:
+        st.subheader("Güncel Fiyat")
+        if yf is None:
+            st.warning("İnternetten fiyat çekmek için yfinance paketi kurulmalı.")
+
+        selected_symbol = st.selectbox(
+            "Hisse",
+            BIST_SYMBOLS,
+            index=None,
+            placeholder="Hisse kodu yaz veya seç",
+            accept_new_options=True,
+        )
+        held_symbols = positions.loc[positions["quantity"] > 0, "symbol"].tolist() if not positions.empty else []
+        price_cols = st.columns([1, 1, 2])
+        with price_cols[0]:
+            if st.button("İnternetten Çek"):
+                symbol_code = normalize_symbol(selected_symbol)
+                if not symbol_code:
+                    st.error("Hisse kodu gerekli.")
+                else:
+                    fetched_price = fetch_market_price(symbol_code)
+                    if fetched_price is None:
+                        st.error(f"{symbol_code} için fiyat çekilemedi.")
+                    else:
+                        update_price(symbol_code, fetched_price)
+                        st.success(f"{symbol_code} fiyat kaydedildi: {fetched_price:,.2f}")
+                        st.rerun()
+        with price_cols[1]:
+            if st.button("Tüm Portföyü Çek", disabled=not held_symbols):
+                updated = 0
+                failed: list[str] = []
+                for symbol_code in held_symbols:
+                    fetched_price = fetch_market_price(symbol_code)
+                    if fetched_price is None:
+                        failed.append(symbol_code)
+                    else:
+                        update_price(symbol_code, fetched_price)
+                        updated += 1
+                if updated:
+                    st.success(f"{updated} hissenin fiyatı güncellendi.")
+                if failed:
+                    st.warning("Fiyat çekilemeyenler: " + ", ".join(failed))
+                st.rerun()
+
+        with st.expander("Manuel fiyat gir"):
+            with st.form("price_form", clear_on_submit=True):
+                manual_symbol = st.selectbox(
+                    "Hisse Kodu",
+                    BIST_SYMBOLS,
+                    index=None,
+                    placeholder="Hisse kodu yaz veya seç",
+                    accept_new_options=True,
+                )
+                price = st.number_input("Güncel Fiyat", min_value=0.0, step=0.01)
+                if st.form_submit_button("Fiyatı Kaydet"):
+                    symbol_code = normalize_symbol(manual_symbol)
+                    if symbol_code and price > 0:
+                        update_price(symbol_code, price)
+                        st.success("Fiyat güncellendi.")
+                        st.rerun()
+                    else:
+                        st.error("Hisse kodu ve fiyat gerekli.")
+
+        price_display = format_date_columns(prices, ["updated_at"], include_time_columns=["updated_at"])
+        st.dataframe(rename_for_display(price_display, PRICE_COLUMN_LABELS), use_container_width=True)
+
+    with tab_strategy:
+        st.subheader("Karar Destek Portföy Oluşturucu")
+        st.caption(
+            "Bu bölüm seçtiğin evren, sektör ve stratejiye göre temel/teknik skor, sessiz toplama, 1Y performans ve makro uyumu birleştirir."
+        )
+
+        control_cols = st.columns(4)
+        with control_cols[0]:
+            portfolio_size = st.selectbox("Portföy kaç hisseden oluşsun?", [5, 8, 10, 12, 15], index=2)
+        with control_cols[1]:
+            strategy_type = st.selectbox("Portföy stratejisi", ["Dengeli", "Savunmacı", "Agresif", "Temettü", "Büyüme"])
+        with control_cols[2]:
+            universe = st.selectbox("Hangi evrenden seçim yapılsın?", ["Sadece portföyümdeki açık hisseler", "Mevcut portföyüm", "BIST 30", "BIST 50", "BIST 100", "Borsanın tamamı"])
+        with control_cols[3]:
+            decision_capital = st.number_input(
+                "Kullanılacak portföy tutarı",
+                min_value=0.0,
+                step=1000.0,
+                value=float(total_market_value) if total_market_value else 160000.0,
+            )
+
+        sector_options = ["Tüm sektörler"] + sorted(set(SECTOR_MAP.values()))
+        sector_cols = st.columns([2, 1])
+        with sector_cols[0]:
+            selected_sectors = st.multiselect("Sektör tercihi", sector_options, default=["Tüm sektörler"])
+        with sector_cols[1]:
+            exclude_banks = st.checkbox("Bankaları hariç tut", value=False)
+
+        with st.expander("Makro / Konjonktür Ayarları", expanded=True):
+            macro_cols = st.columns(3)
+            with macro_cols[0]:
+                war_state = st.selectbox("Savaş / jeopolitik durum", ["Savaş riski yok", "1 ay içinde biter", "Orta risk", "Uzun vadeli savaş"], index=2)
+                inflation_state = st.selectbox("Enflasyon görünümü", ["Düşüyor", "Stabil", "Yüksek", "Çok yüksek"], index=2)
+            with macro_cols[1]:
+                fed_state = st.selectbox("FED faiz beklentisi", ["İndirim bekleniyor", "Sabit", "Artış riski var"], index=1)
+                tcmb_state = st.selectbox("TCMB faiz beklentisi", ["İndirim bekleniyor", "Sabit", "Sıkı kalır"], index=2)
+            with macro_cols[2]:
+                oil_state = st.selectbox("Petrol trendi", ["Düşüyor", "Stabil", "Yükseliyor"], index=1)
+                gold_state = st.selectbox("Altın trendi", ["Zayıf", "Yatay", "Güçlü"], index=1)
+
+        macro_state = {
+            "war": war_state,
+            "inflation": inflation_state,
+            "fed": fed_state,
+            "tcmb": tcmb_state,
+            "oil": oil_state,
+            "gold": gold_state,
+        }
+
+        universe_symbols = get_universe_symbols(universe, transactions, positions)
+        if not universe_symbols:
+            st.info("Bu evrende analiz edilecek hisse bulunamadı.")
+        else:
+            st.write(f"Analize alınan hisse sayısı: {len(universe_symbols)}")
+            if st.button("Karar Destek Portföyünü Oluştur", use_container_width=True):
+                with st.spinner("Temel/teknik, sessiz toplama, 1Y performans ve makro uyum hesaplanıyor..."):
+                    decision_df = build_decision_support_portfolio(
+                        universe_symbols,
+                        positions,
+                        int(portfolio_size),
+                        strategy_type,
+                        selected_sectors,
+                        exclude_banks,
+                        macro_state,
+                        float(decision_capital or total_market_value or 0),
+                    )
+
+                if decision_df.empty:
+                    st.warning("Seçimlere göre portföy önerisi oluşturulamadı.")
+                else:
+                    result = decision_df[[
+                        "symbol", "sector", "final_score", "strategy_score", "macro_final_score",
+                        "performance_1y", "trend_comment", "current_quantity", "current_weight",
+                        "target_weight", "action", "lot_change", "trade_value", "decision", "why", "macro_reason"
+                    ]].copy()
+                    result = result.rename(columns={
+                        "symbol": "Hisse",
+                        "sector": "Sektör",
+                        "final_score": "Genel Skor",
+                        "strategy_score": "Strateji Skoru",
+                        "macro_final_score": "Makro Nihai Skor",
+                        "performance_1y": "1Y Performans (%)",
+                        "trend_comment": "Trend Yorumu",
+                        "current_quantity": "Mevcut Lot",
+                        "current_weight": "Mevcut Oran (%)",
+                        "target_weight": "Hedef Oran (%)",
+                        "action": "Aksiyon",
+                        "lot_change": "Al/Sat Lot",
+                        "trade_value": "Al/Sat Tutarı",
+                        "decision": "Genel Karar",
+                        "why": "Neden Listeye Alındı?",
+                        "macro_reason": "Makro Gerekçe",
+                    })
+                    for col in ["Genel Skor", "Strateji Skoru", "Makro Nihai Skor", "1Y Performans (%)", "Mevcut Oran (%)", "Hedef Oran (%)"]:
+                        result[col] = pd.to_numeric(result[col], errors="coerce").round(2)
+                    result["Mevcut Lot"] = pd.to_numeric(result["Mevcut Lot"], errors="coerce").fillna(0).round(0).astype(int)
+                    result["Al/Sat Lot"] = pd.to_numeric(result["Al/Sat Lot"], errors="coerce").fillna(0).round(0).astype(int)
+
+                    display_result = result.copy()
+                    display_result["Al/Sat Tutarı"] = display_result["Al/Sat Tutarı"].apply(money)
+                    st.dataframe(style_performance_table(display_result), use_container_width=True, hide_index=True)
+
+                    excel_bytes = dataframe_to_excel_bytes(result, sheet_name="Karar Destek")
+                    csv_bytes = dataframe_to_excel_friendly_csv_bytes(result)
+                    dl1, dl2 = st.columns(2)
+                    dl1.download_button("Karar Destek Excel indir", data=excel_bytes, file_name="karar_destek_portfoy.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    dl2.download_button("Karar Destek CSV indir", data=csv_bytes, file_name="karar_destek_portfoy.csv", mime="text/csv")
+
+        st.divider()
+        st.subheader("Kural Bazlı Uyarılar")
+        for alert in decision_alerts(positions):
+            st.warning(alert) if "yuksek" in alert.lower() or "altinda" in alert.lower() else st.info(alert)
+
+        st.subheader("Strateji Özeti")
+        report = strategy_report(transactions)
+        if report.empty:
+            st.info("Strateji raporu için işlem verisi gerekli.")
+        else:
+            report_display = format_money_columns(report, ["total_amount", "avg_price"])
+            st.dataframe(rename_for_display(report_display, STRATEGY_COLUMN_LABELS), use_container_width=True)
+
+
+    with tab_analysis:
+        st.subheader("Analiz Merkezi")
+        st.caption(
+            "Bu bölüm yfinance verileriyle temel/teknik göstergeleri özetler. "
+            "Skorlar yatırım tavsiyesi değil, karar destek amaçlı analitik puanlamadır."
+        )
+
+        # Analiz ekranı artık otomatik olarak veritabanında/portföyde yer alan tüm hisseleri seçili getirir.
+        # Böylece sadece açık pozisyonlar değil, geçmişte işlem yapılmış kapalı hisseler de analiz listesine dahil olur.
+        if not transactions.empty:
+            default_symbols = sorted(transactions["symbol"].dropna().astype(str).str.upper().unique().tolist())
+        elif not positions.empty:
+            default_symbols = sorted(positions["symbol"].dropna().astype(str).str.upper().unique().tolist())
+        else:
+            default_symbols = ["BIMAS", "MGROS", "TUPRS", "ASTOR", "FROTO"]
+
+        available_analysis_symbols = sorted(set(BIST_SYMBOLS + default_symbols))
+        selected_analysis_symbols = st.multiselect(
+            "Analiz edilecek hisseler",
+            available_analysis_symbols,
+            default=default_symbols,
+            help="Varsayılan olarak portföy/veritabanındaki tüm hisseler seçili gelir.",
+        )
+
+        custom_symbols_text = st.text_input(
+            "Liste dışı hisse ekle",
+            placeholder="Örn: CVKMD, MIATK, ENERY",
+        )
+        custom_symbols = [
+            normalize_symbol(symbol)
+            for symbol in custom_symbols_text.replace(";", ",").split(",")
+            if normalize_symbol(symbol)
+        ]
+        analysis_symbols = sorted(set(selected_analysis_symbols + custom_symbols))
+
+        analysis_cols = st.columns([1, 1, 2])
+        with analysis_cols[0]:
+            run_analysis = st.button("Analizi Çalıştır", disabled=not analysis_symbols)
+        with analysis_cols[1]:
+            top_n = st.selectbox("Portföy adedi", [5, 10, 15], index=0)
+
+        if not analysis_symbols:
+            st.info("Analiz için en az bir hisse seç.")
+        elif run_analysis:
+            with st.spinner("Hisseler analiz ediliyor..."):
+                analysis_df = build_analysis_table(analysis_symbols)
+
+            if analysis_df.empty:
+                st.error("Analiz verisi oluşturulamadı.")
+            else:
+                display_analysis = analysis_df.copy()
+                numeric_columns = [
+                    "current_price",
+                    "pe_ratio",
+                    "pb_ratio",
+                    "dividend_yield",
+                    "volume_30d_avg",
+                    "performance_1m",
+                    "performance_3m",
+                    "rsi_14",
+                    "ma_50",
+                    "ma_200",
+                    "score",
+                ]
+                for column in numeric_columns:
+                    if column in display_analysis:
+                        display_analysis[column] = pd.to_numeric(display_analysis[column], errors="coerce").round(2)
+
+                display_analysis = display_analysis.sort_values("score", ascending=False)
+                st.dataframe(
+                    display_analysis[
+                        [
+                            "symbol",
+                            "current_price",
+                            "pe_ratio",
+                            "pb_ratio",
+                            "dividend_yield",
+                            "performance_1m",
+                            "performance_3m",
+                            "rsi_14",
+                            "ma_50",
+                            "ma_200",
+                            "trend",
+                            "score",
+                            "rating",
+                            "error",
+                        ]
+                    ].rename(
+                        columns={
+                            "symbol": "Hisse",
+                            "current_price": "Fiyat",
+                            "pe_ratio": "FK",
+                            "pb_ratio": "PD/DD",
+                            "dividend_yield": "Temettü Verimi %",
+                            "performance_1m": "1 Ay %",
+                            "performance_3m": "3 Ay %",
+                            "rsi_14": "RSI 14",
+                            "ma_50": "HO 50",
+                            "ma_200": "HO 200",
+                            "trend": "Trend",
+                            "score": "Skor",
+                            "rating": "Sınıf",
+                            "error": "Uyarı",
+                        }
+                    ),
+                    use_container_width=True,
+                )
+
+                chart_data = display_analysis.set_index("symbol")["score"].dropna()
+                if not chart_data.empty:
+                    st.bar_chart(chart_data)
+
+                suggested = suggested_portfolio_weights(display_analysis).head(top_n)
+                st.subheader("İlk Skora Göre Ağırlık Dağılımı")
+                if suggested.empty:
+                    st.info("İlk skora göre portföy ağırlığı önerilemedi.")
+                else:
+                    suggested_display = suggested.copy()
+                    suggested_display["suggested_weight"] = suggested_display["suggested_weight"].round(2)
+                    st.dataframe(
+                        suggested_display.rename(
+                            columns={
+                                "symbol": "Hisse",
+                                "score": "Skor",
+                                "rating": "Sınıf",
+                                "suggested_weight": "Önerilen Ağırlık %",
+                            }
+                        ),
+                        use_container_width=True,
+                    )
+                    st.bar_chart(suggested.set_index("symbol")["suggested_weight"])
+
+
+                st.divider()
+                st.subheader("Sessiz Toplama Taraması")
+                st.caption(
+                    "Görseldeki patlama öncesi tarama kuralları uygulanır: trend, sıkışma, hacim, RSI ve ortalamaya uzaklık."
+                )
+                silent_df = build_silent_collection_table(analysis_symbols)
+                if silent_df.empty:
+                    st.info("Sessiz toplama taraması için veri oluşmadı.")
+                else:
+                    silent_display = silent_df.copy()
+                    for column in ["price", "rsi_14", "ema_20", "ema_50", "sma_20", "atr_close_percent", "relative_volume", "silent_points"]:
+                        if column in silent_display:
+                            silent_display[column] = pd.to_numeric(silent_display[column], errors="coerce").round(2)
+                    for col in [
+                        "price_gt_ema50",
+                        "ema20_gt_ema50",
+                        "atr_close_ok",
+                        "volume_gt_avg_14",
+                        "rsi_ok",
+                        "price_gt_sma20",
+                        "price_sma20_near",
+                        "relative_volume_ok",
+                    ]:
+                        if col in silent_display:
+                            silent_display[col] = silent_display[col].map({True: "✅", False: "❌"})
+                    st.dataframe(
+                        silent_display[
+                            [
+                                "symbol",
+                                "price",
+                                "rsi_14",
+                                "ema_20",
+                                "ema_50",
+                                "sma_20",
+                                "atr_close_percent",
+                                "relative_volume",
+                                "silent_score",
+                                "silent_result",
+                                "price_gt_ema50",
+                                "ema20_gt_ema50",
+                                "atr_close_ok",
+                                "volume_gt_avg_14",
+                                "rsi_ok",
+                                "price_gt_sma20",
+                                "price_sma20_near",
+                                "relative_volume_ok",
+                                "silent_error",
+                            ]
+                        ].rename(
+                            columns={
+                                "symbol": "Hisse",
+                                "price": "Fiyat",
+                                "rsi_14": "RSI 14",
+                                "ema_20": "EMA 20",
+                                "ema_50": "EMA 50",
+                                "sma_20": "SMA 20",
+                                "atr_close_percent": "ATR/Close %",
+                                "relative_volume": "Relative Volume",
+                                "silent_score": "Sessiz Skor / 8",
+                                "silent_result": "Sonuç",
+                                "price_gt_ema50": "Fiyat > EMA50",
+                                "ema20_gt_ema50": "EMA20 > EMA50",
+                                "atr_close_ok": "ATR/Close < 2.5%",
+                                "volume_gt_avg_14": "Hacim > Ort. x1.4",
+                                "rsi_ok": "RSI 52-68",
+                                "price_gt_sma20": "Fiyat > SMA20",
+                                "price_sma20_near": "Fiyat/SMA20 < 1.05",
+                                "relative_volume_ok": "RVOL > 1.5",
+                                "silent_error": "Uyarı",
+                            }
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                st.divider()
+                st.subheader("Genel Değerlendirme")
+                st.caption(
+                    "Nihai skor = İlk Değerlendirme x 0.6 + Sessiz Toplama x 0.4. "
+                    "KAP/haber etkisi bu sürümde tamamen kaldırılmıştır."
+                )
+                general_df = build_general_evaluation_table(
+                    display_analysis,
+                    silent_df if 'silent_df' in locals() else pd.DataFrame(),
+                )
+                if general_df.empty:
+                    st.info("Genel değerlendirme için analiz verisi gerekli.")
+                else:
+                    general_display = general_df.copy()
+                    for column in ["first_score", "silent_points", "final_score"]:
+                        general_display[column] = pd.to_numeric(general_display[column], errors="coerce").round(1)
+                    st.dataframe(
+                        general_display[
+                            [
+                                "symbol",
+                                "first_score",
+                                "first_rating",
+                                "silent_score",
+                                "silent_result",
+                                "silent_points",
+                                "final_score",
+                                "final_result",
+                            ]
+                        ].rename(
+                            columns={
+                                "symbol": "Hisse",
+                                "first_score": "İlk Skor",
+                                "first_rating": "İlk Sonuç",
+                                "silent_score": "Sessiz Skor / 8",
+                                "silent_result": "Sessiz Sonuç",
+                                "silent_points": "Sessiz Puan",
+                                "final_score": "Genel Skor",
+                                "final_result": "Genel Sonuç",
+                            }
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    st.bar_chart(general_df.set_index("symbol")["final_score"])
+
+                    st.subheader("Genel Skora Göre Portföy Dengeleme")
+                    st.caption(
+                        "İdeal ağırlıklar Genel Skor'a göre hesaplanır. Mevcut ağırlıkla fark +%2 üzerindeyse AL, -%2 altındaysa SAT/AZALT önerisi verir."
+                    )
+                    rebalance_df = build_rebalancing_table(general_df, positions, total_market_value)
+                    if rebalance_df.empty:
+                        st.info("Portföy dengeleme tablosu için veri oluşmadı.")
+                    else:
+                        rebalance_display = rebalance_df.copy()
+                        for column in ["current_weight", "ideal_weight", "weight_diff", "final_score"]:
+                            rebalance_display[column] = pd.to_numeric(rebalance_display[column], errors="coerce").round(2)
+                        rebalance_display["current_quantity"] = pd.to_numeric(rebalance_display["current_quantity"], errors="coerce").fillna(0).round(2)
+                        rebalance_display = format_money_columns(
+                            rebalance_display,
+                            ["current_price", "current_value", "target_value", "trade_value"],
+                        )
+                        st.dataframe(
+                            rebalance_display[
+                                [
+                                    "symbol",
+                                    "final_score",
+                                    "final_result",
+                                    "current_quantity",
+                                    "current_price",
+                                    "current_weight",
+                                    "ideal_weight",
+                                    "weight_diff",
+                                    "current_value",
+                                    "target_value",
+                                    "trade_value",
+                                    "lot_change",
+                                    "action",
+                                ]
+                            ].rename(
+                                columns={
+                                    "symbol": "Hisse",
+                                    "final_score": "Genel Skor",
+                                    "final_result": "Genel Sonuç",
+                                    "current_quantity": "Mevcut Adet",
+                                    "current_price": "Güncel Fiyat",
+                                    "current_weight": "Mevcut Ağırlık %",
+                                    "ideal_weight": "İdeal Ağırlık %",
+                                    "weight_diff": "Fark %",
+                                    "current_value": "Mevcut Değer",
+                                    "target_value": "İdeal Değer",
+                                    "trade_value": "Al/Sat Tutarı",
+                                    "lot_change": "Tahmini Lot",
+                                    "action": "Aksiyon",
+                                }
+                            ),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                        st.bar_chart(rebalance_df.set_index("symbol")["ideal_weight"])
+
+                download_export = display_analysis.copy()
+                csv_bytes = dataframe_to_excel_friendly_csv_bytes(download_export)
+                excel_bytes = dataframe_to_excel_bytes(download_export, sheet_name="Analiz Sonuçları")
+
+                download_cols = st.columns(2)
+                with download_cols[0]:
+                    st.download_button(
+                        "Analiz Sonuçlarını Excel İndir",
+                        data=excel_bytes,
+                        file_name="bist_analiz_sonuclari.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                with download_cols[1]:
+                    st.download_button(
+                        "Analiz Sonuçlarını CSV İndir",
+                        data=csv_bytes,
+                        file_name="bist_analiz_sonuclari.csv",
+                        mime="text/csv; charset=utf-8",
+                    )
+                st.caption("CSV dosyası Türkçe Excel uyumu için ; ayırıcılı ve UTF-8 formatında hazırlanır. En sorunsuz seçenek Excel (.xlsx) indirmedir.")
+
+        st.divider()
+        st.subheader("📌 Otomatik Trade Portföyü")
+        st.caption("Günlük, haftalık, aylık ve yıllık vadeler için en az 5 hisselik öneri portföyleri üretir.")
+        trade_cols = st.columns(3)
+        with trade_cols[0]:
+            trade_universe = st.selectbox(
+                "Trade analiz evreni",
+                ["Sadece portföyümdeki açık hisseler", "Mevcut portföyüm", "BIST 30", "BIST 50", "BIST 100", "Borsanın tamamı"],
+                key="trade_universe_select",
+            )
+        with trade_cols[1]:
+            trade_top_n = st.selectbox("Her portföyde kaç hisse olsun?", [5, 8, 10], index=0, key="trade_top_n")
+        with trade_cols[2]:
+            run_trade_portfolios = st.button("Trade Portföylerini Oluştur", use_container_width=True, key="run_trade_portfolios")
+
+        if run_trade_portfolios:
+            trade_symbols = get_universe_symbols(trade_universe, transactions, positions)
+            if not trade_symbols:
+                st.warning("Seçilen evrende analiz edilecek hisse bulunamadı.")
+            else:
+                with st.spinner("Günlük/haftalık/aylık/yıllık trade portföyleri hazırlanıyor..."):
+                    trade_outputs = build_trade_portfolios(trade_symbols, int(trade_top_n))
+                if not trade_outputs:
+                    st.warning("Trade portföyü oluşturulamadı.")
+                else:
+                    for mode, table in trade_outputs.items():
+                        st.markdown(f"### {mode} Trade Portföyü")
+                        trade_table = table.copy()
+                        for col in ["Skor", "Fiyat", "RSI 14", "1 Ay %", "3 Ay %", "1Y %", "Önerilen Ağırlık (%)"]:
+                            if col in trade_table:
+                                trade_table[col] = pd.to_numeric(trade_table[col], errors="coerce").round(2)
+                        st.dataframe(trade_table, use_container_width=True, hide_index=True)
+                    combined = pd.concat([df.assign(Vade=mode) for mode, df in trade_outputs.items()], ignore_index=True)
+                    trade_excel = dataframe_to_excel_bytes(combined, sheet_name="Trade Portfoyleri")
+                    trade_csv = dataframe_to_excel_friendly_csv_bytes(combined)
+                    d1, d2 = st.columns(2)
+                    d1.download_button("Trade Portföyleri Excel indir", data=trade_excel, file_name="trade_portfoyleri.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    d2.download_button("Trade Portföyleri CSV indir", data=trade_csv, file_name="trade_portfoyleri.csv", mime="text/csv")
+
+        st.info(
+            "Not: FK, PD/DD ve temettü verimi yfinance kaynaklıdır; BIST tarafında eksik gelebilir. "
+            "Eksik veri varsa skor nötr puanla hesaplanır."
+        )
+
+
+
+    with tab_dividends:
+        st.subheader("Temettü Merkezi")
+        dividend_transactions = transactions[transactions["type"] == "dividend"].copy() if not transactions.empty else pd.DataFrame()
+        if dividend_transactions.empty:
+            st.info("Henüz temettü kaydı yok. Sol menüden İşlem Tipi → Temettü seçerek toplam temettü tutarı girebilirsin.")
+        else:
+            dividend_transactions["dividend_amount"] = dividend_transactions["quantity"] * dividend_transactions["price"]
+            dividend_transactions["date"] = pd.to_datetime(dividend_transactions["date"], errors="coerce")
+            total_dividend_amount = float(dividend_transactions["dividend_amount"].sum())
+            dividend_trade_count = len(dividend_transactions)
+            dividend_symbol_count = int(dividend_transactions["symbol"].nunique())
+
+            dividend_metric_cols = st.columns(3)
+            dividend_metric_cols[0].metric("Toplam Temettü", money(total_dividend_amount))
+            dividend_metric_cols[1].metric("Temettü Kaydı", dividend_trade_count)
+            dividend_metric_cols[2].metric("Temettü Gelen Hisse", dividend_symbol_count)
+
+            st.subheader("Hisse Bazlı Temettü")
+            dividend_summary = (
+                dividend_transactions.groupby("symbol", as_index=False)
+                .agg(
+                    total_dividend=("dividend_amount", "sum"),
+                    dividend_count=("id", "count"),
+                    last_dividend_date=("date", "max"),
+                )
+                .sort_values("total_dividend", ascending=False)
+            )
+
+            if not positions.empty:
+                cost_lookup = positions.set_index("symbol")["cost_value"].to_dict() if "cost_value" in positions else {}
+                dividend_summary["cost_value"] = dividend_summary["symbol"].map(cost_lookup).fillna(0)
+                dividend_summary["dividend_yield_on_cost"] = dividend_summary.apply(
+                    lambda row: (row["total_dividend"] / row["cost_value"] * 100) if row["cost_value"] else 0,
+                    axis=1,
+                )
+            else:
+                dividend_summary["cost_value"] = 0
+                dividend_summary["dividend_yield_on_cost"] = 0
+
+            dividend_display = dividend_summary.copy()
+            dividend_display = format_date_columns(dividend_display, ["last_dividend_date"])
+            dividend_display["dividend_yield_on_cost"] = dividend_display["dividend_yield_on_cost"].round(2)
+            dividend_display = format_money_columns(dividend_display, ["total_dividend", "cost_value"])
+            st.dataframe(
+                dividend_display.rename(
+                    columns={
+                        "symbol": "Hisse",
+                        "total_dividend": "Toplam Temettü",
+                        "dividend_count": "Temettü Kaydı",
+                        "last_dividend_date": "Son Temettü Tarihi",
+                        "cost_value": "Açık Pozisyon Maliyeti",
+                        "dividend_yield_on_cost": "Maliyete Göre Temettü Verimi %",
+                    }
+                ),
+                use_container_width=True,
+            )
+            st.bar_chart(dividend_summary.set_index("symbol")["total_dividend"])
+
+            st.subheader("Yıllara Göre Temettü")
+            yearly_dividends = (
+                dividend_transactions.assign(year=dividend_transactions["date"].dt.year)
+                .groupby("year", as_index=False)["dividend_amount"]
+                .sum()
+                .sort_values("year")
+            )
+            yearly_display = format_money_columns(yearly_dividends.copy(), ["dividend_amount"])
+            st.dataframe(
+                yearly_display.rename(columns={"year": "Yıl", "dividend_amount": "Toplam Temettü"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.subheader("Temettü İşlem Detayı")
+            detail = dividend_transactions[["date", "symbol", "price", "notes"]].copy()
+            detail = format_date_columns(detail, ["date"])
+            detail = format_money_columns(detail, ["price"])
+            st.dataframe(
+                detail.rename(columns={"date": "Tarih", "symbol": "Hisse", "price": "Temettü Tutarı", "notes": "Not"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.divider()
+            st.metric("Genel Toplam Temettü", money(total_dividend_amount))
+
+
+    with tab_pnl:
+        st.subheader("K/Z Merkezi")
+        if positions.empty:
+            st.info("Henüz K/Z hesaplanacak işlem yok.")
+        else:
+            pnl_summary = positions.copy()
+            pnl_summary["realized_pnl"] = pd.to_numeric(pnl_summary["realized_pnl"], errors="coerce").fillna(0)
+            pnl_summary["unrealized_pnl"] = pd.to_numeric(pnl_summary["unrealized_pnl"], errors="coerce").fillna(0)
+            pnl_summary["dividends"] = pd.to_numeric(pnl_summary["dividends"], errors="coerce").fillna(0)
+            pnl_summary["total_pnl_without_dividend"] = pnl_summary["realized_pnl"] + pnl_summary["unrealized_pnl"]
+            pnl_summary["total_pnl_with_dividend"] = pnl_summary["total_pnl_without_dividend"] + pnl_summary["dividends"]
+            pnl_summary["pnl_percent_on_cost"] = pnl_summary.apply(
+                lambda row: (row["total_pnl_with_dividend"] / row["cost_value"] * 100) if row.get("cost_value", 0) else 0,
+                axis=1,
+            )
+
+            total_realized_pnl = float(pnl_summary["realized_pnl"].sum())
+            total_unrealized_pnl = float(pnl_summary["unrealized_pnl"].sum())
+            total_dividend_pnl = float(pnl_summary["dividends"].sum())
+            total_pnl_with_dividend = float(pnl_summary["total_pnl_with_dividend"].sum())
+
+            pnl_metric_cols = st.columns(4)
+            pnl_metric_cols[0].metric("Toplam Gerçekleşen K/Z", money(total_realized_pnl))
+            pnl_metric_cols[1].metric("Toplam Gerçekleşmeyen K/Z", money(total_unrealized_pnl))
+            pnl_metric_cols[2].metric("Toplam Temettü", money(total_dividend_pnl))
+            pnl_metric_cols[3].metric("Genel Toplam K/Z", money(total_pnl_with_dividend))
+
+            st.subheader("Hisse Bazlı K/Z Durumu")
+            pnl_summary = pnl_summary.sort_values("total_pnl_with_dividend", ascending=False).reset_index(drop=True)
+            pnl_display = pnl_summary[
+                [
+                    "symbol",
+                    "quantity",
+                    "avg_cost",
+                    "current_price",
+                    "cost_value",
+                    "market_value",
+                    "realized_pnl",
+                    "unrealized_pnl",
+                    "dividends",
+                    "total_pnl_without_dividend",
+                    "total_pnl_with_dividend",
+                    "pnl_percent_on_cost",
+                ]
+            ].copy()
+            pnl_display["pnl_percent_on_cost"] = pnl_display["pnl_percent_on_cost"].round(2)
+            pnl_display = format_money_columns(
+                pnl_display,
+                [
+                    "avg_cost",
+                    "current_price",
+                    "cost_value",
+                    "market_value",
+                    "realized_pnl",
+                    "unrealized_pnl",
+                    "dividends",
+                    "total_pnl_without_dividend",
+                    "total_pnl_with_dividend",
+                ],
+            )
+            st.dataframe(
+                pnl_display.rename(
+                    columns={
+                        "symbol": "Hisse",
+                        "quantity": "Adet",
+                        "avg_cost": "Ortalama Maliyet",
+                        "current_price": "Güncel Fiyat",
+                        "cost_value": "Açık Pozisyon Maliyeti",
+                        "market_value": "Güncel Değer",
+                        "realized_pnl": "Gerçekleşen K/Z",
+                        "unrealized_pnl": "Gerçekleşmeyen K/Z",
+                        "dividends": "Temettü",
+                        "total_pnl_without_dividend": "Toplam K/Z",
+                        "total_pnl_with_dividend": "Toplam K/Z + Temettü",
+                        "pnl_percent_on_cost": "Maliyete Göre K/Z %",
+                    }
+                ),
+                use_container_width=True,
+            )
+
+            st.subheader("En Çok K/Z Sağlayan Hisseler")
+            chart_data = pnl_summary.set_index("symbol")["total_pnl_with_dividend"]
+            st.bar_chart(chart_data)
+
+            st.divider()
+            st.metric("Genel Toplam K/Z + Temettü", money(total_pnl_with_dividend))
+
+
+    with tab_system:
+        st.subheader("Sistem Merkezi")
+        st.caption("Veritabanı sağlık kontrolü ve tek tık yedekleme alanı.")
+
+        db_exists = DB_PATH.exists()
+        db_size_mb = DB_PATH.stat().st_size / (1024 * 1024) if db_exists else 0
+        total_transaction_count = len(transactions) if not transactions.empty else 0
+        total_symbol_count = int(transactions["symbol"].nunique()) if not transactions.empty else 0
+        dividend_count = int((transactions["type"] == "dividend").sum()) if not transactions.empty else 0
+        last_transaction_date = (
+            pd.to_datetime(transactions["date"], errors="coerce").max().date().isoformat()
+            if not transactions.empty and pd.to_datetime(transactions["date"], errors="coerce").notna().any()
+            else "Yok"
+        )
+
+        system_cols = st.columns(5)
+        system_cols[0].metric("Veritabanı", "Aktif" if db_exists else "Yok")
+        system_cols[1].metric("DB Boyutu", f"{db_size_mb:.2f} MB")
+        system_cols[2].metric("Toplam İşlem", total_transaction_count)
+        system_cols[3].metric("Toplam Hisse", total_symbol_count)
+        system_cols[4].metric("Temettü Kaydı", dividend_count)
+        st.caption(f"Son işlem tarihi: {last_transaction_date}")
+
+        st.divider()
+        st.subheader("Veritabanı Yedekleme")
+        st.write("Yedekler proje klasörü içindeki `data/backups` klasörüne kaydedilir.")
+
+        if not db_exists:
+            st.error("Veritabanı bulunamadı. Önce işlem kaydı oluşturulmalı.")
+        else:
+            if st.button("Şimdi Yedekle"):
+                backup_dir = DATA_DIR / "backups"
+                backup_dir.mkdir(exist_ok=True)
+                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                backup_file = backup_dir / f"portfolio_backup_{timestamp}.db"
+                shutil.copy2(DB_PATH, backup_file)
+                st.success(f"Yedek oluşturuldu: {backup_file.name}")
+
+            backup_dir = DATA_DIR / "backups"
+            if backup_dir.exists():
+                backups = sorted(backup_dir.glob("portfolio_backup_*.db"), key=lambda item: item.stat().st_mtime, reverse=True)
+            else:
+                backups = []
+
+            if backups:
+                st.subheader("Son Yedekler")
+                backup_rows = []
+                for backup in backups[:10]:
+                    backup_rows.append(
+                        {
+                            "Dosya": backup.name,
+                            "Boyut MB": round(backup.stat().st_size / (1024 * 1024), 2),
+                            "Tarih": datetime.fromtimestamp(backup.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                        }
+                    )
+                st.dataframe(pd.DataFrame(backup_rows), use_container_width=True, hide_index=True)
+            else:
+                st.info("Henüz yedek bulunmuyor.")
+
+
+    with tab_import:
+        st.subheader("Excel İçe Aktar")
+        excel_file = st.file_uploader("Excel dosyası seç", type=["xlsx", "xls", "xlsm"], key="excel_import")
+        if excel_file:
+            try:
+                excel_file.seek(0)
+                excel_inspection = inspect_excel_workbook(excel_file)
+                excel_file.seek(0)
+                excel_preview = normalize_excel_workbook(excel_file)
+            except Exception as exc:
+                st.error(f"Excel dosyası okunamadı: {exc}")
+                st.stop()
+
+            with st.expander("Excel kolon eşleştirme kontrolü", expanded=True):
+                st.dataframe(excel_inspection, use_container_width=True)
+
+            if excel_preview.empty:
+                st.error("Aktarılabilecek işlem bulunamadı. Sekmelerde TARİH, İŞLEM, ADET ve FİYAT kolonları olmalı.")
+            else:
+                sheet_summary = (
+                    excel_preview.groupby("source_sheet")
+                    .size()
+                    .reset_index(name="İşlem Sayısı")
+                    .rename(columns={"source_sheet": "Sekme / Hisse"})
+                )
+                st.write("Sekme özeti")
+                st.dataframe(sheet_summary, use_container_width=True)
+
+                st.write("Aktarım önizleme")
+                preview_display = excel_preview.copy()
+                preview_display = format_date_columns(preview_display, ["date"])
+                preview_display["type"] = preview_display["type"].map(TRANSACTION_TYPE_DISPLAY).fillna(
+                    preview_display["type"]
+                )
+                st.dataframe(
+                    rename_for_display(preview_display.head(50), TRANSACTION_COLUMN_LABELS),
+                    use_container_width=True,
+                )
+
+                confirm_excel_import = st.checkbox("Önizleme doğru, içe aktarmayı onaylıyorum")
+                if st.button("Excel İşlemlerini İçe Aktar", disabled=not confirm_excel_import):
+                    count = import_normalized_transactions(excel_preview)
+                    st.success(f"{count} işlem içe aktarıldı.")
+                    st.rerun()
+
+        st.divider()
+        st.subheader("CSV İçe Aktar")
+        uploaded = st.file_uploader("CSV dosyası seç", type=["csv"])
+        if uploaded:
+            df = pd.read_csv(uploaded)
+            st.write("Önizleme")
+            st.dataframe(df.head(20), use_container_width=True)
+            if st.button("İçe Aktar"):
+                count = import_transactions(df)
+                st.success(f"{count} işlem içe aktarıldı.")
+                st.rerun()
+
+
+if __name__ == "__main__":
+    main()
