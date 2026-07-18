@@ -1,8 +1,11 @@
 import streamlit as st
 from datetime import datetime
 from database.database import create_tables
-
-
+from modules.dashboard.market_score import show_market_score
+from modules.dashboard.hero import show_hero
+from modules.dashboard.market_summary import show_market_summary
+from modules.dashboard.market_score import show_market_score
+from modules.dashboard.ai_report import show_ai_report
 # Veritabanını hazırla
 create_tables()
 
