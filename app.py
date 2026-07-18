@@ -21,6 +21,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+show_hero()
+
+show_market_summary()
+
+show_ai_report()
 
 # --------------------------------------------------
 # CSS
