@@ -4,7 +4,6 @@ from database.database import create_tables
 
 from modules.dashboard.hero import show_hero
 from modules.dashboard.market_summary import show_market_summary
-
 from modules.dashboard.ai_report import show_ai_report
 # Veritabanını hazırla
 create_tables()
@@ -22,10 +21,6 @@ st.set_page_config(
 )
 
 show_hero()
-
-show_market_summary()
-
-show_ai_report()
 
 # --------------------------------------------------
 # CSS
