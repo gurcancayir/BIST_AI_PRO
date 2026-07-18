@@ -75,7 +75,7 @@ with st.sidebar:
 
     # Şu an aktif olan tek modül
     st.page_link(
-        "pages/01_portfoy.py",
+        "pages/01_Portfoy.py",
         label="💼 Portföy Yönetimi"
     )
 
