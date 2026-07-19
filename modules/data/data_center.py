@@ -1,7 +1,9 @@
 import streamlit as st
+
 from modules.data.yahoo_data import get_yahoo_price
 from modules.data.alpha_data import get_alpha_price
 from modules.data.validator import compare_sources
+
 
 
 def show_data_center():
@@ -12,30 +14,19 @@ def show_data_center():
     col1, col2 = st.columns(2)
 
 
-
     with col1:
 
         st.markdown("### 📡 Hisse Veri Kaynağı")
 
-
         source = st.selectbox(
-
             "Aktif Kaynak Seç",
-
             [
-
                 "Yahoo Finance",
-
                 "Alpha Vantage",
-
                 "Twelve Data",
-
                 "Matriks API",
-
                 "Foreks API"
-
             ]
-
         )
 
 
@@ -49,65 +40,77 @@ def show_data_center():
 
         st.markdown("### 🛡 Veri Güven Kontrolü")
 
+        st.info(
+            "Canlı kaynak doğrulama aktif"
+        )
 
-           
+
+
     st.divider()
+
 
     st.markdown("### 🔍 Canlı Veri Doğrulama")
 
 
-symbol = st.selectbox(
-    "Kontrol Edilecek Hisse",
-    [
-        "BIMAS",
-        "TUPRS",
-        "AKSEN",
-        "MGROS",
-        "THYAO"
-    ]
-)
+    symbol = st.selectbox(
+        "Kontrol Edilecek Hisse",
+        [
+            "BIMAS",
+            "TUPRS",
+            "AKSEN",
+            "MGROS",
+            "THYAO"
+        ]
+    )
 
 
-yahoo_price = get_yahoo_price(symbol)
+    yahoo_price = get_yahoo_price(symbol)
 
-alpha_price = get_alpha_price(symbol)
-
-
-result = compare_sources(
-    symbol,
-    yahoo_price,
-    alpha_price
-)
+    alpha_price = get_alpha_price(symbol)
 
 
-col_a, col_b, col_c = st.columns(3)
+
+    result = compare_sources(
+        symbol,
+        yahoo_price,
+        alpha_price
+    )
 
 
-col_a.metric(
-    "Yahoo Finance",
-    str(result["Yahoo"])
-)
+
+    c1, c2, c3 = st.columns(3)
 
 
-col_b.metric(
-    "Alpha Vantage",
-    str(result["Alpha"])
-)
+    c1.metric(
+        "Yahoo Finance",
+        str(result["Yahoo"])
+    )
 
 
-col_c.metric(
-    "Veri Güveni",
-    f'{result["Güven"]}/100'
-)
+    c2.metric(
+        "Alpha Vantage",
+        str(result["Alpha"])
+    )
 
 
-st.write(
-    f"""
-    Durum: {result["Durum"]}
+    c3.metric(
+        "Veri Güveni",
+        f'{result["Güven"]}/100'
+    )
 
-    Fiyat farkı: %{result["Fark %"]}
-    """
-)   
+
+    st.write(
+        f"""
+        Durum: {result["Durum"]}
+
+        Fiyat farkı: %{result["Fark %"]}
+        """
+    )
+
+
+
+    st.divider()
+
 
     st.markdown("### 🔄 Kaynak Durumu")
 
@@ -116,7 +119,7 @@ st.write(
 
         ["Yahoo Finance","🟢 Aktif"],
 
-        ["Alpha Vantage","🟡 Hazır"],
+        ["Alpha Vantage","🟡 Test"],
 
         ["Twelve Data","🟡 Hazır"],
 
@@ -128,14 +131,3 @@ st.write(
 
 
     st.table(data)
-
-
-
-    st.info(
-        """
-        AI analizleri için veri doğrulama sistemi hazırlanıyor.
-
-        Birden fazla kaynaktan gelen veriler karşılaştırılarak
-        güven skoru oluşturulacaktır.
-        """
-    )
