@@ -1,16 +1,23 @@
 import streamlit as st
-from datetime import datetime
 from database.database import create_tables
 
 from modules.dashboard.hero import show_hero
 from modules.dashboard.market_summary import show_market_summary
+from modules.dashboard.market_score import show_market_score
+from modules.dashboard.sector_strength import show_sector_strength
+from modules.dashboard.economic_calendar import show_economic_calendar
 from modules.dashboard.ai_report import show_ai_report
-# Veritabanını hazırla
+
+
+# --------------------------------------------------
+# VERİTABANI
+# --------------------------------------------------
+
 create_tables()
 
 
 # --------------------------------------------------
-# SAYFA AYARLARI
+# SAYFA
 # --------------------------------------------------
 
 st.set_page_config(
@@ -20,7 +27,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-show_hero()
 
 # --------------------------------------------------
 # CSS
@@ -29,28 +35,20 @@ show_hero()
 st.markdown("""
 <style>
 
-.main{
-    background:#f5f7fb;
-}
-
 .block-container{
     padding-top:1rem;
+    padding-bottom:1rem;
 }
 
-.bigtitle{
-    font-size:42px;
-    font-weight:bold;
-    color:#0E4D92;
-}
-
-.subtitle{
-    color:gray;
-    font-size:18px;
+div[data-testid="stMetric"]{
+    border:1px solid #E5E7EB;
+    border-radius:12px;
+    padding:12px;
+    background:white;
 }
 
 </style>
 """, unsafe_allow_html=True)
-
 
 
 # --------------------------------------------------
@@ -61,196 +59,54 @@ with st.sidebar:
 
     st.title("📈 BIST AI PRO")
 
-    st.success(
-        "Yapay Zeka Destekli BIST Analiz Platformu"
-    )
+    st.success("Yapay Zeka Destekli BIST Analiz Platformu")
 
     st.divider()
 
-    st.header("Sayfalar")
-
+    st.subheader("Menü")
 
     st.page_link(
         "app.py",
-        label="🏠 Ana Sayfa"
+        label="🏠 Dashboard"
     )
 
-
-    # Şu an aktif olan tek modül
     st.page_link(
         "pages/01_Portfoy.py",
-        label="💼 Portföy Yönetimi"
+        label="💼 Portföy"
     )
-
 
     st.divider()
 
-    st.info("Versiyon 0.1")
+    st.caption("Sürüm 0.2")
 
 
+# --------------------------------------------------
+# DASHBOARD
+# --------------------------------------------------
+
+show_hero()
+
+show_market_summary()
 
 
+left, right = st.columns(2)
+
+with left:
+    show_market_score()
+
+with right:
+    show_ai_report()
+
+
+left, right = st.columns(2)
+
+with left:
+    show_sector_strength()
+
+with right:
+    show_economic_calendar()
 
 
 st.divider()
 
-
-
-# --------------------------------------------------
-# PİYASA ÖZETİ
-# --------------------------------------------------
-
-st.subheader("📊 Piyasa Özeti")
-
-
-c1,c2,c3,c4,c5,c6 = st.columns(6)
-
-
-c1.metric(
-    "BIST100",
-    "10.521",
-    "+1.24%"
-)
-
-c2.metric(
-    "USD",
-    "40.18",
-    "+0.25%"
-)
-
-c3.metric(
-    "EURO",
-    "47.04",
-    "+0.15%"
-)
-
-c4.metric(
-    "GRAM ALTIN",
-    "4.365",
-    "+0.82%"
-)
-
-c5.metric(
-    "ONS",
-    "3335",
-    "+0.52%"
-)
-
-c6.metric(
-    "PETROL",
-    "69.80",
-    "-0.42%"
-)
-
-
-st.divider()
-
-
-
-# --------------------------------------------------
-# MAKRO GÖRÜNÜM
-# --------------------------------------------------
-
-sol,sag = st.columns(2)
-
-
-with sol:
-
-    st.subheader("🌍 Makro Görünüm")
-
-    st.write("FED Beklentisi : 🟢 Güvercin")
-    st.write("TCMB : 🟡 Bekle-Gör")
-    st.write("Enflasyon : 🔴 Yüksek")
-    st.write("Jeopolitik Risk : 🟠 Orta")
-    st.write("Altın Gücü : 🟢 Güçlü")
-    st.write("Petrol : 🟡 Dengeli")
-
-
-
-with sag:
-
-    st.subheader("🤖 AI Yorumu")
-
-    st.success(
-"""
-• Endeks ana trendi pozitif.
-
-• Savunma ve perakende güçlü.
-
-• Enerji sektörü takip edilmeli.
-
-• Risk seviyesi orta.
-
-• Portföy çeşitlendirmesi önemli.
-"""
-    )
-
-
-st.divider()
-
-
-
-# --------------------------------------------------
-# TEKNİK DURUM
-# --------------------------------------------------
-
-st.subheader("📈 Endeks Teknik Durumu")
-
-
-a,b,c,d,e = st.columns(5)
-
-
-a.metric("Trend","Yukarı")
-b.metric("RSI","61")
-c.metric("MACD","AL")
-d.metric("ADX","29")
-e.metric("Puan","84/100")
-
-
-st.progress(84)
-
-
-
-st.divider()
-
-
-
-# --------------------------------------------------
-# İZLEME LİSTESİ
-# --------------------------------------------------
-
-st.subheader("👀 İzleme Listesi")
-
-
-watchlist = [
-    "ASELS",
-    "THYAO",
-    "BIMAS",
-    "AKSEN",
-    "FROTO",
-    "CCOLA",
-    "MGROS",
-    "TUPRS",
-    "ENKAI",
-    "ASTOR"
-]
-
-
-cols = st.columns(5)
-
-
-for i,hisse in enumerate(watchlist):
-
-    cols[i%5].button(
-        hisse,
-        use_container_width=True
-    )
-
-
-
-st.divider()
-
-
-st.caption(
-"© 2026 BIST AI PRO"
-)
+st.caption("© 2026 BIST AI PRO")

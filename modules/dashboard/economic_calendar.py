@@ -6,19 +6,46 @@ def show_economic_calendar():
     st.subheader("📅 Ekonomik Takvim")
 
     events = [
-        ("21 Tem", "🇹🇷 TCMB Faiz Kararı", "🔴 Yüksek"),
-        ("23 Tem", "🇺🇸 FED Toplantısı", "🔴 Çok Yüksek"),
-        ("24 Tem", "🇹🇷 TÜFE Verisi", "🟠 Orta"),
-        ("25 Tem", "🇺🇸 Tarım Dışı İstihdam", "🔴 Çok Yüksek"),
-        ("28 Tem", "🇪🇺 ECB Faiz Kararı", "🟠 Orta"),
+        {
+            "time": "10:00",
+            "country": "🇹🇷",
+            "event": "TCMB Faiz Kararı",
+            "impact": "🔴 Yüksek",
+            "status": "Bekleniyor"
+        },
+        {
+            "time": "15:30",
+            "country": "🇺🇸",
+            "event": "Tarım Dışı İstihdam",
+            "impact": "🔴 Yüksek",
+            "status": "Bekleniyor"
+        },
+        {
+            "time": "16:45",
+            "country": "🇺🇸",
+            "event": "PMI Verisi",
+            "impact": "🟠 Orta",
+            "status": "Bekleniyor"
+        },
+        {
+            "time": "20:00",
+            "country": "🇺🇸",
+            "event": "FED Toplantı Tutanakları",
+            "impact": "🔴 Yüksek",
+            "status": "Bekleniyor"
+        },
     ]
 
-    for date, event, impact in events:
+    for event in events:
+        with st.container(border=True):
+            col1, col2 = st.columns([1, 5])
 
-        col1, col2, col3 = st.columns([1, 5, 2])
+            with col1:
+                st.markdown(f"### {event['time']}")
+                st.caption(event["country"])
 
-        col1.write(f"**{date}**")
-        col2.write(event)
-        col3.write(impact)
-
-    st.divider()
+            with col2:
+                st.write(f"**{event['event']}**")
+                st.caption(
+                    f"Etki: {event['impact']} | Durum: {event['status']}"
+                )
