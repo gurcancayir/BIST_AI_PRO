@@ -1,14 +1,14 @@
-import plotly.express as px
-import yfinance as yf
 import streamlit as st
 import sqlite3
 import pandas as pd
+import yfinance as yf
+import plotly.express as px
 from datetime import date
 
 
 st.set_page_config(
-    page_title="Portföy Takip",
-    page_icon="📊",
+    page_title="BIST AI PRO - Portföy",
+    page_icon="💼",
     layout="wide"
 )
 
@@ -17,34 +17,79 @@ DB_PATH = "borsa.db"
 
 
 def get_connection():
+
     return sqlite3.connect(DB_PATH)
 
 
-# ===============================
+
+# --------------------------------------------------
+# CSS
+# --------------------------------------------------
+
+st.markdown(
+"""
+<style>
+
+.block-container{
+    padding-top:2rem;
+}
+
+
+.portfolio-card{
+
+    background:white;
+    padding:18px;
+    border-radius:12px;
+    border:1px solid #e5e7eb;
+
+}
+
+
+</style>
+""",
+unsafe_allow_html=True
+)
+
+
+
+# --------------------------------------------------
 # BAŞLIK
-# ===============================
+# --------------------------------------------------
 
-st.title("📊 Portföy Takip Merkezi")
+st.title("💼 Portföy Yönetim Merkezi")
+
+st.caption(
+    "BIST AI PRO - Akıllı Portföy Takip ve Performans Analizi"
+)
 
 
-# ===============================
+
+st.divider()
+
+
+
+# --------------------------------------------------
 # PORTFÖY EKLEME
-# ===============================
+# --------------------------------------------------
 
 st.subheader("➕ Yeni Hisse Ekle")
 
 
-col1, col2, col3, col4 = st.columns(4)
+col1,col2,col3,col4 = st.columns(4)
+
 
 
 with col1:
+
     symbol = st.text_input(
         "Hisse Kodu",
         placeholder="Örn: BIMAS"
     )
 
 
+
 with col2:
+
     lot = st.number_input(
         "Lot",
         min_value=1,
@@ -52,7 +97,9 @@ with col2:
     )
 
 
+
 with col3:
+
     cost = st.number_input(
         "Alış Maliyeti",
         min_value=0.0,
@@ -60,24 +107,32 @@ with col3:
     )
 
 
+
 with col4:
+
     buy_date = st.date_input(
         "Alış Tarihi",
         value=date.today()
     )
 
 
+
+
 if st.button("💾 Portföye Ekle"):
+
 
     if symbol:
 
+
         conn = get_connection()
+
         cursor = conn.cursor()
+
 
 
         cursor.execute(
             """
-            SELECT lot, cost
+            SELECT lot,cost
             FROM portfolio
             WHERE symbol=?
             """,
@@ -88,9 +143,12 @@ if st.button("💾 Portföye Ekle"):
         mevcut = cursor.fetchone()
 
 
+
         if mevcut:
 
+
             eski_lot = mevcut[0]
+
             eski_cost = mevcut[1]
 
 
@@ -104,13 +162,17 @@ if st.button("💾 Portföye Ekle"):
             ) / toplam_lot
 
 
+
             cursor.execute(
                 """
                 UPDATE portfolio
+
                 SET lot=?,
                     cost=?,
                     buy_date=?
+
                 WHERE symbol=?
+
                 """,
                 (
                     toplam_lot,
@@ -123,6 +185,7 @@ if st.button("💾 Portföye Ekle"):
 
         else:
 
+
             cursor.execute(
                 """
                 INSERT INTO portfolio
@@ -132,7 +195,9 @@ if st.button("💾 Portföye Ekle"):
                 cost,
                 buy_date
                 )
+
                 VALUES (?,?,?,?)
+
                 """,
                 (
                     symbol.upper(),
@@ -142,37 +207,19 @@ if st.button("💾 Portföye Ekle"):
                 )
             )
 
-            cursor.execute(
-            """
-            INSERT INTO transactions
-            (
-            symbol,
-            action,
-            lot,
-            price,
-            date,
-            cost
-            )
-            VALUES (?,?,?,?,?,?)
-            """,
-            (
-                symbol.upper(),
-                "ALIS",
-                lot,
-                cost,
-                str(buy_date),
-                cost
-            )
-        )
+
+
         conn.commit()
+
         conn.close()
 
 
         st.success(
-            f"{symbol.upper()} portföye eklendi."
+            f"{symbol.upper()} eklendi"
         )
 
         st.rerun()
+
 
 
     else:
@@ -180,12 +227,9 @@ if st.button("💾 Portföye Ekle"):
         st.warning(
             "Hisse kodu giriniz."
         )
-
-
-
-# ===============================
+# --------------------------------------------------
 # PORTFÖY GÖSTERİM
-# ===============================
+# --------------------------------------------------
 
 st.divider()
 
@@ -230,7 +274,6 @@ else:
                 hisse + ".IS"
             )
 
-
             fiyat = veri.history(
                 period="1d"
             )["Close"].iloc[-1]
@@ -247,125 +290,227 @@ else:
 
 
 
-    df["guncel_fiyat"] = fiyatlar
+    df["Güncel Fiyat"] = fiyatlar
 
 
 
-    df["maliyet_tl"] = (
-        df["lot"]
-        *
+    df["Maliyet"] = (
+        df["lot"] *
         df["cost"]
     )
 
 
-    df["guncel_deger"] = (
-        df["lot"]
-        *
-        df["guncel_fiyat"]
+    df["Güncel Değer"] = (
+        df["lot"] *
+        df["Güncel Fiyat"]
     )
 
 
-    df["kar_zarar"] = (
-        df["guncel_deger"]
+    df["Kar/Zarar"] = (
+        df["Güncel Değer"]
         -
-        df["maliyet_tl"]
+        df["Maliyet"]
     )
 
 
-    df["getiri_%"] = (
-        df["kar_zarar"]
+    df["Getiri %"] = (
+        df["Kar/Zarar"]
         /
-        df["maliyet_tl"]
+        df["Maliyet"]
         *
         100
     ).round(2)
 
 
 
-    gosterilecek = df[
+    tablo = df[
         [
             "symbol",
             "lot",
             "cost",
-            "guncel_fiyat",
-            "maliyet_tl",
-            "guncel_deger",
-            "kar_zarar",
-            "getiri_%"
+            "Güncel Fiyat",
+            "Maliyet",
+            "Güncel Değer",
+            "Kar/Zarar",
+            "Getiri %"
         ]
     ]
 
 
 
+    tablo.columns = [
+
+        "Hisse",
+        "Lot",
+        "Maliyet",
+        "Fiyat",
+        "Maliyet TL",
+        "Değer TL",
+        "K/Z",
+        "Getiri %"
+
+    ]
+
+
+
     st.dataframe(
-        gosterilecek.style.format(
+
+        tablo.style.format(
+
             {
-                "cost":"{:.2f}",
-                "guncel_fiyat":"{:.2f}",
-                "maliyet_tl":"{:,.2f}",
-                "guncel_deger":"{:,.2f}",
-                "kar_zarar":"{:,.2f}",
-                "getiri_%":"{:.2f}%"
+
+            "Maliyet":"{:.2f}",
+            "Fiyat":"{:.2f}",
+            "Maliyet TL":"{:,.2f}",
+            "Değer TL":"{:,.2f}",
+            "K/Z":"{:,.2f}",
+            "Getiri %":"{:.2f}"
+
             }
+
         ),
+
         use_container_width=True
+
     )
-
-
-
-    # ===============================
-    # GRAFİK
-    # ===============================
-
-    st.subheader("📊 Portföy Dağılımı")
-
-
-    fig = px.pie(
-        df,
-        values="guncel_deger",
-        names="symbol",
-        title="Hisse Ağırlıkları"
-    )
-
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-
-
-    # ===============================
-    # ÖZET
-    # ===============================
-
-    toplam_maliyet = df["maliyet_tl"].sum()
-
-    toplam_deger = df["guncel_deger"].sum()
-
-    toplam_kar = toplam_deger - toplam_maliyet
 
 
 
     st.divider()
 
 
-    c1, c2, c3 = st.columns(3)
+
+    # --------------------------------------------------
+    # ÖZET KARTLARI
+    # --------------------------------------------------
+
+
+    toplam_maliyet = df["Maliyet"].sum()
+
+    toplam_deger = df["Güncel Değer"].sum()
+
+    toplam_kar = (
+        toplam_deger -
+        toplam_maliyet
+    )
+
+
+    getiri = (
+        toplam_kar /
+        toplam_maliyet *
+        100
+    )
+
+
+
+    c1,c2,c3,c4 = st.columns(4)
+
 
 
     c1.metric(
-        "Toplam Maliyet",
-        f"{toplam_maliyet:,.2f} TL"
+        "💰 Toplam Maliyet",
+        f"{toplam_maliyet:,.0f} TL"
     )
 
 
     c2.metric(
-        "Güncel Değer",
-        f"{toplam_deger:,.2f} TL"
+        "📈 Güncel Değer",
+        f"{toplam_deger:,.0f} TL"
     )
 
 
     c3.metric(
-        "Toplam K/Z",
-        f"{toplam_kar:,.2f} TL"
+        "🟢 Toplam K/Z",
+        f"{toplam_kar:,.0f} TL"
     )
+
+
+    c4.metric(
+        "📊 Getiri",
+        f"%{getiri:.2f}"
+    )
+
+
+
+    st.divider()
+
+
+
+    # --------------------------------------------------
+    # PORTFÖY DAĞILIMI
+    # --------------------------------------------------
+
+
+    st.subheader("📊 Portföy Dağılımı")
+
+
+    fig = px.pie(
+
+        df,
+
+        values="Güncel Değer",
+
+        names="symbol",
+
+        hole=0.45,
+
+        title="Hisse Ağırlıkları"
+
+    )
+
+
+    st.plotly_chart(
+
+        fig,
+
+        use_container_width=True
+
+    )
+
+
+
+    st.divider()
+
+
+
+    # --------------------------------------------------
+    # AI YORUM
+    # --------------------------------------------------
+
+
+    st.subheader("🤖 AI Portföy Yorumu")
+
+
+    if getiri > 10:
+
+        st.success(
+            """
+            🟢 Portföy performansı güçlü.
+
+            Kâr alan hisselerde kademeli koruma
+            stratejisi değerlendirilebilir.
+            """
+        )
+
+
+    elif getiri > 0:
+
+        st.info(
+            """
+            🟡 Portföy pozitif bölgede.
+
+            Sektör dağılımı ve risk dengesi takip edilmeli.
+            """
+        )
+
+
+    else:
+
+        st.warning(
+            """
+            🔴 Portföy negatif bölgede.
+
+            Destek seviyeleri ve pozisyon ağırlıkları
+            yeniden değerlendirilmeli.
+            """
+        )
