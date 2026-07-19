@@ -4,6 +4,7 @@ import pandas as pd
 import yfinance as yf
 import plotly.express as px
 from datetime import date
+from modules.portfolio.stock_ai_signal import show_stock_ai_signal
 
 
 st.set_page_config(
@@ -477,7 +478,8 @@ else:
     # AI YORUM
     # --------------------------------------------------
 
-
+    show_stock_ai_signal(df)
+    
     st.subheader("🤖 AI Portföy Yorumu")
 
 
