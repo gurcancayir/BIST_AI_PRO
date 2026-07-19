@@ -28,18 +28,18 @@ def show_market_score():
 
     with col2:
 
-    st.markdown("### 📊 Skor Dağılımı")
+        st.markdown("### 📊 Skor Dağılımı")
 
-    data = [
-        ["📈 Trend", "18/20"],
-        ["📊 Momentum", "9/10"],
-        ["💰 Hacim", "9/10"],
-        ["🌍 Makro", "12/15"],
-        ["🏦 Bankalar", "8/10"],
-        ["🌎 Jeopolitik", "5/10"],
-        ["🤖 AI Güveni", "%92"],
-    ]
+        data = [
+            ["📈 Trend", "18/20"],
+            ["📊 Momentum", "9/10"],
+            ["💰 Hacim", "9/10"],
+            ["🌍 Makro", "12/15"],
+            ["🏦 Bankalar", "8/10"],
+            ["🌎 Jeopolitik", "5/10"],
+            ["🤖 AI Güveni", "%92"],
+        ]
 
-    st.table(data)
+        st.table(data)
 
     st.divider()
