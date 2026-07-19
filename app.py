@@ -10,6 +10,7 @@ from modules.dashboard.ai_report import show_ai_report
 from modules.dashboard.sector_strength import show_sector_strength
 from modules.dashboard.economic_calendar import show_economic_calendar
 from modules.dashboard.top_stocks import show_top_stocks
+from modules.data.data_center import show_data_center
 
 
 # --------------------------------------------------
@@ -196,7 +197,24 @@ with col2:
 
 
 st.divider()
+st.divider()
 
+
+# --------------------------------------------------
+# VERİ MERKEZİ
+# --------------------------------------------------
+
+with st.container(border=True):
+
+    show_data_center()
+
+
+
+st.divider()
+
+
+
+# -------------------
 
 
 # --------------------------------------------------
