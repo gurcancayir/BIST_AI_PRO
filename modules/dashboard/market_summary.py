@@ -9,10 +9,13 @@ def show_market_summary():
 
     markets = [
 
-    ("💵 USD/TL", macro["usd"], ""),
-    ("🌕 Ons Altın", macro["gold"], ""),
-    ("🥈 Gümüş", macro["silver"], ""),
-    ("🛢 Brent", macro["brent"], ""),
+    ("💵 USD/TL", macro["usd"], f'{macro["usd_change"]}%'),
+
+    ("🌕 Ons Altın", macro["gold"], f'{macro["gold_change"]}%'),
+
+    ("🥈 Gümüş", macro["silver"], f'{macro["silver_change"]}%'),
+
+    ("🛢 Brent", macro["brent"], f'{macro["brent_change"]}%'),
 
 ]
 
