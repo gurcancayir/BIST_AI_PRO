@@ -107,7 +107,7 @@ st.write(
 
     Fiyat farkı: %{result["Fark %"]}
     """
-)
+)   
 
     st.markdown("### 🔄 Kaynak Durumu")
 
