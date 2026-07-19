@@ -3,26 +3,35 @@ import streamlit as st
 
 def show_market_summary():
 
-    st.subheader("📊 Piyasa Özeti")
+    st.markdown("### 📊 Piyasa Özeti")
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
 
-    market_data = [
-        ("BIST100", "10.521", "+1.24%"),
-        ("USD", "40.18", "+0.25%"),
-        ("EURO", "47.04", "+0.15%"),
-        ("GRAM ALTIN", "4.365", "+0.82%"),
-        ("ONS", "3335", "+0.52%"),
-        ("PETROL", "69.80", "-0.42%"),
+    markets = [
+
+        ("📈 BIST100", "10.521", "+1.24%"),
+        ("💵 USD/TL", "40.18", "+0.25%"),
+        ("💶 EUR/TL", "47.04", "+0.15%"),
+        ("🥇 Gram Altın", "4.365", "+0.82%"),
+        ("🌕 Ons Altın", "3.335", "+0.52%"),
+        ("🛢 Petrol", "69.80", "-0.42%"),
+
     ]
 
-    columns = [c1, c2, c3, c4, c5, c6]
 
-    for col, (title, value, delta) in zip(columns, market_data):
-        col.metric(
-            label=title,
-            value=value,
-            delta=delta
-        )
+    cols = st.columns(6)
 
-    st.divider()
+
+    for i, item in enumerate(markets):
+
+        with cols[i]:
+
+            st.metric(
+                label=item[0],
+                value=item[1],
+                delta=item[2]
+            )
+
+
+    st.caption(
+        "Piyasa özeti; endeks, döviz, emtia ve küresel piyasa göstergelerini içerir."
+    )
