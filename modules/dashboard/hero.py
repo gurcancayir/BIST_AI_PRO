@@ -31,12 +31,6 @@ def show_hero():
 )
 
 
-    with right:
-
-        st.metric(
-            "🧠 AI Score",
-            "84"
-        )
-
+    
 
     st.markdown("---")
