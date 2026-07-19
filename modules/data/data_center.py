@@ -1,4 +1,7 @@
 import streamlit as st
+from modules.data.yahoo_data import get_yahoo_price
+from modules.data.alpha_data import get_alpha_price
+from modules.data.validator import compare_sources
 
 
 def show_data_center():
@@ -47,29 +50,64 @@ def show_data_center():
         st.markdown("### 🛡 Veri Güven Kontrolü")
 
 
-        confidence = 96
-
-
-        st.metric(
-
-            "Veri Güven Skoru",
-
-            f"{confidence}/100",
-
-            "+2"
-
-        )
-
-
-        st.progress(
-            confidence / 100
-        )
-
-
-
+           
     st.divider()
 
+    st.markdown("### 🔍 Canlı Veri Doğrulama")
 
+
+symbol = st.selectbox(
+    "Kontrol Edilecek Hisse",
+    [
+        "BIMAS",
+        "TUPRS",
+        "AKSEN",
+        "MGROS",
+        "THYAO"
+    ]
+)
+
+
+yahoo_price = get_yahoo_price(symbol)
+
+alpha_price = get_alpha_price(symbol)
+
+
+result = compare_sources(
+    symbol,
+    yahoo_price,
+    alpha_price
+)
+
+
+col_a, col_b, col_c = st.columns(3)
+
+
+col_a.metric(
+    "Yahoo Finance",
+    str(result["Yahoo"])
+)
+
+
+col_b.metric(
+    "Alpha Vantage",
+    str(result["Alpha"])
+)
+
+
+col_c.metric(
+    "Veri Güveni",
+    f'{result["Güven"]}/100'
+)
+
+
+st.write(
+    f"""
+    Durum: {result["Durum"]}
+
+    Fiyat farkı: %{result["Fark %"]}
+    """
+)
 
     st.markdown("### 🔄 Kaynak Durumu")
 
