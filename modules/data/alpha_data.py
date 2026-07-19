@@ -10,17 +10,17 @@ def get_alpha_price(symbol):
 
 
         url = (
-            "https://www.alphavantage.co/query"
-            "?function=GLOBAL_QUOTE"
-            f"&symbol={symbol}.IST"
-            f"&apikey={api_key}"
-        )
+    "https://www.alphavantage.co/query"
+    "?function=GLOBAL_QUOTE"
+    f"&symbol={symbol}"
+    f"&apikey={api_key}"
+)
 
 
         response = requests.get(url)
 
         data = response.json()
-
+        print(data)
 
         price = data["Global Quote"]["05. price"]
 
