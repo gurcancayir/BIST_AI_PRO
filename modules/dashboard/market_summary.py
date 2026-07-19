@@ -1,24 +1,23 @@
 import streamlit as st
+from modules.data.macro_data import get_macro_data
 
 
 def show_market_summary():
 
     st.markdown("### 📊 Piyasa Özeti")
-
+    macro = get_macro_data()
 
     markets = [
 
-        ("📈 BIST100", "10.521", "+1.24%"),
-        ("💵 USD/TL", "40.18", "+0.25%"),
-        ("💶 EUR/TL", "47.04", "+0.15%"),
-        ("🥇 Gram Altın", "4.365", "+0.82%"),
-        ("🌕 Ons Altın", "3.335", "+0.52%"),
-        ("🛢 Petrol", "69.80", "-0.42%"),
+    ("💵 USD/TL", macro["usd"], ""),
+    ("🌕 Ons Altın", macro["gold"], ""),
+    ("🥈 Gümüş", macro["silver"], ""),
+    ("🛢 Brent", macro["brent"], ""),
 
-    ]
+]
 
 
-    cols = st.columns(6)
+    cols = st.columns(len(markets))
 
 
     for i, item in enumerate(markets):
