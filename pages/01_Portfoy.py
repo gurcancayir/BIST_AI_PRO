@@ -322,35 +322,46 @@ else:
         100
     ).round(2)
 
+    # Portföy ağırlığı
 
+    toplam_portfoy = df["Güncel Değer"].sum()
+
+
+    df["Portföy Ağırlığı %"] = (
+        df["Güncel Değer"]
+        /
+        toplam_portfoy
+        *
+        100
+    ).round(2)    
 
     tablo = df[
-        [
-            "symbol",
-            "lot",
-            "cost",
-            "Güncel Fiyat",
-            "Maliyet",
-            "Güncel Değer",
-            "Kar/Zarar",
-            "Getiri %"
-        ]
+    [
+        "symbol",
+        "lot",
+        "cost",
+        "Güncel Fiyat",
+        "Maliyet",
+        "Güncel Değer",
+        "Kar/Zarar",
+        "Getiri %",
+        "Portföy Ağırlığı %"
     ]
+]
 
 
 
     tablo.columns = [
-
-        "Hisse",
-        "Lot",
-        "Maliyet",
-        "Fiyat",
-        "Maliyet TL",
-        "Değer TL",
-        "K/Z",
-        "Getiri %"
-
-    ]
+    "Hisse",
+    "Lot",
+    "Maliyet",
+    "Fiyat",
+    "Maliyet TL",
+    "Değer TL",
+    "K/Z",
+    "Getiri %",
+    "Portföy Ağırlığı %"
+]
 
 
 
@@ -479,7 +490,7 @@ else:
     # --------------------------------------------------
 
     show_stock_ai_signal(df)
-    
+
     st.subheader("🤖 AI Portföy Yorumu")
 
 
