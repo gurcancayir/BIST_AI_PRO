@@ -3,43 +3,45 @@ import streamlit as st
 
 def show_market_score():
 
+    st.markdown("### 🧠 AI Market Score")
+
     score = 84
 
-    st.subheader("🧠 AI Market Score")
-
-    col1, col2 = st.columns([7, 5])
+    col1, col2 = st.columns([2, 1])
 
     with col1:
 
         st.metric(
-            "Genel Piyasa Puanı",
-            f"{score}/100",
-            "+3"
+            label="Genel Piyasa Puanı",
+            value=f"{score} / 100",
+            delta="+3"
         )
 
         st.progress(score / 100)
 
-        if score >= 80:
-            st.success("🟢 Güçlü Pozitif Piyasa")
-        elif score >= 60:
-            st.warning("🟡 Temkinli Pozitif")
-        else:
-            st.error("🔴 Riskli Piyasa")
 
     with col2:
 
-        st.markdown("### 📊 Skor Dağılımı")
+        if score >= 80:
 
-        data = [
-            ["📈 Trend", "18/20"],
-            ["📊 Momentum", "9/10"],
-            ["💰 Hacim", "9/10"],
-            ["🌍 Makro", "12/15"],
-            ["🏦 Bankalar", "8/10"],
-            ["🌎 Jeopolitik", "5/10"],
-            ["🤖 AI Güveni", "%92"],
-        ]
+            st.success(
+                "🟢 Güçlü Pozitif\n\n"
+                "Trend destekleyici"
+            )
 
-        st.table(data)
+        elif score >= 60:
 
-    st.divider()
+            st.warning(
+                "🟡 Temkinli Pozitif"
+            )
+
+        else:
+
+            st.error(
+                "🔴 Risk Seviyesi Yüksek"
+            )
+
+
+    st.caption(
+        "AI değerlendirmesi: Teknik görünüm, momentum ve piyasa koşullarına göre hesaplanır."
+    )

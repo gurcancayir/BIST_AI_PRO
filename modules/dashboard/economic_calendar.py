@@ -3,49 +3,44 @@ import streamlit as st
 
 def show_economic_calendar():
 
-    st.subheader("📅 Ekonomik Takvim")
+    st.markdown("### 📅 Ekonomik Takvim")
+
 
     events = [
-        {
-            "time": "10:00",
-            "country": "🇹🇷",
-            "event": "TCMB Faiz Kararı",
-            "impact": "🔴 Yüksek",
-            "status": "Bekleniyor"
-        },
-        {
-            "time": "15:30",
-            "country": "🇺🇸",
-            "event": "Tarım Dışı İstihdam",
-            "impact": "🔴 Yüksek",
-            "status": "Bekleniyor"
-        },
-        {
-            "time": "16:45",
-            "country": "🇺🇸",
-            "event": "PMI Verisi",
-            "impact": "🟠 Orta",
-            "status": "Bekleniyor"
-        },
-        {
-            "time": "20:00",
-            "country": "🇺🇸",
-            "event": "FED Toplantı Tutanakları",
-            "impact": "🔴 Yüksek",
-            "status": "Bekleniyor"
-        },
+
+        ("10:00", "🇹🇷 TCMB Faiz Kararı", "🔴 Yüksek Etki"),
+        ("15:30", "🇺🇸 Tarım Dışı İstihdam", "🔴 Yüksek Etki"),
+        ("16:45", "🇺🇸 PMI Verisi", "🟠 Orta Etki"),
+        ("20:00", "🇺🇸 FED Toplantı Tutanakları", "🔴 Yüksek Etki"),
+
     ]
 
-    for event in events:
+
+    for time, event, impact in events:
+
         with st.container(border=True):
-            col1, col2 = st.columns([1, 5])
+
+            col1, col2 = st.columns([1, 4])
+
 
             with col1:
-                st.markdown(f"### {event['time']}")
-                st.caption(event["country"])
+
+                st.markdown(
+                    f"### {time}"
+                )
+
 
             with col2:
-                st.write(f"**{event['event']}**")
-                st.caption(
-                    f"Etki: {event['impact']} | Durum: {event['status']}"
+
+                st.write(
+                    f"**{event}**"
                 )
+
+                st.caption(
+                    impact
+                )
+
+
+    st.caption(
+        "Ekonomik takvim; piyasa hareketlerini etkileyebilecek önemli veri ve kararları gösterir."
+    )

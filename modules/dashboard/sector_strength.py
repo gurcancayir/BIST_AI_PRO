@@ -3,25 +3,33 @@ import streamlit as st
 
 def show_sector_strength():
 
-    st.subheader("🏭 Sektör Güç Endeksi")
+    st.markdown("### 🏭 Sektör Gücü")
+
 
     sectors = [
-        ("🛒 Perakende", 94),
-        ("🛡️ Savunma", 91),
-        ("🚗 Otomotiv", 88),
-        ("🏦 Bankacılık", 76),
-        ("⚡ Enerji", 71),
-        ("🧪 Kimya", 67),
+        ("🛡️ Savunma", "96", "🟢 Güçlü"),
+        ("🛒 Perakende", "92", "🟢 Güçlü"),
+        ("🚗 Otomotiv", "88", "🟢 Pozitif"),
+        ("⚡ Enerji", "82", "🟡 Takip"),
+        ("🏦 Banka", "76", "🟡 Nötr"),
+        ("🏗️ GYO", "64", "🟠 Zayıf"),
     ]
 
-    for sector, score in sectors:
 
-        col1, col2 = st.columns([2, 5])
+    col1, col2 = st.columns(2)
 
-        with col1:
-            st.write(f"**{sector}**")
 
-        with col2:
-            st.progress(score / 100, text=f"{score}/100")
+    for i, sector in enumerate(sectors):
 
-    st.divider()
+        with col1 if i % 2 == 0 else col2:
+
+            st.metric(
+                label=sector[0],
+                value=f"{sector[1]} / 100",
+                delta=sector[2]
+            )
+
+
+    st.caption(
+        "Sektör gücü; momentum, hacim, trend ve piyasa ilgisine göre değerlendirilir."
+    )

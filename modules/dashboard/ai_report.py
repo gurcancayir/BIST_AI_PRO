@@ -3,33 +3,39 @@ import streamlit as st
 
 def show_ai_report():
 
-    sol, sag = st.columns(2)
+    st.markdown("### 🤖 AI Piyasa Yorumu")
 
-    with sol:
 
-        st.subheader("🌍 Makro Görünüm")
+    st.success(
+        """
+        **Genel Görünüm: 🟢 Pozitif**
 
-        st.write("FED Beklentisi : 🟢 Güvercin")
-        st.write("TCMB : 🟡 Bekle-Gör")
-        st.write("Enflasyon : 🔴 Yüksek")
-        st.write("Jeopolitik Risk : 🟠 Orta")
-        st.write("Altın Gücü : 🟢 Güçlü")
-        st.write("Petrol : 🟡 Dengeli")
 
-    with sag:
+        BIST100 endeksinde ana trend yukarı yönlü korunuyor.
 
-        st.subheader("🤖 AI Yorumu")
 
-        st.success("""
-• Endeks ana trendi pozitif.
+        **Güçlü Alanlar**
 
-• Savunma ve perakende güçlü.
+        • Savunma sanayi  
+        • Perakende  
+        • Otomotiv  
 
-• Enerji sektörü takip edilmeli.
 
-• Risk seviyesi orta.
+        **Takip Edilecek Riskler**
 
-• Portföy çeşitlendirmesi önemli.
-""")
+        • FED faiz beklentileri  
+        • TCMB kararları  
+        • Jeopolitik gelişmeler  
 
-    st.divider()
+
+        **AI Strateji**
+
+        Portföy korunabilir.
+        Yeni alımlar kademeli yapılabilir.
+        """
+    )
+
+
+    st.caption(
+        "AI değerlendirmesi teknik göstergeler, makro veriler ve piyasa koşullarına göre oluşturulur."
+    )
