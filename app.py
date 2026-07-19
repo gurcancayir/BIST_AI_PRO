@@ -89,30 +89,7 @@ with st.sidebar:
 
 
 
-# --------------------------------------------------
-# ANA SAYFA
-# --------------------------------------------------
 
-st.markdown(
-"""
-<div class='bigtitle'>
-📈 BIST AI PRO
-</div>
-
-<div class='subtitle'>
-TradingView ve Matriks seviyesinde Yapay Zeka Destekli BIST Analiz Platformu
-</div>
-
-""",
-unsafe_allow_html=True
-)
-
-
-st.write("")
-
-st.caption(
-    datetime.now().strftime("%d.%m.%Y %H:%M")
-)
 
 
 st.divider()
