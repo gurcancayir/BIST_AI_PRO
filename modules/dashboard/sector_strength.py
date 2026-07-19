@@ -1,35 +1,127 @@
 import streamlit as st
+from modules.data.macro_data import get_price
+
+
+def calculate_sector_strength(stocks):
+
+    degisimler = []
+
+    for stock in stocks:
+
+        fiyat, degisim = get_price(stock)
+
+        if degisim != "-":
+
+            degisimler.append(degisim)
+
+
+    if len(degisimler) == 0:
+        return "-"
+
+    return round(
+        sum(degisimler) / len(degisimler),
+        2
+    )
+
 
 
 def show_sector_strength():
 
-    st.markdown("### 🏭 Sektör Gücü")
+    st.markdown("### 💪 Sektör Gücü")
 
 
-    sectors = [
-        ("🛡️ Savunma", "96", "🟢 Güçlü"),
-        ("🛒 Perakende", "92", "🟢 Güçlü"),
-        ("🚗 Otomotiv", "88", "🟢 Pozitif"),
-        ("⚡ Enerji", "82", "🟡 Takip"),
-        ("🏦 Banka", "76", "🟡 Nötr"),
-        ("🏗️ GYO", "64", "🟠 Zayıf"),
-    ]
+    sektorler = {
+
+        "🛒 Perakende": [
+            "BIMAS.IS",
+            "MGROS.IS",
+            "SOKM.IS",
+            "BIZIM.IS",
+            "ULKER.IS"
+        ],
 
 
-    col1, col2 = st.columns(2)
+        "🛡️ Savunma": [
+            "ASELS.IS",
+            "OTKAR.IS",
+            "ASTOR.IS",
+            "SDTTR.IS",
+            "KONTR.IS"
+        ],
 
 
-    for i, sector in enumerate(sectors):
-
-        with col1 if i % 2 == 0 else col2:
-
-            st.metric(
-                label=sector[0],
-                value=f"{sector[1]} / 100",
-                delta=sector[2]
-            )
+        "🚗 Otomotiv": [
+            "FROTO.IS",
+            "TOASO.IS",
+            "DOAS.IS",
+            "KARSN.IS",
+            "TTRAK.IS"
+        ],
 
 
-    st.caption(
-        "Sektör gücü; momentum, hacim, trend ve piyasa ilgisine göre değerlendirilir."
-    )
+        "⚡ Enerji": [
+            "AKSEN.IS",
+            "ENJSA.IS",
+            "TUPRS.IS",
+            "ODAS.IS",
+            "AYDEM.IS"
+        ],
+
+
+        "🏭 Sanayi": [
+            "SISE.IS",
+            "EREGL.IS",
+            "KRDMD.IS",
+            "HEKTS.IS",
+            "KCHOL.IS"
+        ],
+
+
+        "🏦 Banka": [
+            "AKBNK.IS",
+            "GARAN.IS",
+            "YKBNK.IS",
+            "ISCTR.IS",
+            "HALKB.IS"
+        ],
+
+
+        "✈️ Ulaştırma": [
+            "THYAO.IS",
+            "PGSUS.IS",
+            "TAVHL.IS",
+            "CLEBI.IS",
+            "GSDHO.IS"
+        ]
+
+    }
+
+
+
+    for sektor, hisseler in sektorler.items():
+
+        guc = calculate_sector_strength(hisseler)
+
+
+        if guc == "-":
+
+            durum = "⚪"
+
+        elif guc > 1:
+
+            durum = "🟢"
+
+        elif guc < -1:
+
+            durum = "🔴"
+
+        else:
+
+            durum = "🟡"
+
+
+
+        st.metric(
+            sektor,
+            f"{durum} %{guc}"
+        )

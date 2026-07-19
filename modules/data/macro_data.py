@@ -22,14 +22,22 @@ def get_price(symbol):
 
 def get_macro_data():
 
+    bist, bist_change = get_price("XU100.IS")
+
     gold, gold_change = get_price("GC=F")
 
     usd, usd_change = get_price("USDTRY=X")
 
+    eur, eur_change = get_price("EURTRY=X")
+
     brent, brent_change = get_price("BZ=F")
 
     silver, silver_change = get_price("SI=F")
-
+    try:
+        gram = round((gold * usd) / 31.1035, 2)
+    except:
+        gram = "-"        
+    
     return {
 
         "gold": gold,
@@ -42,6 +50,14 @@ def get_macro_data():
         "brent_change": brent_change,
 
         "silver": silver,
-        "silver_change": silver_change
+        "silver_change": silver_change,
+        
+        "eur": eur,
+        
+        "eur_change": eur_change,
+
+        "gram": gram,
+        "bist": bist,
+        "bist_change": bist_change,
 
     }

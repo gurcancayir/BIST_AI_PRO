@@ -1,9 +1,10 @@
 import streamlit as st
 from datetime import datetime
-
+from modules.ai.market_ai import get_market_score
 
 def show_hero():
-
+    score, reasons = get_market_score()
+    
     left, center, right = st.columns([6, 2, 2])
 
     with left:
@@ -25,9 +26,9 @@ def show_hero():
     with center:
 
         st.metric(
-            "🕒 Saat",
-            datetime.now().strftime("%H:%M")
-        )
+    "🧠 AI Score",
+    f"{score}/100"
+)
 
 
     with right:

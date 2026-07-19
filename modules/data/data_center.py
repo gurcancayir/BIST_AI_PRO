@@ -1,10 +1,7 @@
 import streamlit as st
-
 from modules.data.yahoo_data import get_yahoo_price
 from modules.data.alpha_data import get_alpha_price
 from modules.data.validator import compare_sources
-
-
 
 def show_data_center():
 
@@ -29,12 +26,9 @@ def show_data_center():
             ]
         )
 
-
         st.success(
-            f"Aktif Kaynak: {source}"
-        )
-
-
+        f"Aktif Kaynak: {source}"
+    )
 
     with col2:
 
@@ -44,14 +38,8 @@ def show_data_center():
             "Canlı kaynak doğrulama aktif"
         )
 
-
-
     st.divider()
-
-
     st.markdown("### 🔍 Canlı Veri Doğrulama")
-
-
     symbol = st.selectbox(
         "Kontrol Edilecek Hisse",
         [
@@ -63,41 +51,30 @@ def show_data_center():
         ]
     )
 
-
     yahoo_price = get_yahoo_price(symbol)
 
     alpha_price = get_alpha_price(symbol)
-
-
 
     result = compare_sources(
         symbol,
         yahoo_price,
         alpha_price
     )
-
-
-
     c1, c2, c3 = st.columns(3)
-
-
     c1.metric(
         "Yahoo Finance",
         str(result["Yahoo"])
     )
-
 
     c2.metric(
         "Alpha Vantage",
         str(result["Alpha"])
     )
 
-
     c3.metric(
         "Veri Güveni",
         f'{result["Güven"]}/100'
     )
-
 
     st.write(
         f"""
@@ -106,15 +83,8 @@ def show_data_center():
         Fiyat farkı: %{result["Fark %"]}
         """
     )
-
-
-
     st.divider()
-
-
     st.markdown("### 🔄 Kaynak Durumu")
-
-
     data = [
 
         ["Yahoo Finance","🟢 Aktif"],
@@ -128,6 +98,5 @@ def show_data_center():
         ["Foreks API","⚪ Bağlanmadı"]
 
     ]
-
 
     st.table(data)

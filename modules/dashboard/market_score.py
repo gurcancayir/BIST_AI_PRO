@@ -1,11 +1,11 @@
 import streamlit as st
-
+from modules.ai.market_ai import get_market_score
 
 def show_market_score():
 
     st.markdown("### 🧠 AI Market Score")
 
-    score = 84
+    score, reasons = get_market_score()
 
     col1, col2 = st.columns([2, 1])
 
@@ -13,8 +13,8 @@ def show_market_score():
 
         st.metric(
             label="Genel Piyasa Puanı",
-            value=f"{score} / 100",
-            delta="+3"
+            value=f"{score} / 100"
+        
         )
 
         st.progress(score / 100)
@@ -42,6 +42,4 @@ def show_market_score():
             )
 
 
-    st.caption(
-        "AI değerlendirmesi: Teknik görünüm, momentum ve piyasa koşullarına göre hesaplanır."
-    )
+    

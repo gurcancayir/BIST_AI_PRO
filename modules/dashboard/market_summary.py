@@ -6,16 +6,22 @@ def show_market_summary():
 
     st.markdown("### 📊 Piyasa Özeti")
     macro = get_macro_data()
-
+   
     markets = [
 
     ("💵 USD/TL", macro["usd"], f'{macro["usd_change"]}%'),
+
+    ("💶 EUR/TL", macro["eur"], f'{macro["eur_change"]}%'),
+
+    ("🥇 Gram Altın", macro["gram"], ""),
 
     ("🌕 Ons Altın", macro["gold"], f'{macro["gold_change"]}%'),
 
     ("🥈 Gümüş", macro["silver"], f'{macro["silver_change"]}%'),
 
     ("🛢 Brent", macro["brent"], f'{macro["brent_change"]}%'),
+    
+    ("📈 BIST100", macro["bist"], f'{macro["bist_change"]}%'),
 
 ]
 
