@@ -5,7 +5,8 @@ DB_NAME = "borsa.db"
 
 
 def get_connection():
-    return sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DB_NAME)
+    return conn
 
 
 def create_tables():
@@ -14,71 +15,163 @@ def create_tables():
     cursor = conn.cursor()
 
 
-    # Hisse fiyatları
+    # Hisse tablosu
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS stock_prices (
+    CREATE TABLE IF NOT EXISTS stocks (
+
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        symbol TEXT NOT NULL,
+        symbol TEXT UNIQUE,
+        company TEXT,
+        sector TEXT,
         price REAL,
-        volume INTEGER,
-        date TEXT
+        change_percent REAL,
+        volume REAL,
+        updated_at TEXT
+
     )
     """)
 
 
-    # Portföy
+    # Portföy tablosu
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS portfolio (
+
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        symbol TEXT NOT NULL,
-        lot INTEGER,
-        cost REAL,
-        buy_date TEXT
+
+        symbol TEXT,
+        quantity INTEGER,
+        avg_cost REAL,
+
+        buy_date TEXT,
+
+        note TEXT
+
     )
     """)
 
 
-    # Alım satım geçmişi
+    # İşlem geçmişi
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS transactions (
+
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+
         symbol TEXT,
+
         action TEXT,
-        lot INTEGER,
+
+        quantity INTEGER,
+
         price REAL,
+
         date TEXT
-    )
-    """)
 
-
-    # Teknik analiz sonuçları
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS technical_analysis (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        symbol TEXT,
-        rsi REAL,
-        macd REAL,
-        trend TEXT,
-        support REAL,
-        resistance REAL,
-        date TEXT
-    )
-    """)
-
-
-    # Temel analiz
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS fundamentals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        symbol TEXT,
-        fk REAL,
-        pd_dd REAL,
-        dividend REAL,
-        profit_growth REAL,
-        date TEXT
     )
     """)
 
 
     conn.commit()
     conn.close()
+
+
+
+def add_stock(symbol, company="", sector=""):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT OR IGNORE INTO stocks
+    (symbol,company,sector)
+
+    VALUES (?,?,?)
+
+    """,
+    (
+        symbol,
+        company,
+        sector
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+
+def add_portfolio(symbol, quantity, avg_cost, buy_date, note=""):
+
+    conn=get_connection()
+    cursor=conn.cursor()
+
+    cursor.execute("""
+
+    INSERT INTO portfolio
+    (symbol,quantity,avg_cost,buy_date,note)
+
+    VALUES (?,?,?,?,?)
+
+    """,
+    (
+        symbol,
+        quantity,
+        avg_cost,
+        buy_date,
+        note
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+
+def get_portfolio():
+
+    conn=get_connection()
+
+    df = __import__("pandas").read_sql_query(
+        """
+        SELECT * FROM portfolio
+        """,
+        conn
+    )
+
+    conn.close()
+
+    return df
+def update_portfolio_stock(symbol, quantity, avg_cost):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    UPDATE portfolio
+
+    SET quantity = ?,
+        avg_cost = ?
+
+    WHERE symbol = ?
+
+    """,
+    (
+        quantity,
+        avg_cost,
+        symbol
+    ))
+
+    conn.commit()
+    conn.close()
+def load_portfolio():
+
+    conn = get_connection()
+
+    df = __import__("pandas").read_sql_query(
+        """
+        SELECT *
+        FROM portfolio
+        """,
+        conn
+    )
+
+    conn.close()
+
+    return df
