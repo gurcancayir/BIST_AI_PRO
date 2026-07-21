@@ -1,7 +1,7 @@
 import streamlit as st
 
 from database.database import create_tables
-from modules.portfolio import show_portfolio
+from modules.portfolio.portfolio import show_portfolio
 from modules.dashboard.hero import show_hero
 from modules.dashboard.market_summary import show_market_summary
 from modules.dashboard.market_score import show_market_score
