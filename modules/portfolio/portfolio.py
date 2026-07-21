@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from database.database import get_connection
-
+from .portfolio import show_portfolio
 
 def show_portfolio():
 
