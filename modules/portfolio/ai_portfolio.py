@@ -1,11 +1,10 @@
 import streamlit as st
-from modules.portfolio.ai_portfolio import show_ai_portfolio
+
 
 
 def show_ai_portfolio(df):
 
     st.divider()
-    show_ai_portfolio(df)
     st.subheader("🤖 AI Portföy Analizi")
 
 
