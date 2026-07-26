@@ -1,7 +1,80 @@
 import pandas as pd
 import yfinance as yf
 import streamlit as st
+# ----------------------------------------------------------
+# HACİM SKORU
+# ----------------------------------------------------------
 
+def calculate_volume_score(data):
+
+    try:
+
+        avg_volume = data["Volume"].rolling(20).mean().iloc[-1]
+
+        current_volume = data["Volume"].iloc[-1]
+
+        ratio = current_volume / avg_volume
+
+
+        if ratio >= 2:
+            return 100
+
+        elif ratio >= 1.5:
+            return 85
+
+        elif ratio >= 1:
+            return 70
+
+        elif ratio >= 0.7:
+            return 50
+
+        else:
+            return 30
+
+
+    except:
+
+        return 50
+
+
+
+# ----------------------------------------------------------
+# MOMENTUM SKORU
+# ----------------------------------------------------------
+
+def calculate_momentum_score(data):
+
+    try:
+
+        price_now = data["Close"].iloc[-1]
+
+        price_old = data["Close"].iloc[-20]
+
+
+        change = (
+            (price_now / price_old) - 1
+        ) * 100
+
+
+        if change >= 15:
+            return 100
+
+        elif change >= 8:
+            return 85
+
+        elif change >= 3:
+            return 70
+
+        elif change >= 0:
+            return 55
+
+        else:
+            return 30
+
+
+    except:
+
+        return 50
 
 # ----------------------------------------------------------
 # AYARLAR

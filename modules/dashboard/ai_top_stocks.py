@@ -3,7 +3,10 @@ import pandas as pd
 
 from modules.data.yahoo_data import get_stock_analysis
 from modules.data.bist_lists import BIST30, BIST50, BIST100, BIST500
-
+from modules.data.fundamental import (
+    get_fundamental_data,
+    calculate_fundamental_score
+)
 
 
 # ----------------------------------------------------------
@@ -20,7 +23,7 @@ from modules.data.bist_lists import BIST30, BIST50, BIST100, BIST500
 
 def show_ai_top_stocks():
 
-    st.subheader("🏆 AI Top Hisseler")
+    st.subheader("🏆 Genel Yatırım Skoru Top Hisseler")
 
     secim = st.selectbox(
 
@@ -62,6 +65,8 @@ def show_ai_top_stocks():
 
 
     sonuc = []
+
+
     with st.spinner("🤖 AI hisseleri analiz ediyor..."):
 
         for hisse in hisseler:
@@ -70,6 +75,42 @@ def show_ai_top_stocks():
 
             if analysis is None:
                 continue
+
+
+            fundamental = get_fundamental_data(hisse)
+
+            fund_score = calculate_fundamental_score(
+                fundamental
+            )
+
+
+            genel_skor = (
+
+                analysis["score"] * 0.50
+
+                +
+
+                analysis["volume_score"] * 0.15
+
+                +
+
+                analysis["momentum_score"] * 0.15
+
+                +
+
+                fund_score * 0.20
+
+            )
+
+
+            analysis["fund_score"] = fund_score
+
+            analysis["genel_skor"] = round(
+                genel_skor,
+                1
+            )
+
+
 
             sonuc.append(analysis)
 
@@ -89,7 +130,7 @@ def show_ai_top_stocks():
 
         sonuc,
 
-        key=lambda x: x["score"],
+        key=lambda x: x["genel_skor"],
 
         reverse=True
 
@@ -111,7 +152,7 @@ def show_ai_top_stocks():
 
             with col:
 
-                score = hisse["score"]
+                score = hisse["genel_skor"]
 
                 if score >= 90:
                     renk = "🟢"
@@ -166,7 +207,15 @@ def show_ai_top_stocks():
 
             "RSI": round(hisse["rsi"], 1) if hisse["rsi"] else "-",
 
-            "AI Skoru": hisse["score"],
+            "Teknik Skor": hisse["score"],
+
+            "Hacim Skor": hisse["volume_score"],
+
+            "Momentum Skor": hisse["momentum_score"],
+
+            "Temel Skor": hisse["fund_score"],
+
+            "Genel Skor": hisse["genel_skor"],
 
             "Karar": hisse["recommendation"]
 
@@ -192,7 +241,7 @@ def show_ai_top_stocks():
     # AI İSTATİSTİKLERİ
     # ----------------------------------------------------------
 
-    ortalama = round(df["AI Skoru"].mean(), 1)
+    ortalama = round(df["Genel Skor"].mean(), 1)
 
     guclu_al = (df["Karar"] == "🟢 Güçlü Al").sum()
 
@@ -205,7 +254,7 @@ def show_ai_top_stocks():
 
     c1, c2, c3, c4, c5 = st.columns(5)
 
-    c1.metric("⭐ Ortalama AI", ortalama)
+    c1.metric("⭐ Ortalama Genel Skor", ortalama)
 
     c2.metric("🟢 Güçlü Al", guclu_al)
 
@@ -235,7 +284,7 @@ def show_ai_top_stocks():
 
 📈 Günlük Değişim : %{eniyi["change"]:.2f}
 
-📊 AI Skoru : **{eniyi["score"]}/100**
+📊 Genel Skor : **{eniyi["genel_skor"]}/100**
 
 🎯 Karar : **{eniyi["recommendation"]}**
 

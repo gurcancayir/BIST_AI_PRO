@@ -3,6 +3,10 @@ import yfinance as yf
 
 from modules.teknik import analiz_et
 from modules.data.yahoo_data import get_stock_analysis
+from modules.data.fundamental import (
+    get_fundamental_data,
+    calculate_fundamental_score
+)
 
 st.set_page_config(
     page_title="Hisse Analiz Merkezi",
@@ -10,7 +14,6 @@ st.set_page_config(
     layout="wide"
 )
 
-st.write("TEST ÇALIŞIYOR")
 
 st.title("📈 Hisse Analiz Merkezi")
 
@@ -45,13 +48,113 @@ if st.button("Analiz Et"):
         st.stop()
 
     sonuc = get_stock_analysis(symbol)
+
+
     if sonuc is None:
         st.error("Analiz verisi alınamadı.")
         st.stop()
 
+
+    # -------------------------------
+    # TEMEL ANALİZ
+    # -------------------------------
+
+    fundamental = get_fundamental_data(symbol)
+
+    fund_score = calculate_fundamental_score(fundamental)
+
+
+    st.divider()
+
+    st.subheader("📊 Temel Analiz")
+
+
+    st.write(
+        "🏢 Şirket:",
+        fundamental.get("company")
+    )
+
+
+    st.write(
+        "🏭 Sektör:",
+        fundamental.get("sector")
+    )
+
+
+    st.write(
+        "💰 Piyasa Değeri:",
+        fundamental.get("market_cap")
+    )
+
+
+    st.write(
+        "📌 F/K:",
+        fundamental.get("pe_ratio")
+    )
+
+
+    st.write(
+        "📌 PD/DD:",
+        fundamental.get("pb_ratio")
+    )
+
+
+    st.write(
+        "📈 Kâr Marjı:",
+        fundamental.get("profit_margin")
+    )
+
+
+    st.write(
+        "📈 Ciro Büyümesi:",
+        fundamental.get("revenue_growth")
+    )
+
+
+    st.write(
+        "⭐ ROE:",
+        fundamental.get("roe")
+    )
+
+
+    st.write(
+        "⚠️ Borç/Özsermaye:",
+        fundamental.get("debt_to_equity")
+    )
+
+
+    st.metric(
+        "⭐ Fundamental Skor",
+        f"{fund_score}/100"
+    )    
+
     st.write("KONTROL DESTEK:", sonuc["support"])
     st.write("KONTROL DİRENÇ:", sonuc["resistance"])
+    genel_skor = (
+        sonuc["score"] * 0.6 +
+        fund_score * 0.4
+    )
 
+    st.divider()
+
+    st.subheader("🏆 Genel Yatırım Skoru")
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric(
+        "📈 Teknik Skor",
+        f"{sonuc['score']}/100"
+    )
+
+    c2.metric(
+        "📊 Temel Skor",
+        f"{fund_score}/100"
+    )
+
+    c3.metric(
+        "🏆 Genel Skor",
+        f"{genel_skor:.0f}/100"
+    )
 
     st.subheader(f"📊 {symbol} Teknik Analizi")
 
@@ -73,7 +176,7 @@ if st.button("Analiz Et"):
     )
 
     c4.metric(
-        "Teknik Puan",
+        "📈 Teknik Skor",
         f"{sonuc['score']}/100"
     )
 

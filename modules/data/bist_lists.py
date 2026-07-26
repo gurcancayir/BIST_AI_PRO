@@ -20,7 +20,7 @@ BIST30 = [
     "ISCTR",
     "KCHOL",
     "KOZAA",
-    "KOZAL",
+    "TRALT",
     "MGROS",
     "ODAS",
     "PETKM",
