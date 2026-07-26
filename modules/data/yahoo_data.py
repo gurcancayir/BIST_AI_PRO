@@ -726,6 +726,9 @@ def get_stock_analysis(symbol):
     info = get_company_info(symbol)
 
     score = calculate_ai_score(df)
+    volume_score = calculate_volume_score(df)
+
+    momentum_score = calculate_momentum_score(df)
 
     macd, signal = get_macd(df)
 
@@ -785,6 +788,10 @@ def get_stock_analysis(symbol):
         "trend": get_trend(df),
 
         "score": score,
+
+        "volume_score": calculate_volume_score(df),
+
+        "momentum_score": calculate_momentum_score(df),
 
         "recommendation": get_recommendation(score)
 
