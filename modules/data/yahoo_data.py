@@ -1,6 +1,36 @@
 import pandas as pd
 import yfinance as yf
 import streamlit as st
+SEKTOR_MAP = {
+
+    "TUPRS.IS": "Enerji",
+    "AKSEN.IS": "Enerji",
+    "ENJSA.IS": "Enerji",
+    "ODAS.IS": "Enerji",
+
+    "ASELS.IS": "Savunma",
+    "ASTOR.IS": "Savunma",
+    "OTKAR.IS": "Savunma",
+    "SDTTR.IS": "Savunma",
+
+    "THYAO.IS": "Ulaştırma",
+    "PGSUS.IS": "Ulaştırma",
+
+    "BIMAS.IS": "Perakende",
+    "MGROS.IS": "Perakende",
+    "SOKM.IS": "Perakende",
+
+    "FROTO.IS": "Otomotiv",
+    "TOASO.IS": "Otomotiv",
+
+    "AKBNK.IS": "Banka",
+    "GARAN.IS": "Banka",
+
+    "SISE.IS": "Sanayi",
+    "EREGL.IS": "Sanayi",
+    "KCHOL.IS": "Sanayi",
+
+}
 # ----------------------------------------------------------
 # HACİM SKORU
 # ----------------------------------------------------------
@@ -179,7 +209,7 @@ def get_company_info(symbol):
 
             "company": info.get("longName", "-"),
 
-            "sector": info.get("sector", "-"),
+            "sector": info.get("sector",""),
 
             "industry": info.get("industry", "-"),
 
@@ -806,10 +836,13 @@ def get_recommendation(score):
 
 def get_stock_analysis(symbol):
 
+    if not symbol.endswith(".IS"):
+        symbol = symbol + ".IS"
+
+
     df = get_history(symbol)
 
     if df is None:
-
         return None
 
     info = get_company_info(symbol)
@@ -838,7 +871,10 @@ def get_stock_analysis(symbol):
 
         "company": info["company"],
 
-        "sector": info["sector"],
+        "sector": SEKTOR_MAP.get(
+            symbol.upper(),
+            info.get("sector", "")
+        ),
 
         "market_cap": info["market_cap"],
 

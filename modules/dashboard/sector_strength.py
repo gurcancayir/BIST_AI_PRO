@@ -132,7 +132,12 @@ def get_sector_scores():
 
         guc = calculate_sector_strength(hisseler)
 
-
+        print(
+            "SEKTÖR:",
+            sektor,
+            "GÜÇ:",
+            guc
+        )
         if guc is None:
 
             skor = 50
@@ -171,37 +176,23 @@ def get_sector_scores():
 
 def show_sector_strength():
 
-    st.markdown(
-        "### 💪 Sektör Gücü"
-    )
-
+    st.markdown("### 💪 Sektör Gücü")
 
     skorlar = get_sector_scores()
 
-
     for sektor, skor in skorlar.items():
 
-
         if skor >= 60:
-
             durum = "🟢"
 
-
         elif skor <= 40:
-
             durum = "🔴"
 
-
         else:
-
             durum = "🟡"
 
 
-
         st.metric(
-
             sektor,
-
             f"{durum} {skor}/100"
-
         )
