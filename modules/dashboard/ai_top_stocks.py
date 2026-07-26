@@ -1,137 +1,107 @@
 import streamlit as st
 import pandas as pd
 
-from modules.data.macro_data import get_price
+from modules.data.yahoo_data import get_stock_analysis
+from modules.data.bist_lists import BIST30, BIST50, BIST100, BIST500
 
-
-# ----------------------------------------------------------
-# AI SCORE
-# ----------------------------------------------------------
-
-def calculate_ai_score(change):
-
-    score = 50
-
-    try:
-        change = float(change)
-    except:
-        return 0
-
-    # Momentum
-    if change >= 5:
-        score += 40
-    elif change >= 3:
-        score += 30
-    elif change >= 2:
-        score += 20
-    elif change >= 1:
-        score += 10
-    elif change <= -5:
-        score -= 40
-    elif change <= -3:
-        score -= 30
-    elif change <= -2:
-        score -= 20
-    elif change <= -1:
-        score -= 10
-
-    return max(0, min(score, 100))
 
 
 # ----------------------------------------------------------
-# AI COMMENT
+# ŞİMDİLİK AYNI LİSTEYİ KULLANIYORUZ
 # ----------------------------------------------------------
 
-def get_comment(score):
-
-    if score >= 90:
-        return "🟢 Güçlü Al"
-
-    elif score >= 75:
-        return "🟢 Al"
-
-    elif score >= 60:
-        return "🟡 Tut"
-
-    elif score >= 40:
-        return "🟠 Zayıf"
-
-    else:
-        return "🔴 Sat"
+# Daha sonra gerçek BIST50 / BIST100 / BIST500
+# listelerini ekleyeceğiz.
 
 
 # ----------------------------------------------------------
-# TOP STOCKS
+# AI TOP HİSSELER
 # ----------------------------------------------------------
 
 def show_ai_top_stocks():
 
-    st.subheader("🏆 AI Top 10 Hisseler")
+    st.subheader("🏆 AI Top Hisseler")
 
-    hisseler = {
+    secim = st.selectbox(
 
-        "AKSEN":"AKSEN.IS",
-        "ASELS":"ASELS.IS",
-        "ASTOR":"ASTOR.IS",
-        "BIMAS":"BIMAS.IS",
-        "CCOLA":"CCOLA.IS",
-        "ENKAI":"ENKAI.IS",
-        "EREGL":"EREGL.IS",
-        "FROTO":"FROTO.IS",
-        "GARAN":"GARAN.IS",
-        "ISCTR":"ISCTR.IS",
-        "KCHOL":"KCHOL.IS",
-        "KOZAL":"KOZAL.IS",
-        "MGROS":"MGROS.IS",
-        "SAHOL":"SAHOL.IS",
-        "SISE":"SISE.IS",
-        "TCELL":"TCELL.IS",
-        "THYAO":"THYAO.IS",
-        "TOASO":"TOASO.IS",
-        "TUPRS":"TUPRS.IS",
-        "YKBNK":"YKBNK.IS"
-    }
+    "Analiz Evreni",
+
+    [
+
+        "BIST30",
+
+        "BIST50",
+
+        "BIST100",
+
+        "BIST500"
+
+    ]
+
+)
+    
+    LISTELER = {
+
+    "BIST30": BIST30,
+
+    "BIST50": BIST50,
+
+    "BIST100": BIST100,
+
+    "BIST500": BIST500
+
+}
+
+    hisseler = LISTELER[secim]
+    st.info(
+
+        f"{secim} içerisindeki "
+        f"{len(hisseler)} hisse AI tarafından analiz ediliyor."
+
+    )
+
 
     sonuc = []
+    with st.spinner("🤖 AI hisseleri analiz ediyor..."):
 
-    with st.spinner("AI hisseleri analiz ediyor..."):
+        for hisse in hisseler:
 
-        for isim, sembol in hisseler.items():
+            analysis = get_stock_analysis(hisse)
 
-            try:
+            if analysis is None:
+                continue
 
-                fiyat, degisim = get_price(sembol)
+            sonuc.append(analysis)
 
-                score = calculate_ai_score(degisim)
-
-                sonuc.append({
-
-                    "Hisse": isim,
-                    "Fiyat": fiyat,
-                    "Değişim": float(degisim),
-                    "AI Skoru": score,
-                    "Karar": get_comment(score)
-
-                })
-
-            except:
-                pass
 
     if len(sonuc) == 0:
 
-        st.warning("Veri alınamadı.")
+        st.warning("Hiç veri alınamadı.")
+
         return
 
+
+    # ----------------------------------------------------------
+    # AI SKORUNA GÖRE SIRALA
+    # ----------------------------------------------------------
+
     sonuc = sorted(
+
         sonuc,
-        key=lambda x: x["AI Skoru"],
+
+        key=lambda x: x["score"],
+
         reverse=True
+
     )
+
+
+    top10 = sonuc[:10]
     # ----------------------------------------------------------
     # TOP 10 KARTLARI
     # ----------------------------------------------------------
 
-    top10 = sonuc[:10]
+    st.markdown("### 🏆 AI Top 10")
 
     for satir in range(0, len(top10), 5):
 
@@ -141,7 +111,7 @@ def show_ai_top_stocks():
 
             with col:
 
-                score = hisse["AI Skoru"]
+                score = hisse["score"]
 
                 if score >= 90:
                     renk = "🟢"
@@ -158,95 +128,129 @@ def show_ai_top_stocks():
                 else:
                     renk = "🔴"
 
+
                 st.metric(
 
-                    label=f"{renk} {hisse['Hisse']}",
+                    label=f'{renk} {hisse["symbol"]}',
 
-                    value=f"{score}/100",
+                    value=f'{score}/100',
 
-                    delta=f"%{hisse['Değişim']:.2f}"
+                    delta=f'{hisse["change"]:.2f}%'
 
                 )
 
+                st.caption(hisse["recommendation"])
+
+                st.caption(f'📈 {hisse["trend"]}')
     st.divider()
 
     # ----------------------------------------------------------
     # DETAY TABLOSU
     # ----------------------------------------------------------
 
-    df = pd.DataFrame(top10)
+    tablo = []
 
-    df = df[
-        [
-            "Hisse",
-            "Fiyat",
-            "Değişim",
-            "AI Skoru",
-            "Karar"
-        ]
-    ]
+    for hisse in top10:
 
-    st.markdown("### 📊 AI Top 10 Detayları")
+        tablo.append({
 
-    st.dataframe(
+            "Hisse": hisse["symbol"],
 
-        df,
+            "Şirket": hisse["company"],
 
-        use_container_width=True,
+            "Fiyat": round(hisse["price"], 2),
 
-        hide_index=True
+            "Değişim %": round(hisse["change"], 2),
 
-    )
+            "Trend": hisse["trend"],
+
+            "RSI": round(hisse["rsi"], 1) if hisse["rsi"] else "-",
+
+            "AI Skoru": hisse["score"],
+
+            "Karar": hisse["recommendation"]
+
+        })
+
+
+    df = pd.DataFrame(tablo)
+
+    st.markdown("### 📊 AI Top 10 Detay Analizi")
+
+    def renk_degisim(val):
+
+        if val < 0:
+            return "color: red"
+
+        elif val > 0:
+            return "color: green"
+
+        return ""
+    st.divider()
+
+    # ----------------------------------------------------------
+    # AI İSTATİSTİKLERİ
+    # ----------------------------------------------------------
+
+    ortalama = round(df["AI Skoru"].mean(), 1)
+
+    guclu_al = (df["Karar"] == "🟢 Güçlü Al").sum()
+
+    al = (df["Karar"] == "🟢 Al").sum()
+
+    tut = (df["Karar"] == "🟡 Tut").sum()
+
+    sat = (df["Karar"] == "🔴 Sat").sum()
+
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+
+    c1.metric("⭐ Ortalama AI", ortalama)
+
+    c2.metric("🟢 Güçlü Al", guclu_al)
+
+    c3.metric("🟢 Al", al)
+
+    c4.metric("🟡 Tut", tut)
+
+    c5.metric("🔴 Sat", sat)
+
 
     st.divider()
 
     # ----------------------------------------------------------
-    # AI YORUMU
+    # GÜNÜN EN GÜÇLÜ HİSSESİ
     # ----------------------------------------------------------
 
     eniyi = top10[0]
 
     st.success(f"""
+## 🏆 Günün En Güçlü Hissesi
 
-### 🤖 AI Yorumu
+**{eniyi["symbol"]}**
 
-🏆 Günün en güçlü hissesi **{eniyi['Hisse']}**
+🏢 Şirket : {eniyi["company"]}
 
-AI Skoru : **{eniyi['AI Skoru']}/100**
+💰 Fiyat : {eniyi["price"]:.2f} TL
 
-Karar : **{eniyi['Karar']}**
+📈 Günlük Değişim : %{eniyi["change"]:.2f}
 
-Bu hisse mevcut analiz kriterlerine göre
-bugün izlenmeye en uygun hisseler arasında yer alıyor.
+📊 AI Skoru : **{eniyi["score"]}/100**
 
+🎯 Karar : **{eniyi["recommendation"]}**
+
+📈 Trend : **{eniyi["trend"]}**
+
+📉 RSI : **{eniyi["rsi"]:.1f}**
 """)
 
+
     st.info("""
+🤖 AI Yorumu
 
-💡 Yakında eklenecek özellikler
+• AI puanı; trend, RSI, MACD, EMA ve hacim verileri kullanılarak hesaplanmaktadır.
 
-• RSI
+• Bu liste yatırım tavsiyesi değildir.
 
-• MACD
-
-• EMA20 / EMA50
-
-• Bollinger
-
-• Hacim Analizi
-
-• Trend Gücü
-
-• FK
-
-• PD/DD
-
-• Bilanço Puanı
-
-• AI Güven Oranı
-
-• Beklenen Getiri
-
-• Risk Skoru
-
+• Analizler günlük olarak değişebilir.
 """)

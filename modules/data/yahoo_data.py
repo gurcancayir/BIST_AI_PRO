@@ -7,13 +7,14 @@ import streamlit as st
 # AYARLAR
 # ----------------------------------------------------------
 
-HISTORY_PERIOD = "1y"
+HISTORY_PERIOD = "2y"
 INTERVAL = "1d"
 
 
 # ----------------------------------------------------------
 # VERİ İNDİR
 # ----------------------------------------------------------
+
 
 @st.cache_data(ttl=1800)
 def get_history(symbol):
@@ -63,7 +64,7 @@ def get_company_info(symbol):
 
         ticker = yf.Ticker(symbol)
 
-        info = ticker.info
+        info = ticker.info or {}
 
         return {
 
@@ -159,6 +160,10 @@ def get_average_volume(df):
 # EMA
 # ----------------------------------------------------------
 
+# ----------------------------------------------------------
+# EMA
+# ----------------------------------------------------------
+
 def get_ema(df, period=20):
 
     if df is None:
@@ -170,8 +175,6 @@ def get_ema(df, period=20):
     ).mean()
 
     return round(float(ema.iloc[-1]), 2)
-
-
 # ----------------------------------------------------------
 # SMA
 # ----------------------------------------------------------
@@ -190,6 +193,10 @@ def get_sma(df, period=20):
 # RSI
 # ----------------------------------------------------------
 
+# ----------------------------------------------------------
+# RSI
+# ----------------------------------------------------------
+
 def get_rsi(df, period=14):
 
     if df is None:
@@ -201,17 +208,29 @@ def get_rsi(df, period=14):
 
     loss = -delta.clip(upper=0)
 
-    avg_gain = gain.rolling(period).mean()
 
-    avg_loss = loss.rolling(period).mean()
+    avg_gain = gain.ewm(
+        alpha=1/period,
+        adjust=False
+    ).mean()
+
+
+    avg_loss = loss.ewm(
+        alpha=1/period,
+        adjust=False
+    ).mean()
+
+
+    if avg_loss.iloc[-1] == 0:
+        return 100
+
 
     rs = avg_gain / avg_loss
 
     rsi = 100 - (100 / (1 + rs))
 
+
     return round(float(rsi.iloc[-1]), 2)
-
-
 # ----------------------------------------------------------
 # MACD
 # ----------------------------------------------------------
@@ -346,17 +365,81 @@ def get_volatility(df):
 
     return round(float(volatility), 2)
 # ----------------------------------------------------------
+# DESTEK
+# ----------------------------------------------------------
+
+def get_support(df, period=20):
+
+    if df is None:
+        return None
+
+    support = df["Low"].tail(period).min()
+
+    return round(float(support), 2)
+
+
+
+# ----------------------------------------------------------
+# DİRENÇ
+# ----------------------------------------------------------
+
+def get_resistance(df, period=20):
+
+    if df is None:
+        return None
+
+    resistance = df["High"].tail(period).max()
+
+    return round(float(resistance), 2)
+
+# ----------------------------------------------------------
 # TREND
 # ----------------------------------------------------------
+# ----------------------------------------------------------
+# 52 HAFTA GETİRİ
+# ----------------------------------------------------------
+
+def get_year_return(df):
+
+    if df is None:
+        return None
+
+    # Yaklaşık 1 yıl işlem günü
+    if len(df) < 250:
+        return None
+
+    first_price = df["Close"].iloc[-250]
+
+    last_price = df["Close"].iloc[-1]
+
+    year_return = (
+        (last_price - first_price)
+        /
+        first_price
+        *
+        100
+    )
+
+    return round(float(year_return), 2)
+# ----------------------------------------------------------
+# DESTEK - DİRENÇ
+# ----------------------------------------------------------
+
 
 def get_trend(df):
 
     if df is None:
         return "Bilinmiyor"
 
-    ema20 = get_ema(df, 20)
-    ema50 = get_ema(df, 50)
-    ema200 = get_ema(df, 200)
+
+    ema20 = get_ema(df,20)
+    ema50 = get_ema(df,50)
+    ema200 = get_ema(df,200)
+
+
+    if ema20 is None or ema50 is None or ema200 is None:
+        return "Yetersiz Veri"
+
 
     if ema20 > ema50 > ema200:
         return "Güçlü Yükseliş"
@@ -371,7 +454,6 @@ def get_trend(df):
         return "Düşüş"
 
     return "Yatay"
-
 
 # ----------------------------------------------------------
 # AI SCORE
@@ -391,6 +473,23 @@ def calculate_ai_score(df):
 
     avg_volume = get_average_volume(df)
 
+    momentum = get_momentum(df)
+
+    volatility = get_volatility(df)
+
+    price = get_last_price(df)
+
+    ema20 = get_ema(df, 20)
+
+    ema50 = get_ema(df, 50)
+
+    upper, lower = get_bollinger(df)
+
+    support = get_support(df)
+
+    resistance = get_resistance(df)
+
+  
     # RSI
 
     if rsi is not None:
@@ -399,12 +498,12 @@ def calculate_ai_score(df):
             score += 10
 
         elif rsi < 30:
-            score += 15
+            score += 5
 
         elif rsi > 75:
             score -= 10
 
-    # MACD
+# MACD
 
     if macd is not None and signal is not None:
 
@@ -414,6 +513,10 @@ def calculate_ai_score(df):
             score -= 10
 
     # Trend
+    # Hacim
+    # ----------------------------------------------------------
+    # TREND PUANI
+    # ----------------------------------------------------------
 
     if trend == "Güçlü Yükseliş":
         score += 20
@@ -421,22 +524,97 @@ def calculate_ai_score(df):
     elif trend == "Yükseliş":
         score += 10
 
-    elif trend == "Güçlü Düşüş":
-        score -= 20
-
     elif trend == "Düşüş":
         score -= 10
 
-    # Hacim
+    elif trend == "Güçlü Düşüş":
+        score -= 20
+
+
+    # ----------------------------------------------------------
+    # HACİM
+    # ----------------------------------------------------------
 
     if avg_volume > 0:
 
         if volume > avg_volume:
             score += 5
+
         else:
             score -= 5
 
+
+    # ----------------------------------------------------------
+    # MOMENTUM
+    # ----------------------------------------------------------
+
+    if momentum is not None:
+
+        if momentum > 0:
+            score += 10
+
+        else:
+            score -= 10
+
+
+    # ----------------------------------------------------------
+    # VOLATİLİTE
+    # ----------------------------------------------------------
+
+    if volatility is not None:
+
+        if volatility < 3:
+            score += 5
+
+        elif volatility > 6:
+            score -= 5
+
+
+    # ----------------------------------------------------------
+    # EMA
+    # ----------------------------------------------------------
+
+    if ema20 is not None and ema50 is not None and price is not None:
+
+        if price > ema20:
+            score += 5
+
+        if ema20 > ema50:
+            score += 5
+
+
+    # ----------------------------------------------------------
+    # BOLLINGER
+    # ----------------------------------------------------------
+
+    if upper is not None and lower is not None and price is not None:
+
+        if price <= lower:
+            score += 10
+
+        elif price >= upper:
+            score -= 10
+
+        # ----------------------------------------------------------
+    # DESTEK / DİRENÇ
+    # ----------------------------------------------------------
+
+    if support is not None and resistance is not None:
+
+        if price <= support * 1.03:
+            score += 5
+
+        elif price >= resistance * 0.97:
+            score -= 5
+
+
     return max(0, min(score, 100))
+
+    # Momentum
+# ----------------------------------------------------------
+# DESTEK / DİRENÇ
+# ----------------------------------------------------------
+
 
 
 # ----------------------------------------------------------
@@ -479,6 +657,11 @@ def get_stock_analysis(symbol):
     macd, signal = get_macd(df)
 
     upper, lower = get_bollinger(df)
+    support = get_support(df)
+    resistance = get_resistance(df)
+
+    print("SUPPORT:", support)
+    print("RESISTANCE:", resistance)
 
     analysis = {
 
@@ -514,11 +697,17 @@ def get_stock_analysis(symbol):
 
         "bollinger_lower": lower,
 
+        "support": support,
+
+        "resistance": resistance,
+
         "atr": get_atr(df),
 
         "momentum": get_momentum(df),
 
         "volatility": get_volatility(df),
+
+        "year_return": get_year_return(df),
 
         "trend": get_trend(df),
 
@@ -529,3 +718,62 @@ def get_stock_analysis(symbol):
     }
 
     return analysis
+
+def get_yahoo_price(symbol):
+
+    analysis = get_stock_analysis(symbol)
+
+    if analysis is None:
+        return None
+
+    return analysis["price"]
+
+
+def get_yahoo_info(symbol):
+
+    analysis = get_stock_analysis(symbol)
+
+    if analysis is None:
+        return {
+            "symbol": symbol,
+            "company": "-",
+            "sector": "-",
+            "market_cap": 0
+        }
+
+    return {
+        "symbol": symbol,
+        "company": analysis["company"],
+        "sector": analysis["sector"],
+        "market_cap": analysis["market_cap"]
+    }
+# ----------------------------------------------------------
+# TEMEL ANALİZ VERİLERİ
+# ----------------------------------------------------------
+
+def get_fundamental_data(symbol):
+
+    try:
+
+        if not symbol.endswith(".IS"):
+            symbol = symbol + ".IS"
+
+        ticker = yf.Ticker(symbol)
+
+        info = ticker.info
+
+        return {
+
+            "pe_ratio": info.get("trailingPE"),
+            "pb_ratio": info.get("priceToBook"),
+            "market_cap": info.get("marketCap"),
+            "profit_margin": info.get("profitMargins"),
+            "revenue": info.get("totalRevenue"),
+            "debt_equity": info.get("debtToEquity"),
+            "dividend_yield": info.get("dividendYield")
+
+        }
+
+    except Exception:
+
+        return None

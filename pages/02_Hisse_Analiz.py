@@ -4,15 +4,13 @@ import yfinance as yf
 from modules.teknik import analiz_et
 from modules.data.yahoo_data import get_stock_analysis
 
-analysis = get_stock_analysis("THYAO")
-
-st.write(analysis)
-
 st.set_page_config(
     page_title="Hisse Analiz Merkezi",
     page_icon="📈",
     layout="wide"
 )
+
+st.write("TEST ÇALIŞIYOR")
 
 st.title("📈 Hisse Analiz Merkezi")
 
@@ -46,20 +44,27 @@ if st.button("Analiz Et"):
         st.error("Veri bulunamadı.")
         st.stop()
 
-    sonuc = analiz_et(veri)
+    sonuc = get_stock_analysis(symbol)
+    if sonuc is None:
+        st.error("Analiz verisi alınamadı.")
+        st.stop()
+
+    st.write("KONTROL DESTEK:", sonuc["support"])
+    st.write("KONTROL DİRENÇ:", sonuc["resistance"])
+
 
     st.subheader(f"📊 {symbol} Teknik Analizi")
 
     c1, c2, c3, c4 = st.columns(4)
 
     c1.metric(
-        "Güncel Fiyat",
-        f"{sonuc['fiyat']:.2f} TL"
+        "📍 Destek",
+        f"{sonuc['support']:.2f} TL"
     )
 
     c2.metric(
-        "RSI",
-        f"{sonuc['rsi']:.2f}"
+        "🚧 Direnç",
+        f"{sonuc['resistance']:.2f} TL"
     )
 
     c3.metric(
@@ -69,7 +74,7 @@ if st.button("Analiz Et"):
 
     c4.metric(
         "Teknik Puan",
-        f"{sonuc['puan']}/100"
+        f"{sonuc['score']}/100"
     )
 
     st.divider()
@@ -78,34 +83,37 @@ if st.button("Analiz Et"):
 
     c1.metric(
         "📍 Destek",
-        f"{sonuc['destek']:.2f}"
+        f"{sonuc['support']:.2f} TL"
     )
 
     c2.metric(
         "🚧 Direnç",
-        f"{sonuc['direnc']:.2f}"
+        f"{sonuc['resistance']:.2f} TL"
     )
 
     c3.metric(
-        "🎯 Güven",
-        f"%{sonuc['guven']}"
+        "🤖 AI Skor",
+        f"{sonuc['score']}/100"
     )
-
+    
     st.divider()
 
-    if "AL" in sonuc["karar"]:
+    if "Güçlü Al" in sonuc["recommendation"]:
 
-        st.success(sonuc["karar"])
+        st.success(sonuc["recommendation"])
 
-    elif "TUT" in sonuc["karar"]:
+    elif "Al" in sonuc["recommendation"]:
 
-        st.warning(sonuc["karar"])
+        st.success(sonuc["recommendation"])
+
+    elif "Tut" in sonuc["recommendation"]:
+
+        st.warning(sonuc["recommendation"])
 
     else:
 
-        st.error(sonuc["karar"])
-
-    st.info(
+        st.error(sonuc["recommendation"])
+        st.info(
         f"Trend : {sonuc['trend']}"
     )
 
@@ -113,18 +121,15 @@ if st.button("Analiz Et"):
 
     st.subheader("📈 Fiyat Grafiği")
 
-    grafik = veri[
-        [
-            "Close"
-        ]
-    ]
-    grafik["MA20"] = veri["MA20"]
+    grafik = veri[["Close"]].copy()
 
-    grafik["MA50"] = veri["MA50"]
+    grafik["MA20"] = veri["Close"].rolling(20).mean()
 
-    grafik["MA200"] = veri["MA200"]
+    grafik["MA50"] = veri["Close"].rolling(50).mean()
 
+    grafik["MA200"] = veri["Close"].rolling(200).mean()
     st.line_chart(
+
         grafik,
         use_container_width=True
     )
@@ -133,9 +138,20 @@ if st.button("Analiz Et"):
 
     st.subheader("🤖 AI Yorumu")
 
-    for yorum in sonuc["yorumlar"]:
+    st.write(
+        "Karar:",
+        sonuc["recommendation"]
+    )
 
-        st.write(f"✅ {yorum}")
+    st.write(
+        "Trend:",
+        sonuc["trend"]
+    )
+
+    st.write(
+        "AI Skor:",
+        f"{sonuc['score']}/100"
+    )
 
     st.divider()
 
@@ -144,43 +160,47 @@ if st.button("Analiz Et"):
     c1, c2, c3 = st.columns(3)
 
     c1.metric(
-        "MA20",
-        f"{sonuc['ma20']:.2f}"
+        "EMA20",
+        f"{sonuc['ema20']:.2f}"
     )
 
     c2.metric(
-        "MA50",
-        f"{sonuc['ma50']:.2f}"
+        "EMA50",
+        f"{sonuc['ema50']:.2f}"
     )
 
     c3.metric(
-        "MA200",
-        f"{sonuc['ma200']:.2f}"
+        "EMA200",
+        f"{sonuc['ema200']:.2f}"
     )
 
     st.divider()
 
     st.subheader("📝 Genel Değerlendirme")
 
-    if sonuc["puan"] >= 85:
+    if sonuc["score"] >= 85:
 
         st.success(
-            "Teknik göstergelerin büyük bölümü olumlu. Trend güçlü, momentum yüksek ve mevcut görünüm yükseliş yönünde."
-        )
+        "Teknik göstergelerin büyük bölümü olumlu. Trend güçlü ve görünüm pozitif."
+    )
 
-    elif sonuc["puan"] >= 70:
+    elif sonuc["score"] >= 70:
 
         st.info(
-            "Teknik görünüm pozitif. Trend yukarı yönlü ancak direnç seviyelerinde fiyat davranışı izlenmeli."
-        )
+        "Teknik görünüm pozitif. Direnç seviyeleri takip edilmeli."
+    )
 
-    elif sonuc["puan"] >= 55:
+    elif sonuc["score"] >= 55:
 
         st.warning(
-            "Hisse nötr-pozitif görünümde. Yeni pozisyon için ek teyit sinyalleri beklenebilir."
-        )
+        "Hisse nötr-pozitif görünümde. Yeni alım için teyit beklenebilir."
+    )
 
     else:
+
+        st.error(
+        "Teknik görünüm zayıf. Risk yönetimi ön planda tutulmalı."
+    )
 
         st.error(
             "Teknik görünüm zayıf. Risk yönetimi ön planda tutulmalı ve destek seviyeleri dikkatle takip edilmeli."
