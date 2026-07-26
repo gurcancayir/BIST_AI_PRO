@@ -789,9 +789,9 @@ def get_stock_analysis(symbol):
 
         "score": score,
 
-        "volume_score": calculate_volume_score(df),
+        "volume_score": volume_score,
 
-        "momentum_score": calculate_momentum_score(df),
+        "momentum_score": momentum_score,
 
         "recommendation": get_recommendation(score)
 

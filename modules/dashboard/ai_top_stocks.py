@@ -174,7 +174,7 @@ def show_ai_top_stocks():
 
                     label=f'{renk} {hisse["symbol"]}',
 
-                    value=f'{score}/100',
+                    value=f'{score:.1f}/100',
 
                     delta=f'{hisse["change"]:.2f}%'
 
@@ -183,6 +183,18 @@ def show_ai_top_stocks():
                 st.caption(hisse["recommendation"])
 
                 st.caption(f'📈 {hisse["trend"]}')
+
+                st.caption(
+                    f"""
+📊 Teknik: {hisse["score"]}/100
+
+💰 Hacim: {hisse.get("volume_score", 50)}/100
+
+🚀 Momentum: {hisse.get("momentum_score", 50)}/100
+
+🏢 Temel: {hisse.get("fund_score", 50)}/100
+"""
+                )
     st.divider()
 
     # ----------------------------------------------------------
