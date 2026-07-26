@@ -302,9 +302,6 @@ def get_sma(df, period=20):
 # RSI
 # ----------------------------------------------------------
 
-# ----------------------------------------------------------
-# RSI
-# ----------------------------------------------------------
 
 def get_rsi(df, period=14):
 
@@ -500,6 +497,62 @@ def get_resistance(df, period=20):
     resistance = df["High"].tail(period).max()
 
     return round(float(resistance), 2)
+# ----------------------------------------------------------
+# AI TREND GÜCÜ SKORU
+# ----------------------------------------------------------
+
+def calculate_trend_strength(df):
+
+    if df is None:
+        return 50
+
+    try:
+
+        price = get_last_price(df)
+
+        ema20 = get_ema(df,20)
+
+        ema50 = get_ema(df,50)
+
+        ema200 = get_ema(df,200)
+
+
+        score = 0
+
+
+        # EMA sıralaması
+
+        if ema20 > ema50 > ema200:
+            score += 40
+
+        elif ema20 > ema50:
+            score += 25
+
+        elif ema20 > ema200:
+            score += 15
+
+
+        # Fiyat konumu
+
+        if price > ema20:
+            score += 20
+
+
+        if price > ema50:
+            score += 20
+
+
+        if price > ema200:
+            score += 20
+
+
+        return min(score,100)
+
+
+    except:
+
+        return 50
+
 
 # ----------------------------------------------------------
 # TREND
@@ -765,7 +818,10 @@ def get_stock_analysis(symbol):
     volume_score = calculate_volume_score(df)
 
     momentum_score = calculate_momentum_score(df)
+
     momentum_60_score = calculate_momentum_60_score(df)
+
+    trend_strength = calculate_trend_strength(df)
 
     macd, signal = get_macd(df)
 
@@ -831,6 +887,8 @@ def get_stock_analysis(symbol):
         "momentum_score": momentum_score,
         
         "momentum_60_score": momentum_60_score,
+
+        "trend_strength": trend_strength,
 
         "recommendation": get_recommendation(score)
 

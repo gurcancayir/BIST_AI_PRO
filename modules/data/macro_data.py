@@ -5,19 +5,53 @@ def get_price(symbol):
 
     try:
 
-        data = yf.Ticker(symbol).history(period="5d")
+        data = yf.Ticker(symbol).history(
+            period="5d"
+        )
 
-        last = round(data["Close"].dropna().iloc[-1], 2)
+        print("\nHISSE:", symbol)
+        print(data.tail())
 
-        prev = round(data["Close"].dropna().iloc[-2], 2)
 
-        change = round(((last - prev) / prev) * 100, 2)
+        close = data["Close"].dropna()
+
+
+        if len(close) < 2:
+
+            return "-", "-"
+
+
+        last = round(
+            float(close.iloc[-1]),
+            2
+        )
+
+
+        prev = round(
+            float(close.iloc[-2]),
+            2
+        )
+
+
+        change = round(
+            ((last - prev) / prev) * 100,
+            2
+        )
+
 
         return last, change
 
-    except:
+
+    except Exception as e:
+
+        print(
+            symbol,
+            "HATA:",
+            e
+        )
 
         return "-", "-"
+
 
 
 def get_macro_data():
@@ -33,11 +67,20 @@ def get_macro_data():
     brent, brent_change = get_price("BZ=F")
 
     silver, silver_change = get_price("SI=F")
+
+
     try:
-        gram = round((gold * usd) / 31.1035, 2)
+
+        gram = round(
+            (gold * usd) / 31.1035,
+            2
+        )
+
     except:
-        gram = "-"        
-    
+
+        gram = "-"
+
+
     return {
 
         "gold": gold,
@@ -51,12 +94,12 @@ def get_macro_data():
 
         "silver": silver,
         "silver_change": silver_change,
-        
+
         "eur": eur,
-        
         "eur_change": eur_change,
 
         "gram": gram,
+
         "bist": bist,
         "bist_change": bist_change,
 

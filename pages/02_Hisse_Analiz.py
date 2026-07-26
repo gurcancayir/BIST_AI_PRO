@@ -81,21 +81,39 @@ if st.button("Analiz Et"):
     )
 
 
+    market_cap = fundamental.get("market_cap")
+
+    if market_cap is not None:
+
+        if market_cap >= 1_000_000_000:
+            market_cap_text = f"{market_cap / 1_000_000_000:.1f} Milyar TL"
+
+        elif market_cap >= 1_000_000:
+             market_cap_text = f"{market_cap / 1_000_000:.1f} Milyon TL"
+
+        else:
+            market_cap_text = f"{market_cap:,.0f} TL"
+
+    else:
+        market_cap_text = "-"
+
+
     st.write(
         "💰 Piyasa Değeri:",
-        fundamental.get("market_cap")
+        market_cap_text
     )
 
 
-    st.write(
-        "📌 F/K:",
-        fundamental.get("pe_ratio")
+    c1, c2 = st.columns(2)
+
+    c1.metric(
+        "📌 F/K",
+        f'{fundamental.get("pe_ratio", "-")}'
     )
 
-
-    st.write(
-        "📌 PD/DD:",
-        fundamental.get("pb_ratio")
+    c2.metric(
+        "📌 PD/DD",
+        f'{fundamental.get("pb_ratio", "-")}'
     )
 
 
@@ -126,20 +144,30 @@ if st.button("Analiz Et"):
     st.metric(
         "⭐ Fundamental Skor",
         f"{fund_score}/100"
-    )    
+    )
+
+    st.divider()
+
+    st.metric(
+        "💰 Güncel Değer",
+        f'{sonuc["price"]:.2f} TL',
+        f'{sonuc["change"]:.2f}%'
+    )
 
     st.write("KONTROL DESTEK:", sonuc["support"])
     st.write("KONTROL DİRENÇ:", sonuc["resistance"])
     genel_skor = (
-        sonuc["score"] * 0.6 +
-        fund_score * 0.4
+        sonuc["score"] * 0.50 +
+        sonuc["volume_score"] * 0.15 +
+        sonuc["momentum_score"] * 0.15 +
+        fund_score * 0.20
     )
 
     st.divider()
 
     st.subheader("🏆 Genel Yatırım Skoru")
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
 
     c1.metric(
         "📈 Teknik Skor",
@@ -155,10 +183,14 @@ if st.button("Analiz Et"):
         "🏆 Genel Skor",
         f"{genel_skor:.0f}/100"
     )
+    c4.metric(
+        "🚀 60G Momentum",
+        f"{sonuc['momentum_60_score']}/100"
+    )
 
     st.subheader(f"📊 {symbol} Teknik Analizi")
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
 
     c1.metric(
         "📍 Destek",
@@ -176,31 +208,17 @@ if st.button("Analiz Et"):
     )
 
     c4.metric(
+        "RSI",
+        f"{sonuc['rsi']:.2f}"
+    )
+
+    c5.metric(
         "📈 Teknik Skor",
         f"{sonuc['score']}/100"
     )
-
     st.divider()
 
-    c1, c2, c3 = st.columns(3)
-
-    c1.metric(
-        "📍 Destek",
-        f"{sonuc['support']:.2f} TL"
-    )
-
-    c2.metric(
-        "🚧 Direnç",
-        f"{sonuc['resistance']:.2f} TL"
-    )
-
-    c3.metric(
-        "🤖 AI Skor",
-        f"{sonuc['score']}/100"
-    )
     
-    st.divider()
-
     if "Güçlü Al" in sonuc["recommendation"]:
 
         st.success(sonuc["recommendation"])
@@ -254,6 +272,11 @@ if st.button("Analiz Et"):
     st.write(
         "AI Skor:",
         f"{sonuc['score']}/100"
+    )
+
+    st.write(
+        "📈 Trend Gücü:",
+        f"{sonuc['trend_strength']}/100"
     )
 
     st.divider()

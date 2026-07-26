@@ -2,21 +2,33 @@ import streamlit as st
 from modules.data.macro_data import get_price
 
 
+# ----------------------------------------------------------
+# SEKTÖR ORTALAMA DEĞİŞİM HESAPLAMA
+# ----------------------------------------------------------
+
 def calculate_sector_strength(stocks):
 
     degisimler = []
 
     for stock in stocks:
 
-        fiyat, degisim = get_price(stock)
+        try:
 
-        if degisim != "-":
+            fiyat, degisim = get_price(stock)
 
-            degisimler.append(degisim)
+            if degisim != "-":
+
+                degisimler.append(float(degisim))
+
+        except Exception:
+
+            continue
 
 
     if len(degisimler) == 0:
-        return "-"
+
+        return None
+
 
     return round(
         sum(degisimler) / len(degisimler),
@@ -24,96 +36,161 @@ def calculate_sector_strength(stocks):
     )
 
 
+# ----------------------------------------------------------
+# SEKTÖR SKORLARI
+# ----------------------------------------------------------
 
-def show_sector_strength():
-
-    st.markdown("### 💪 Sektör Gücü")
-
+def get_sector_scores():
 
     sektorler = {
 
-        "🛒 Perakende": [
+
+        "Perakende": [
+
             "BIMAS.IS",
             "MGROS.IS",
             "SOKM.IS",
             "BIZIM.IS",
             "ULKER.IS"
+
         ],
 
 
-        "🛡️ Savunma": [
+        "Savunma": [
+
             "ASELS.IS",
             "OTKAR.IS",
             "ASTOR.IS",
             "SDTTR.IS",
             "KONTR.IS"
+
         ],
 
 
-        "🚗 Otomotiv": [
+        "Otomotiv": [
+
             "FROTO.IS",
             "TOASO.IS",
             "DOAS.IS",
             "KARSN.IS",
             "TTRAK.IS"
+
         ],
 
 
-        "⚡ Enerji": [
+        "Enerji": [
+
             "AKSEN.IS",
             "ENJSA.IS",
             "TUPRS.IS",
             "ODAS.IS",
             "AYDEM.IS"
+
         ],
 
 
-        "🏭 Sanayi": [
+        "Sanayi": [
+
             "SISE.IS",
             "EREGL.IS",
             "KRDMD.IS",
             "HEKTS.IS",
             "KCHOL.IS"
+
         ],
 
 
-        "🏦 Banka": [
+        "Banka": [
+
             "AKBNK.IS",
             "GARAN.IS",
             "YKBNK.IS",
             "ISCTR.IS",
             "HALKB.IS"
+
         ],
 
 
-        "✈️ Ulaştırma": [
+        "Ulaştırma": [
+
             "THYAO.IS",
             "PGSUS.IS",
             "TAVHL.IS",
             "CLEBI.IS",
             "GSDHO.IS"
+
         ]
 
     }
 
 
+    sonuc = {}
+
 
     for sektor, hisseler in sektorler.items():
+
 
         guc = calculate_sector_strength(hisseler)
 
 
-        if guc == "-":
+        if guc is None:
 
-            durum = "⚪"
+            skor = 50
 
-        elif guc > 1:
+
+        else:
+
+            # Ortalama günlük değişimi skora çevir
+            # %1 değişim = 60 puan
+            # %-1 değişim = 40 puan
+
+            skor = 50 + (guc * 10)
+
+            skor = max(
+                0,
+                min(
+                    100,
+                    skor
+                )
+            )
+
+
+        sonuc[sektor] = round(
+            skor,
+            1
+        )
+
+
+    return sonuc
+
+
+
+# ----------------------------------------------------------
+# STREAMLIT GÖRÜNÜMÜ
+# ----------------------------------------------------------
+
+def show_sector_strength():
+
+    st.markdown(
+        "### 💪 Sektör Gücü"
+    )
+
+
+    skorlar = get_sector_scores()
+
+
+    for sektor, skor in skorlar.items():
+
+
+        if skor >= 60:
 
             durum = "🟢"
 
-        elif guc < -1:
+
+        elif skor <= 40:
 
             durum = "🔴"
+
 
         else:
 
@@ -122,6 +199,9 @@ def show_sector_strength():
 
 
         st.metric(
+
             sektor,
-            f"{durum} %{guc}"
+
+            f"{durum} {skor}/100"
+
         )

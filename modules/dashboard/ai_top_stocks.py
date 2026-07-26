@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-
+from modules.dashboard.sector_strength import get_sector_scores
 from modules.data.yahoo_data import get_stock_analysis
 from modules.data.bist_lists import BIST30, BIST50, BIST100, BIST500
 from modules.data.fundamental import (
@@ -22,7 +22,7 @@ from modules.data.fundamental import (
 # ----------------------------------------------------------
 
 def show_ai_top_stocks():
-
+    sektor_skorlari = get_sector_scores()
     st.subheader("🏆 Genel Yatırım Skoru Top Hisseler")
 
     secim = st.selectbox(
@@ -77,6 +77,22 @@ def show_ai_top_stocks():
                 continue
 
 
+            sektor = analysis.get(
+                "sector",
+                ""
+            )
+
+
+            analysis["sector_score"] = 50
+
+
+            for isim, skor in sektor_skorlari.items():
+
+                if isim.lower() in sektor.lower():
+
+                    analysis["sector_score"] = skor
+
+
             fundamental = get_fundamental_data(hisse)
 
             fund_score = calculate_fundamental_score(
@@ -86,11 +102,15 @@ def show_ai_top_stocks():
 
             genel_skor = (
 
-                analysis["score"] * 0.45
+                analysis["score"] * 0.35
 
                 +
 
-                analysis["volume_score"] * 0.15
+                analysis["trend_strength"] * 0.10
+
+                +
+
+                analysis["volume_score"] * 0.10
 
                 +
 
@@ -102,12 +122,16 @@ def show_ai_top_stocks():
 
                 +
 
-                fund_score * 0.20
+                fund_score * 0.15
 
-            )      
+                +
 
+                analysis["sector_score"] * 0.10
+
+            )
 
             analysis["fund_score"] = fund_score
+
 
             analysis["genel_skor"] = round(
                 genel_skor,
@@ -115,9 +139,7 @@ def show_ai_top_stocks():
             )
 
 
-
             sonuc.append(analysis)
-
 
     if len(sonuc) == 0:
 
@@ -192,13 +214,17 @@ def show_ai_top_stocks():
                     f"""
 📊 Teknik: {hisse["score"]}/100
 
+📈 Trend Gücü: {hisse.get("trend_strength",50)}/100
+
 💰 Hacim: {hisse.get("volume_score", 50)}/100
 
-🚀 Momentum: {hisse.get("momentum_score", 50)}/100
+🚀 20 Günlük Momentum: {hisse.get("momentum_score", 50)}/100
 
-📈 60G Momentum: {hisse.get("momentum_60_score", 50)}/100
+📈 60 Günlük Momentum: {hisse.get("momentum_60_score", "YOK")}/100
 
 🏢 Temel: {hisse.get("fund_score", 50)}/100
+
+🏭 Sektör: {hisse.get("sector_score", 50)}/100
 """
                 )
     st.divider()
@@ -229,9 +255,13 @@ def show_ai_top_stocks():
 
             "Hacim Skor": hisse["volume_score"],
 
-            "Momentum Skor": hisse["momentum_score"],
+            "20 Gün Momentum": hisse["momentum_score"],
+
+            "60 Gün Momentum": hisse["momentum_60_score"],
 
             "Temel Skor": hisse["fund_score"],
+            
+            "Sektör Skor": hisse["sector_score"],
 
             "Genel Skor": hisse["genel_skor"],
 
