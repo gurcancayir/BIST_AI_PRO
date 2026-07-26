@@ -2,6 +2,11 @@ import streamlit as st
 import yfinance as yf
 
 from modules.teknik import analiz_et
+from modules.data.yahoo_data import get_stock_analysis
+
+analysis = get_stock_analysis("THYAO")
+
+st.write(analysis)
 
 st.set_page_config(
     page_title="Hisse Analiz Merkezi",
