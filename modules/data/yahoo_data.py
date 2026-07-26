@@ -36,7 +36,43 @@ def calculate_volume_score(data):
 
         return 50
 
+# ----------------------------------------------------------
+# 60 GÜNLÜK MOMENTUM SKORU
+# ----------------------------------------------------------
 
+def calculate_momentum_60_score(data):
+
+    try:
+
+        price_now = data["Close"].iloc[-1]
+
+        price_old = data["Close"].iloc[-60]
+
+
+        change = (
+            (price_now / price_old) - 1
+        ) * 100
+
+
+        if change >= 30:
+            return 100
+
+        elif change >= 15:
+            return 85
+
+        elif change >= 5:
+            return 70
+
+        elif change >= 0:
+            return 55
+
+        else:
+            return 30
+
+
+    except:
+
+        return 50
 
 # ----------------------------------------------------------
 # MOMENTUM SKORU
@@ -729,6 +765,7 @@ def get_stock_analysis(symbol):
     volume_score = calculate_volume_score(df)
 
     momentum_score = calculate_momentum_score(df)
+    momentum_60_score = calculate_momentum_60_score(df)
 
     macd, signal = get_macd(df)
 
@@ -792,6 +829,8 @@ def get_stock_analysis(symbol):
         "volume_score": volume_score,
 
         "momentum_score": momentum_score,
+        
+        "momentum_60_score": momentum_60_score,
 
         "recommendation": get_recommendation(score)
 

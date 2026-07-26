@@ -86,7 +86,7 @@ def show_ai_top_stocks():
 
             genel_skor = (
 
-                analysis["score"] * 0.50
+                analysis["score"] * 0.45
 
                 +
 
@@ -94,13 +94,17 @@ def show_ai_top_stocks():
 
                 +
 
-                analysis["momentum_score"] * 0.15
+                analysis["momentum_score"] * 0.10
+
+                +
+
+                analysis["momentum_60_score"] * 0.10
 
                 +
 
                 fund_score * 0.20
 
-            )
+            )      
 
 
             analysis["fund_score"] = fund_score
@@ -191,6 +195,8 @@ def show_ai_top_stocks():
 💰 Hacim: {hisse.get("volume_score", 50)}/100
 
 🚀 Momentum: {hisse.get("momentum_score", 50)}/100
+
+📈 60G Momentum: {hisse.get("momentum_60_score", 50)}/100
 
 🏢 Temel: {hisse.get("fund_score", 50)}/100
 """
