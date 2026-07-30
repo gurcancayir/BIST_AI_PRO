@@ -1,11 +1,10 @@
 from modules.data.yahoo_data import get_stock_analysis
-from modules.data.yahoo_data import (
-    get_stock_analysis,
-    get_rsi
-)
 
 
-# İzlenecek hisseler
+# ==========================================
+# TARAMA LİSTESİ
+# ==========================================
+
 WATCHLIST = [
 
     "ASELS",
@@ -27,148 +26,296 @@ WATCHLIST = [
 ]
 
 
+# ==========================================
+# RADAR SKORU
+# ==========================================
+
 def calculate_radar_score(analysis):
 
+
     score = 0
+
     reasons = []
 
-    # -----------------------------------
-    # Trend Gücü (25)
-    # -----------------------------------
 
-    trend_strength = analysis["trend_strength"]
+    # -------------------------
+    # Trend
+    # -------------------------
+
+    trend_strength = analysis.get(
+        "trend_strength",
+        50
+    )
+
 
     score += trend_strength * 0.25
 
+
     if trend_strength >= 80:
-        reasons.append("Trend çok güçlü")
 
-    # -----------------------------------
-    # Momentum (20)
-    # -----------------------------------
+        reasons.append(
+            "Güçlü trend"
+        )
 
-    momentum = analysis["momentum_score"]
+
+    # -------------------------
+    # Momentum
+    # -------------------------
+
+    momentum = analysis.get(
+        "momentum_score",
+        50
+    )
+
 
     score += momentum * 0.20
 
+
     if momentum >= 70:
-        reasons.append("Momentum güçlü")
 
-    # -----------------------------------
-    # Hacim (15)
-    # -----------------------------------
+        reasons.append(
+            "Momentum güçlü"
+        )
 
-    volume = analysis["volume_score"]
+
+
+    # -------------------------
+    # Hacim
+    # -------------------------
+
+    volume = analysis.get(
+        "volume_score",
+        50
+    )
+
 
     score += volume * 0.15
 
+
     if volume >= 70:
-        reasons.append("Hacim artıyor")
 
-    # -----------------------------------
-    # AI Score (15)
-    # -----------------------------------
+        reasons.append(
+            "Hacim destekliyor"
+        )
 
-    ai = analysis["score"]
 
-    score += ai * 0.15
 
-    if ai >= 80:
-        reasons.append("AI puanı yüksek")
+    # -------------------------
+    # AI Score
+    # -------------------------
 
-    # -----------------------------------
-    # RSI (10)
-    # -----------------------------------
+    ai_score = analysis.get(
+        "score",
+        50
+    )
 
-    rsi = analysis["rsi"]
 
-    if rsi is not None:
+    score += ai_score * 0.15
+
+
+    if ai_score >= 80:
+
+        reasons.append(
+            "AI puanı yüksek"
+        )
+
+
+
+    # -------------------------
+    # RSI
+    # -------------------------
+
+    rsi = analysis.get(
+        "rsi",
+        None
+    )
+
+
+    if rsi:
+
 
         if 45 <= rsi <= 65:
 
             score += 10
 
-            reasons.append("RSI sağlıklı bölgede")
+            reasons.append(
+                "RSI sağlıklı"
+            )
+
 
         elif rsi < 35:
 
             score += 8
 
-            reasons.append("RSI toparlanıyor")
+            reasons.append(
+                "RSI toparlanma bölgesinde"
+            )
 
-    # -----------------------------------
-    # Destek Bölgesi (5)
-    # -----------------------------------
+
+
+    # -------------------------
+    # Destek yakınlığı
+    # -------------------------
 
     try:
 
+
         price = analysis["price"]
+
         support = analysis["support"]
 
-        if support > 0:
 
-            distance = abs(price - support) / support
+        if support:
 
-            if distance <= 0.03:
+
+            uzaklik = abs(
+                price - support
+            ) / support
+
+
+
+            if uzaklik <= 0.03:
 
                 score += 5
 
-                reasons.append("Destek bölgesinde")
+                reasons.append(
+                    "Destek bölgesinde"
+                )
+
 
     except:
+
         pass
 
 
 
-    return round(min(score, 100), 1), reasons
+    return round(
+        min(score,100),
+        1
+    ), reasons
+
+
+
+
+
+# ==========================================
+# RADAR ANA FONKSİYON
+# ==========================================
+
 def get_radar_picks():
+
 
     radar = []
 
+
+
     for symbol in WATCHLIST:
+
 
         try:
 
-            analysis = get_stock_analysis(symbol)
+
+            analysis = get_stock_analysis(
+                symbol
+            )
+
 
             if analysis is None:
+
                 continue
+
+
 
             radar_score, reasons = calculate_radar_score(
                 analysis
             )
 
-            radar.append({
 
-                "symbol": symbol,
 
-                "price": analysis["price"],
+            radar.append(
 
-                "change": analysis["change"],
 
-                "sector": analysis["sector"],
+                {
 
-                "recommendation": analysis["recommendation"],
 
-                "score": analysis["score"],
+                    "symbol": symbol,
 
-                "trend": analysis["trend"],
 
-                "trend_strength": analysis["trend_strength"],
+                    "price": analysis.get(
+                        "price",
+                        0
+                    ),
 
-                "momentum_score": analysis["momentum_score"],
 
-                "volume_score": analysis["volume_score"],
+                    "change": analysis.get(
+                        "change",
+                        0
+                    ),
 
-                "radar_score": radar_score,
 
-                "reasons": reasons
+                    "sector": analysis.get(
+                        "sector",
+                        "-"
+                    ),
 
-            })
 
-        except:
+                    "recommendation": analysis.get(
+                        "recommendation",
+                        "Tut"
+                    ),
 
-            pass
+
+                    "score": analysis.get(
+                        "score",
+                        0
+                    ),
+
+
+                    "trend": analysis.get(
+                        "trend",
+                        "-"
+                    ),
+
+
+                    "trend_strength": analysis.get(
+                        "trend_strength",
+                        0
+                    ),
+
+
+                    "momentum_score": analysis.get(
+                        "momentum_score",
+                        0
+                    ),
+
+
+                    "volume_score": analysis.get(
+                        "volume_score",
+                        0
+                    ),
+
+
+                    "radar_score": radar_score,
+
+
+                    "reasons": reasons
+
+
+                }
+
+            )
+
+
+
+        except Exception as e:
+
+
+            print(
+                "RADAR HATA:",
+                symbol,
+                e
+            )
+
 
 
     radar.sort(
@@ -178,5 +325,6 @@ def get_radar_picks():
         reverse=True
 
     )
+
 
     return radar
