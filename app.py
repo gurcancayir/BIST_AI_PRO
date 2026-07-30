@@ -1,173 +1,211 @@
 import streamlit as st
-
-from database.database import create_tables
-from modules.portfolio.portfolio import show_portfolio
-from modules.dashboard.hero import show_hero
-from modules.dashboard.market_summary import show_market_summary
-from modules.dashboard.market_score import show_market_score
-from modules.dashboard.score_breakdown import show_score_breakdown
-from modules.dashboard.macro_view import show_macro_view
-from modules.dashboard.ai_report import show_ai_report
-from modules.dashboard.sector_strength import show_sector_strength
-from modules.dashboard.economic_calendar import show_economic_calendar
-from modules.dashboard.ai_top_stocks import show_ai_top_stocks
-
-from modules.data.data_center import show_data_center
-
-
-# --------------------------------------------------
-# DATABASE
-# --------------------------------------------------
-
-create_tables()
-
-
-# --------------------------------------------------
-# PAGE SETTINGS
-# --------------------------------------------------
-
+from datetime import datetime
+from modules.ai.allocation_ai import show_allocation_ai
+from modules.ai.market_ai import get_market_score
+from modules.ai.market_ai import (
+    get_market_score,
+    get_macro_comment
+)
+from modules.dashboard.sector_strength import get_sector_scores
+# Sayfa ayarları
 st.set_page_config(
     page_title="BIST AI PRO",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+# AI Market Score al
+score, reasons = get_market_score()
+st.write("DEBUG SCORE:", score)
+st.write("DEBUG NEDENLER:", reasons)
+# -----------------------------
+# BAŞLIK
+# -----------------------------
+st.title("🤖 BIST AI PRO")
+st.subheader("AI Sabah Brifingi")
 
+bugun = datetime.now().strftime("%d.%m.%Y")
 
-# --------------------------------------------------
-# GLOBAL STYLE
-# --------------------------------------------------
-
-st.markdown("""
-<style>
-
-.block-container{
-    padding-top:1rem;
-    padding-bottom:2rem;
-}
-
-h3{
-    color:#0E4D92;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
-# --------------------------------------------------
-# SIDEBAR
-# --------------------------------------------------
-
-with st.sidebar:
-
-    st.title("📈 BIST AI PRO")
-
-    st.success(
-        "Yapay Zeka Destekli BIST Analiz Platformu"
-    )
-
-    st.divider()
-
-    st.page_link(
-        "app.py",
-        label="🏠 Dashboard"
-    )
-
-    st.page_link(
-        "pages/01_Portfoy.py",
-        label="💼 Portföy"
-    )
-
-    st.divider()
-
-    st.caption("Versiyon 0.2 Dashboard V2")
-
-
-# --------------------------------------------------
-# HEADER
-# --------------------------------------------------
-
-show_hero()
-
-# --------------------------------------------------
-# MARKET SUMMARY
-# --------------------------------------------------
-
-show_market_summary()
-show_portfolio()
-
+st.caption(f"📅 {bugun} | Yapay Zeka Destekli Piyasa Analizi")
+# -----------------------------
+# AI GÜVEN ENDEKSİ
+# -----------------------------
 st.divider()
 
-# --------------------------------------------------
-# ROW 1
-# --------------------------------------------------
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric(
+        label="🤖 AI Güven Endeksi",
+        value=f"{score} / 100"
+    )
+
+
+with col2:
+
+    if score >= 80:
+        durum = "🟢 Güçlü Pozitif"
+
+    elif score >= 60:
+        durum = "🟡 Temkinli Pozitif"
+
+    elif score >= 40:
+        durum = "🟠 Nötr"
+
+    else:
+        durum = "🔴 Riskli"
+
+    st.metric(
+        label="📈 BIST Görünümü",
+        value=durum
+    )
+   
+with col3:
+    st.metric(
+        label="⚠️ Risk Seviyesi",
+        value="Orta"
+    )
+
+with col4:
+    st.metric(
+        label="🎯 Günlük Strateji",
+        value="Seçici Alım"
+    )
+
+
+# -----------------------------
+# EKONOMİST ÖZETLERİ
+# -----------------------------
+st.divider()
+
+st.header("👨‍🏫 Ekonomist Görüşleri")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    with st.container(border=True):
-        show_market_score()
+
+    st.info(
+        """
+        **Mahfi Eğilmez**
+
+        Enflasyon, faiz ve ekonomik dengeler
+        piyasaların ana belirleyicisi olmaya devam ediyor.
+
+        BIST Etkisi:
+        🟡 Temkinli
+        """
+    )
+
+    st.info(
+        """
+        **Hakan Kara**
+
+        Para politikası ve TCMB beklentileri
+        yakından takip edilmeli.
+
+        BIST Etkisi:
+        🟢 Pozitif
+        """
+    )
+
 
 with col2:
-    with st.container(border=True):
-        show_macro_view()
+
+    st.info(
+        """
+        **Atilla Yeşilada**
+
+        Küresel riskler, dolar ve yabancı yatırımcı
+        hareketleri önemli.
+
+        BIST Etkisi:
+        🟡 Dengeli
+        """
+    )
+
+    st.info(
+        """
+        **Bora Özkent**
+
+        Güçlü bilanço ve kaliteli şirketler
+        ön plana çıkıyor.
+
+        BIST Etkisi:
+        🟢 Pozitif
+        """
+    )
+
+
+# -----------------------------
+# MAKRO GÖRÜNÜM
+# -----------------------------
 
 st.divider()
 
-# --------------------------------------------------
-# ROW 2
-# --------------------------------------------------
+st.header("🌍 AI Makro Görünüm")
 
-col1, col2 = st.columns(2)
 
-with col1:
-    with st.container(border=True):
-        show_ai_report()
+macro_comments = get_macro_comment()
 
-with col2:
-    with st.container(border=True):
-        show_score_breakdown()
 
+for item in macro_comments:
+
+    col1, col2, col3 = st.columns([2,2,3])
+
+    with col1:
+        st.write("**" + item[0] + "**")
+
+    with col2:
+        st.write(item[1])
+
+    with col3:
+        st.write(item[2])
+
+# -----------------------------
+# SEKTÖR GÜCÜ
+# -----------------------------
 st.divider()
 
-# --------------------------------------------------
-# ROW 3
-# --------------------------------------------------
+st.header("🔥 Sektör Gücü")
 
-col1, col2 = st.columns(2)
+sektorler = get_sector_scores()
 
-with col1:
-    with st.container(border=True):
-        show_sector_strength()
 
-with col2:
-    with st.container(border=True):
-        show_economic_calendar()
+for sektor, puan in sektorler.items():
 
+    if puan >= 60:
+        durum = "🟢"
+
+    elif puan <= 40:
+        durum = "🔴"
+
+    else:
+        durum = "🟡"
+
+
+    st.write(
+        f"**{durum} {sektor}**  {puan}/100"
+    )
+
+    st.progress(
+        puan / 100
+    )
+
+# -----------------------------
+# AI YORUMU
+# -----------------------------
 st.divider()
+st.header("💼 AI Yatırım Dağılımı")
 
-# --------------------------------------------------
-# AI TOP HİSSELER
-# --------------------------------------------------
+show_allocation_ai()
 
-with st.container(border=True):
-    show_ai_top_stocks()
 
+
+# -----------------------------
+# ALT BİLGİ
+# -----------------------------
 st.divider()
-
-# --------------------------------------------------
-# VERİ MERKEZİ
-# --------------------------------------------------
-
-with st.container(border=True):
-    show_data_center()
-
-st.divider()
-
-# --------------------------------------------------
-# FOOTER
-# --------------------------------------------------
 
 st.caption(
-    "© 2026 BIST PRO AI | Yapay Zeka Destekli BIST Analiz Platformu"
+    "BIST AI PRO v2.0 | AI Sabah Brifingi Modülü"
 )

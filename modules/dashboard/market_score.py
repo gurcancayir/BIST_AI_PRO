@@ -1,12 +1,15 @@
 import streamlit as st
-from modules.ai.market_ai import get_market_score
+from modules.ai.market_ai import (
+    get_market_score,
+    get_market_comment
+)
 
 def show_market_score():
 
     st.markdown("### 🧠 AI Market Score")
 
     score, reasons = get_market_score()
-
+    comment = get_market_comment(score)
     col1, col2 = st.columns([2, 1])
 
     with col1:
@@ -22,24 +25,15 @@ def show_market_score():
 
     with col2:
 
-        if score >= 80:
+        if score >= 75:
 
-            st.success(
-                "🟢 Güçlü Pozitif\n\n"
-                "Trend destekleyici"
-            )
+            st.success(comment)
 
-        elif score >= 60:
+        elif score >= 35:
 
-            st.warning(
-                "🟡 Temkinli Pozitif"
-            )
+            st.warning(comment)
 
         else:
 
-            st.error(
-                "🔴 Risk Seviyesi Yüksek"
-            )
-
-
+            st.error(comment)
     

@@ -1,0 +1,173 @@
+import streamlit as st
+
+from database.database import create_tables
+from modules.portfolio.portfolio import show_portfolio
+from modules.dashboard.hero import show_hero
+from modules.dashboard.market_summary import show_market_summary
+from modules.dashboard.market_score import show_market_score
+from modules.dashboard.score_breakdown import show_score_breakdown
+from modules.dashboard.macro_view import show_macro_view
+from modules.dashboard.ai_report import show_ai_report
+from modules.dashboard.sector_strength import show_sector_strength
+from modules.dashboard.economic_calendar import show_economic_calendar
+from modules.dashboard.ai_top_stocks import show_ai_top_stocks
+
+from modules.data.data_center import show_data_center
+
+
+# --------------------------------------------------
+# DATABASE
+# --------------------------------------------------
+
+create_tables()
+
+
+# --------------------------------------------------
+# PAGE SETTINGS
+# --------------------------------------------------
+
+st.set_page_config(
+    page_title="BIST AI PRO",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+
+# --------------------------------------------------
+# GLOBAL STYLE
+# --------------------------------------------------
+
+st.markdown("""
+<style>
+
+.block-container{
+    padding-top:1rem;
+    padding-bottom:2rem;
+}
+
+h3{
+    color:#0E4D92;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
+# --------------------------------------------------
+# SIDEBAR
+# --------------------------------------------------
+
+with st.sidebar:
+
+    st.title("📈 BIST AI PRO")
+
+    st.success(
+        "Yapay Zeka Destekli BIST Analiz Platformu"
+    )
+
+    st.divider()
+
+    st.page_link(
+        "app.py",
+        label="🏠 Dashboard"
+    )
+
+    st.page_link(
+        "pages/01_Portfoy.py",
+        label="💼 Portföy"
+    )
+
+    st.divider()
+
+    st.caption("Versiyon 0.2 Dashboard V2")
+
+
+# --------------------------------------------------
+# HEADER
+# --------------------------------------------------
+
+show_hero()
+
+# --------------------------------------------------
+# MARKET SUMMARY
+# --------------------------------------------------
+
+show_market_summary()
+show_portfolio()
+
+st.divider()
+
+# --------------------------------------------------
+# ROW 1
+# --------------------------------------------------
+
+col1, col2 = st.columns(2)
+
+with col1:
+    with st.container(border=True):
+        show_market_score()
+
+with col2:
+    with st.container(border=True):
+        show_macro_view()
+
+st.divider()
+
+# --------------------------------------------------
+# ROW 2
+# --------------------------------------------------
+
+col1, col2 = st.columns(2)
+
+with col1:
+    with st.container(border=True):
+        show_ai_report()
+
+with col2:
+    with st.container(border=True):
+        show_score_breakdown()
+
+st.divider()
+
+# --------------------------------------------------
+# ROW 3
+# --------------------------------------------------
+
+col1, col2 = st.columns(2)
+
+with col1:
+    with st.container(border=True):
+        show_sector_strength()
+
+with col2:
+    with st.container(border=True):
+        show_economic_calendar()
+
+st.divider()
+
+# --------------------------------------------------
+# AI TOP HİSSELER
+# --------------------------------------------------
+
+with st.container(border=True):
+    show_ai_top_stocks()
+
+st.divider()
+
+# --------------------------------------------------
+# VERİ MERKEZİ
+# --------------------------------------------------
+
+with st.container(border=True):
+    show_data_center()
+
+st.divider()
+
+# --------------------------------------------------
+# FOOTER
+# --------------------------------------------------
+
+st.caption(
+    "© 2026 BIST PRO AI | Yapay Zeka Destekli BIST Analiz Platformu"
+)
