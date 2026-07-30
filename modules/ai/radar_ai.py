@@ -1,6 +1,6 @@
 from modules.data.yahoo_data import get_stock_analysis
 
-
+import traceback
 # ==========================================
 # TARAMA LİSTESİ
 # ==========================================
@@ -309,15 +309,16 @@ def get_radar_picks():
 
         except Exception as e:
 
-                import traceback
 
-                print(
+            print(
                 "RADAR HATA:",
-                symbol
+                symbol,
+                str(e)
             )
 
-        print(
-            traceback.format_exc()
+
+            print(
+                traceback.format_exc()
             )
 
 
