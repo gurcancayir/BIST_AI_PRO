@@ -843,6 +843,11 @@ def get_stock_analysis(symbol):
     df = get_history(symbol)
 
     if df is None:
+
+        print(
+        "VERİ ALINAMADI:",
+        symbol
+    )
         return None
 
     info = get_company_info(symbol)
