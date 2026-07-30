@@ -309,11 +309,15 @@ def get_radar_picks():
 
         except Exception as e:
 
+                import traceback
 
-            print(
+                print(
                 "RADAR HATA:",
-                symbol,
-                e
+                symbol
+            )
+
+        print(
+            traceback.format_exc()
             )
 
 
