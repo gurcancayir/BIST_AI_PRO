@@ -35,7 +35,6 @@ def safe_float(value):
 
     try:
         return float(value)
-
     except:
         return 0.0
 
@@ -48,9 +47,7 @@ def safe_float(value):
 def get_market():
 
     try:
-
         score, reasons = get_market_score()
-
         return score, reasons
 
     except Exception as e:
@@ -61,7 +58,7 @@ def get_market():
 
 
 # =========================================================
-# TEYİT SİSTEMİ
+# TEYİT KONTROLÜ
 # =========================================================
 
 def teyit_kontrolu(
@@ -78,17 +75,12 @@ def teyit_kontrolu(
     kontroller = []
 
     # -----------------------------------------------------
-    # 1. DESTEK KONTROLÜ
+    # 1. DESTEK
     # -----------------------------------------------------
 
     if destek > 0 and fiyat > 0:
 
-        # Destek üzerinde ve desteğe çok uzak değilse
-        destek_orani = (
-            (fiyat - destek) / fiyat
-        ) * 100
-
-        if destek_orani >= 0:
+        if fiyat >= destek:
 
             kontroller.append({
                 "Teyit": "Destek üzerinde tutunma",
@@ -160,7 +152,8 @@ def teyit_kontrolu(
             "Teyit": "Günlük hareket normalleşmesi",
             "Durum": False,
             "Yorum": (
-                f"Günlük hareket %{gunluk:.2f}; volatilite yüksek."
+                f"Günlük hareket %{gunluk:.2f}; "
+                "hareket yüksek."
             )
         })
 
@@ -212,10 +205,6 @@ def teyit_kontrolu(
             )
         })
 
-    # -----------------------------------------------------
-    # SONUÇ
-    # -----------------------------------------------------
-
     olumlu = sum(
         1
         for x in kontroller
@@ -228,10 +217,10 @@ def teyit_kontrolu(
 
 
 # =========================================================
-# TEYİT YORUMU
+# TEYİT DURUMU
 # =========================================================
 
-def teyit_yorumu(
+def teyit_durumu_uret(
     kontroller,
     olumlu,
     toplam
@@ -243,72 +232,57 @@ def teyit_yorumu(
         if not x["Durum"]
     ]
 
-    # -----------------------------------------------------
-    # TAM TEYİT
-    # -----------------------------------------------------
-
+    # 5/5
     if olumlu == toplam:
 
         return (
             "🟢 TEYİT GELDİ",
-            "Tüm önemli teyit koşulları olumlu.",
+            "Tüm teyit koşulları olumlu.",
             eksikler
         )
 
-    # -----------------------------------------------------
-    # 4 / 5
-    # -----------------------------------------------------
-
-    if olumlu >= 4:
+    # 4/5
+    if olumlu == toplam - 1:
 
         return (
             "🟢 TEYİT ÇOK YAKIN",
-            "Koşulların büyük bölümü olumlu. Eksik koşulun "
-            "tamamlanması bekleniyor.",
+            "Teyitlerin büyük bölümü olumlu. "
+            "Son eksik koşulun düzelmesi bekleniyor.",
             eksikler
         )
 
-    # -----------------------------------------------------
-    # 3 / 5
-    # -----------------------------------------------------
-
+    # 3/5
     if olumlu >= 3:
 
         return (
             "🟡 TEYİT BEKLE",
-            "Hisse güçlü ancak giriş için bazı koşulların "
-            "düzelmesi gerekiyor.",
+            "Olumlu sinyaller var ancak giriş teyidi "
+            "henüz tam oluşmadı.",
             eksikler
         )
 
-    # -----------------------------------------------------
-    # 2 / 5
-    # -----------------------------------------------------
-
+    # 2/5
     if olumlu >= 2:
 
         return (
             "🟠 İZLE",
-            "Bazı olumlu sinyaller var ancak giriş teyidi yeterli değil.",
+            "Bazı olumlu sinyaller var ancak teyit "
+            "yeterli değil.",
             eksikler
         )
 
-    # -----------------------------------------------------
-    # 0-1 / 5
-    # -----------------------------------------------------
-
     return (
         "🔴 TEYİT YOK",
-        "Teknik şartlar yeterince güçlü değil.",
+        "Teyit koşullarının çoğu olumsuz.",
         eksikler
     )
 
 
 # =========================================================
-# KARAR MOTORU
+# TEK KARAR MOTORU
 # =========================================================
 
-def karar_uret(
+def karar_motoru(
     genel_skor,
     teknik,
     temel,
@@ -321,19 +295,28 @@ def karar_uret(
     teyit_toplam
 ):
 
-    # =====================================================
+    # -----------------------------------------------------
+    # TEYİT ORANI
+    # -----------------------------------------------------
+
+    teyit_orani = (
+        teyit_olumlu / teyit_toplam
+        if teyit_toplam > 0
+        else 0
+    )
+
+    # -----------------------------------------------------
     # 1. UZAK DUR
-    # =====================================================
+    # -----------------------------------------------------
 
     if genel_skor < 45:
 
         return (
             "🔴 UZAK DUR",
             "Zayıf",
-            "Genel skor düşük. Hisse şu anda güçlü bir giriş fırsatı sunmuyor."
+            "Genel skor düşük. Güçlü giriş avantajı bulunmuyor."
         )
 
-    # Teknik + Trend + Momentum birlikte çok zayıf
     if (
         teknik < 40
         and trend < 40
@@ -346,32 +329,34 @@ def karar_uret(
             "Teknik, trend ve momentum birlikte zayıf."
         )
 
-    # =====================================================
-    # 2. TEYİT BEKLE
-    # =====================================================
+    # -----------------------------------------------------
+    # 2. ÇOK SERT DÜŞÜŞ
+    # -----------------------------------------------------
 
-    # Çok sert günlük düşüş
     if gunluk <= -6:
 
         return (
             "🟡 TEYİT BEKLE",
-            "Orta",
-            "Günlük düşüş çok sert. Fiyat hareketinin sakinleşmesi "
-            "ve destek üzerinde tutunması beklenmeli."
+            "Yüksek",
+            "Günlük düşüş çok sert. Fiyat hareketinin "
+            "sakinleşmesi ve destek üzerinde tutunması beklenmeli."
         )
 
-    # Market çok zayıf
+    # -----------------------------------------------------
+    # 3. MARKET ÇOK ZAYIF
+    # -----------------------------------------------------
+
     if market < 35:
 
         return (
             "🟡 TEYİT BEKLE",
             "Orta",
-            "Piyasa koşulları zayıf. Hisse güçlü olsa bile piyasa "
-            "teyidi beklenmeli."
+            "Piyasa koşulları zayıf. Hisse güçlü olsa bile "
+            "piyasa teyidi beklenmeli."
         )
 
     # =====================================================
-    # 3. AL
+    # 4. AL
     # =====================================================
 
     if (
@@ -379,18 +364,18 @@ def karar_uret(
         and teknik >= 75
         and momentum >= 70
         and trend >= 70
-        and teyit_olumlu == teyit_toplam
+        and teyit_orani == 1
     ):
 
         return (
             "🟢 AL",
             "Yüksek",
-            "Genel skor yüksek ve tüm ana teyit koşulları olumlu. "
-            "Giriş şartları oluşmuş durumda."
+            "Genel skor yüksek, teknik yapı güçlü ve "
+            "tüm teyit koşulları olumlu."
         )
 
     # =====================================================
-    # 4. AL ADAYI
+    # 5. AL ADAYI
     # =====================================================
 
     if (
@@ -398,18 +383,18 @@ def karar_uret(
         and teknik >= 70
         and momentum >= 65
         and trend >= 65
-        and teyit_olumlu >= teyit_toplam - 1
+        and teyit_orani >= 0.80
     ):
 
         return (
             "🟢 AL ADAYI",
             "Orta-Yüksek",
-            "Hisse güçlü. AL seviyesine çok yakın ancak son teyidin "
-            "tamamlanması bekleniyor."
+            "Hisse güçlü ve AL seviyesine yakın. "
+            "Son teyidin tamamlanması bekleniyor."
         )
 
     # =====================================================
-    # 5. TEYİT BEKLE
+    # 6. TEYİT BEKLE
     # =====================================================
 
     if genel_skor >= 65:
@@ -417,12 +402,12 @@ def karar_uret(
         return (
             "🟡 TEYİT BEKLE",
             "Orta",
-            "Hisse olumlu sinyaller veriyor ancak giriş için "
-            "yeterli teyit henüz oluşmadı."
+            "Hisse olumlu sinyaller veriyor ancak "
+            "giriş için yeterli teyit henüz oluşmadı."
         )
 
     # =====================================================
-    # 6. İZLE
+    # 7. İZLE
     # =====================================================
 
     if genel_skor >= 55:
@@ -430,12 +415,12 @@ def karar_uret(
         return (
             "🟠 İZLE",
             "Orta",
-            "Hisse takip edilebilir ancak mevcut seviyede "
-            "güçlü giriş avantajı bulunmuyor."
+            "Hisse takip edilebilir ancak mevcut "
+            "seviyede güçlü giriş avantajı bulunmuyor."
         )
 
     # =====================================================
-    # 7. UZAK DUR
+    # 8. UZAK DUR
     # =====================================================
 
     return (
@@ -443,6 +428,8 @@ def karar_uret(
         "Zayıf",
         "Genel skor ve teknik göstergeler yeterince güçlü değil."
     )
+
+
 # =========================================================
 # ADAY TÜRÜ
 # =========================================================
@@ -498,51 +485,39 @@ def risk_hesapla(
     risk = 0
 
     if genel_skor < 50:
-
         risk += 3
 
     elif genel_skor < 60:
-
         risk += 2
 
     elif genel_skor < 70:
-
         risk += 1
 
     if rsi > 75:
-
         risk += 2
 
     elif rsi > 70:
-
         risk += 1
 
     if gunluk <= -5:
-
         risk += 2
 
     elif gunluk <= -3:
-
         risk += 1
 
     if volatility >= 6:
-
         risk += 2
 
     elif volatility >= 4:
-
         risk += 1
 
     if risk >= 5:
-
         return "🔴 Yüksek"
 
     elif risk >= 3:
-
         return "🟡 Orta"
 
     else:
-
         return "🟢 Düşük"
 
 
@@ -612,7 +587,6 @@ def hisse_analiz_et(
         )
 
         if analysis is None:
-
             return None
 
         # -------------------------------------------------
@@ -648,15 +622,11 @@ def hisse_analiz_et(
         )
 
         momentum_60 = safe_float(
-            analysis.get(
-                "momentum_60_score"
-            )
+            analysis.get("momentum_60_score")
         )
 
         trend = safe_float(
-            analysis.get(
-                "trend_strength"
-            )
+            analysis.get("trend_strength")
         )
 
         rsi = safe_float(
@@ -672,17 +642,11 @@ def hisse_analiz_et(
         )
 
         destek = safe_float(
-            analysis.get(
-                "support",
-                0
-            )
+            analysis.get("support", 0)
         )
 
         direnç = safe_float(
-            analysis.get(
-                "resistance",
-                0
-            )
+            analysis.get("resistance", 0)
         )
 
         # -------------------------------------------------
@@ -705,9 +669,9 @@ def hisse_analiz_et(
 
         )
 
-        # -------------------------------------------------
-        # TEYİT
-        # -------------------------------------------------
+        # =================================================
+        # TEK TEYİT HESABI
+        # =================================================
 
         kontroller, teyit_olumlu, teyit_toplam = (
             teyit_kontrolu(
@@ -728,7 +692,7 @@ def hisse_analiz_et(
             teyit_durumu,
             teyit_aciklama,
             teyit_eksikleri
-        ) = teyit_yorumu(
+        ) = teyit_durumu_uret(
 
             kontroller,
             teyit_olumlu,
@@ -736,11 +700,15 @@ def hisse_analiz_et(
 
         )
 
-        # -------------------------------------------------
-        # KARAR
-        # -------------------------------------------------
+        # =================================================
+        # TEK KARAR HESABI
+        # =================================================
 
-        karar, guven, neden = karar_uret(
+        (
+            karar,
+            guven,
+            neden
+        ) = karar_motoru(
 
             genel_skor,
 
@@ -771,13 +739,9 @@ def hisse_analiz_et(
         aday = aday_turu(
 
             genel_skor,
-
             teknik,
-
             fundamental_score,
-
             momentum_60,
-
             trend
 
         )
@@ -789,18 +753,15 @@ def hisse_analiz_et(
         risk = risk_hesapla(
 
             genel_skor,
-
             rsi,
-
             gunluk,
-
             volatility
 
         )
 
-        # -------------------------------------------------
-        # SONUÇ
-        # -------------------------------------------------
+        # =================================================
+        # TEK SONUÇ SÖZLÜĞÜ
+        # =================================================
 
         return {
 
@@ -864,6 +825,7 @@ def hisse_analiz_et(
 
             "Direnç": direnç,
 
+            # TEK TEYİT SONUCU
             "Teyit": teyit_durumu,
 
             "Teyit Açıklaması": teyit_aciklama,
@@ -927,13 +889,9 @@ with st.sidebar:
     temiz_metin = (
 
         hisse_metni
-
         .replace(",", " ")
-
         .replace(";", " ")
-
         .replace("\n", " ")
-
         .replace("\t", " ")
 
     )
@@ -1026,21 +984,13 @@ with st.sidebar:
     toplam_agirlik = (
 
         teknik_yuzde
-
         +
-
         temel_yuzde
-
         +
-
         momentum_yuzde
-
         +
-
         trend_yuzde
-
         +
-
         market_yuzde
 
     )
@@ -1097,10 +1047,6 @@ with st.sidebar:
     )
 
     st.divider()
-
-    # =====================================================
-    # BUTON
-    # =====================================================
 
     analiz_butonu = st.button(
 
@@ -1239,11 +1185,8 @@ if sadece_70:
 if siralama in df.columns:
 
     df = df.sort_values(
-
         siralama,
-
         ascending=False
-
     )
 
 
@@ -1253,7 +1196,6 @@ if siralama in df.columns:
 
 col1, col2, col3, col4 = st.columns(4)
 
-
 with col1:
 
     st.metric(
@@ -1261,38 +1203,28 @@ with col1:
         f"{market_score}/100"
     )
 
-
 with col2:
 
     if market_score >= 75:
 
-        market_status = (
-            "🟢 Güçlü Pozitif"
-        )
+        market_status = "🟢 Güçlü Pozitif"
 
     elif market_score >= 55:
 
-        market_status = (
-            "🟡 Temkinli Pozitif"
-        )
+        market_status = "🟡 Temkinli Pozitif"
 
     elif market_score >= 35:
 
-        market_status = (
-            "🟠 Nötr"
-        )
+        market_status = "🟠 Nötr"
 
     else:
 
-        market_status = (
-            "🔴 Zayıf"
-        )
+        market_status = "🔴 Zayıf"
 
     st.metric(
         "📊 Piyasa Durumu",
         market_status
     )
-
 
 with col3:
 
@@ -1313,7 +1245,6 @@ with col3:
         f"{olumlu} Olumlu / {zayif} Zayıf"
     )
 
-
 with col4:
 
     st.metric(
@@ -1331,7 +1262,6 @@ st.divider()
 st.subheader(
     "📊 Hisselerin Karşılaştırılması"
 )
-
 
 display_columns = [
 
@@ -1351,7 +1281,6 @@ display_columns = [
     "Aday"
 
 ]
-
 
 st.dataframe(
 
@@ -1442,7 +1371,6 @@ st.divider()
 st.subheader(
     "🎯 Detaylı Karar Destek"
 )
-
 
 for row in df.to_dict(
     "records"
@@ -1547,17 +1475,18 @@ for row in df.to_dict(
         )
 
         # -------------------------------------------------
-        # TEYİT DURUMU
+        # TEYİT
         # -------------------------------------------------
 
         st.divider()
 
         st.markdown(
-            "### 🔎 Teyit Kontrolü"
+            "### 🔎 Teyit Durumu"
         )
 
+        # AYNI TEYİT DEĞERİ
         st.write(
-            f"**Durum:** {row['Teyit']}"
+            f"**{row['Teyit']}**"
         )
 
         st.write(
@@ -1593,7 +1522,7 @@ for row in df.to_dict(
                 )
 
         # -------------------------------------------------
-        # EKSİK TEYİTLER
+        # EKSİK TEYİT
         # -------------------------------------------------
 
         if row["Teyit Eksikleri"]:
@@ -1642,42 +1571,53 @@ for row in df.to_dict(
                 f"{row['Direnç']:.2f} TL"
             )
 
-        # -------------------------------------------------
-        # KULLANICIYA AÇIKLAMA
-        # -------------------------------------------------
+        # =================================================
+        # KULLANICIYA NET AÇIKLAMA
+        # =================================================
 
         st.divider()
 
-        if "TEYİT BEKLE" in row["Karar"]:
+        karar = row["Karar"]
 
-            st.warning(
-
-                "📌 **Ne yapmalı?**  \n"
-                "Hisse şu anda güçlü görünüyor ancak "
-                "eksik teyitler tamamlanmadan acele giriş "
-                "yapılması önerilmiyor. Yukarıdaki kırmızı "
-                "koşullar olumluya döndüğünde teyit güçlenecektir."
-
-            )
-
-        elif "AL" in row["Karar"]:
+        if karar == "🟢 AL":
 
             st.success(
 
-                "📌 **Sistem yorumu:**  \n"
-                "Genel skor, teknik göstergeler ve teyit "
-                "koşulları birlikte olumlu. Hisse AL adayı "
-                "olarak değerlendiriliyor."
+                "📌 **Sistem Yorumu**\n\n"
+                "Genel skor, teknik yapı ve teyit koşulları "
+                "birlikte olumlu. Sistem AL sinyali üretiyor."
 
             )
 
-        elif "İZLE" in row["Karar"]:
+        elif karar == "🟢 AL ADAYI":
 
             st.info(
 
-                "📌 **Sistem yorumu:**  \n"
-                "Hisse henüz güçlü giriş bölgesinde değil. "
-                "Skor, momentum ve trend gelişimi izlenmeli."
+                "📌 **Sistem Yorumu**\n\n"
+                "Hisse güçlü bir AL adayı. Ancak AL sinyaline "
+                "geçmeden önce eksik teyitlerin tamamlanması "
+                "bekleniyor."
+
+            )
+
+        elif karar == "🟡 TEYİT BEKLE":
+
+            st.warning(
+
+                "📌 **Sistem Yorumu**\n\n"
+                "Hisse olumlu görünüyor ancak giriş için "
+                "teyit koşullarından biri veya birkaçı henüz "
+                "tamamlanmadı."
+
+            )
+
+        elif karar == "🟠 İZLE":
+
+            st.info(
+
+                "📌 **Sistem Yorumu**\n\n"
+                "Hisse takip edilebilir ancak şu anda "
+                "yeterince güçlü bir giriş sinyali bulunmuyor."
 
             )
 
@@ -1685,7 +1625,7 @@ for row in df.to_dict(
 
             st.error(
 
-                "📌 **Sistem yorumu:**  \n"
+                "📌 **Sistem Yorumu**\n\n"
                 "Mevcut teknik koşullar güçlü bir giriş "
                 "avantajı göstermiyor."
 
@@ -1701,7 +1641,6 @@ st.divider()
 st.subheader(
     "🌍 Piyasa Teyitleri"
 )
-
 
 if market_reasons:
 
@@ -1728,7 +1667,6 @@ st.subheader(
     "🏆 Öne Çıkan Hisseler"
 )
 
-
 adaylar = (
 
     df[
@@ -1741,7 +1679,6 @@ adaylar = (
     )
 
 )
-
 
 if not adaylar.empty:
 
