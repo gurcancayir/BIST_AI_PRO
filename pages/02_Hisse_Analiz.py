@@ -158,8 +158,6 @@ if st.button("Analiz Et"):
         f'{sonuc["change"]:.2f}%'
     )
 
-    st.write("KONTROL DESTEK:", sonuc["support"])
-    st.write("KONTROL DİRENÇ:", sonuc["resistance"])
     genel_skor = (
     sonuc["score"] * 0.50 +
     fund_score * 0.20 +
@@ -265,28 +263,6 @@ if st.button("Analiz Et"):
 
     st.divider()
 
-    st.subheader("🤖 AI Yorumu")
-
-    st.write(
-        "Karar:",
-        sonuc["recommendation"]
-    )
-
-    st.write(
-        "Trend:",
-        sonuc["trend"]
-    )
-
-    st.write(
-        "AI Skor:",
-        f"{sonuc['score']}/100"
-    )
-
-    st.write(
-        "📈 Trend Gücü:",
-        f"{sonuc['trend_strength']}/100"
-    )
-
     st.divider()
 
     st.subheader("📊 Teknik Göstergeler")
@@ -331,10 +307,6 @@ if st.button("Analiz Et"):
     )
 
     else:
-
-        st.error(
-        "Teknik görünüm zayıf. Risk yönetimi ön planda tutulmalı."
-    )
 
         st.error(
             "Teknik görünüm zayıf. Risk yönetimi ön planda tutulmalı ve destek seviyeleri dikkatle takip edilmeli."

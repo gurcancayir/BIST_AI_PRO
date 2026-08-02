@@ -16,12 +16,10 @@ st.set_page_config(
 )
 # AI Market Score al
 score, reasons = get_market_score()
-st.write("DEBUG SCORE:", score)
-st.write("DEBUG NEDENLER:", reasons)
 # -----------------------------
 # BAŞLIK
 # -----------------------------
-st.title("🤖 BIST AI PRO")
+st.title("🤖 BIST PRO")
 st.subheader("AI Sabah Brifingi")
 
 bugun = datetime.now().strftime("%d.%m.%Y")
@@ -59,20 +57,6 @@ with col2:
         label="📈 BIST Görünümü",
         value=durum
     )
-   
-with col3:
-    st.metric(
-        label="⚠️ Risk Seviyesi",
-        value="Orta"
-    )
-
-with col4:
-    st.metric(
-        label="🎯 Günlük Strateji",
-        value="Seçici Alım"
-    )
-
-
 # -----------------------------
 # EKONOMİST ÖZETLERİ
 # -----------------------------
