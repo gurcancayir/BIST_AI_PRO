@@ -2,37 +2,58 @@ import streamlit as st
 
 from modules.ai.radar_ai import get_radar_picks
 
+
+# ==========================================================
+# SAYFA AYARLARI
+# ==========================================================
+
 st.set_page_config(
+
     page_title="AI Fırsat Radarı",
+
     page_icon="🚀",
+
     layout="wide"
+
 )
+
 
 st.title("🚀 AI Fırsat Radarı")
 
 st.write(
-    "Yapay zekâ tarafından potansiyeli yüksek bulunan hisseler"
+    "Trend + momentum + hacim + AI skoru + risk analizi ile "
+    "potansiyeli yüksek hisseler"
 )
 
-# ==========================================
-# FİLTRELER
-# ==========================================
 
-col1, col2, col3 = st.columns(3)
+# ==========================================================
+# VERİLER
+# ==========================================================
+
+radar = get_radar_picks()
+
+
+# ==========================================================
+# FİLTRELER
+# ==========================================================
+
+col1, col2, col3, col4 = st.columns(4)
+
 
 with col1:
 
     min_score = st.slider(
 
-        "Minimum Radar Skoru",
+        "Minimum Fırsat Skoru",
 
         0,
 
         100,
 
-        70
+        60
 
     )
+
 
 with col2:
 
@@ -46,15 +67,16 @@ with col2:
 
             "🟢 Güçlü Al",
 
-            "🟡 Al",
+            "🟢 Al",
 
-            "⚪ Tut",
+            "🟡 Tut",
 
             "🔴 Sat"
 
         ]
 
     )
+
 
 with col3:
 
@@ -78,122 +100,311 @@ with col3:
 
             "Banka",
 
-            "Ulaştırma"
+            "Ulaştırma",
+
+            "Holding",
+
+            "Çimento",
+
+            "Teknoloji",
+
+            "Diğer"
 
         ]
 
     )
 
-radar = get_radar_picks()
-# ==========================================
+
+with col4:
+
+    max_risk = st.slider(
+
+        "Maksimum Risk",
+
+        0,
+
+        30,
+
+        15
+
+    )
+
+
+# ==========================================================
 # FİLTRELEME
-# ==========================================
+# ==========================================================
 
 filtered = []
 
+
 for stock in radar:
 
-    # Minimum skor
-    if stock["radar_score"] < min_score:
+    # Minimum fırsat skoru
+    if (
+        stock["risk_adjusted_score"]
+        < min_score
+    ):
+
         continue
 
-    # AI Kararı
+
+    # Maksimum risk
+    if (
+        stock["risk_score"]
+        > max_risk
+    ):
+
+        continue
+
+
+    # AI kararı
     if recommendation != "Tümü":
 
-        if stock["recommendation"] != recommendation:
+        if (
+            stock["recommendation"]
+            != recommendation
+        ):
+
             continue
+
 
     # Sektör
     if sector != "Tümü":
 
-        if stock["sector"] != sector:
+        if (
+            stock["sector"]
+            != sector
+        ):
+
             continue
+
 
     filtered.append(stock)
 
-radar = filtered
 
-if len(radar) == 0:
+# ==========================================================
+# SONUÇ
+# ==========================================================
 
-    st.warning("Uygun hisse bulunamadı.")
+st.subheader(
+    f"🎯 {len(filtered)} fırsat bulundu"
+)
+
+
+if len(filtered) == 0:
+
+    st.warning(
+        "Filtrelere uygun hisse bulunamadı."
+    )
+
 
 else:
 
-    for i, stock in enumerate(radar, start=1):
+    for i, stock in enumerate(
+        filtered,
+        start=1
+    ):
 
-        score = stock["radar_score"]
+        opportunity = stock[
+            "risk_adjusted_score"
+        ]
 
-        if score >= 80:
-            color = "🟢"
+        risk = stock[
+            "risk_score"
+        ]
 
-        elif score >= 60:
-            color = "🟡"
+        radar_score = stock[
+            "radar_score"
+        ]
+
+
+        # --------------------------------------------------
+        # SKOR RENKLERİ
+        # --------------------------------------------------
+
+        if opportunity >= 85:
+
+            score_icon = "🟢"
+
+        elif opportunity >= 70:
+
+            score_icon = "🟡"
 
         else:
-            color = "🔴"
+
+            score_icon = "🟠"
+
+
+        if risk <= 5:
+
+            risk_icon = "🟢"
+
+        elif risk <= 12:
+
+            risk_icon = "🟡"
+
+        else:
+
+            risk_icon = "🔴"
+
+
+        # --------------------------------------------------
+        # KART
+        # --------------------------------------------------
 
         with st.container():
 
-            col1, col2 = st.columns([3,1])
+            st.markdown(
+                f"## {i}. {stock['symbol']}"
+            )
+
+
+            col1, col2, col3 = st.columns(
+                [3, 2, 2]
+            )
+
+
+            # ==============================================
+            # SOL
+            # ==============================================
 
             with col1:
 
-                st.subheader(
-                    f"{i}. {stock['symbol']}"
+                st.write(
+                    f"**Sektör:** "
+                    f"{stock['sector']}"
                 )
 
                 st.write(
-                    f"**Sektör:** {stock['sector']}"
+                    f"💰 **Fiyat:** "
+                    f"{stock['price']} TL"
                 )
 
                 st.write(
-                    f"**AI Kararı:** {stock['recommendation']}"
-                )
-                st.write(
-                    f"💰 **Fiyat:** {stock['price']} TL"
+                    f"📈 **Günlük:** "
+                    f"%{stock['change']}"
                 )
 
                 st.write(
-                    f"📈 **Günlük:** %{stock['change']}"
+                    f"📊 **Trend:** "
+                    f"{stock['trend']}"
                 )
 
                 st.write(
-                    f"📊 **Trend:** {stock['trend']}"
+                    f"🧠 **AI Kararı:** "
+                    f"{stock['recommendation']}"
                 )
 
-                st.write(
-                    f"⚡ **Momentum:** {stock['momentum_score']}/100"
-                )
 
-                st.write(
-                    f"📦 **Hacim:** {stock['volume_score']}/100"
-                )
-                st.write("**Radar Nedenleri**")
-
-                if stock["reasons"]:
-
-                    for r in stock["reasons"]:
-
-                        st.write(f"✔ {r}")
-
-                else:
-
-                    st.write("Yeterli veri yok")
+            # ==============================================
+            # ORTA
+            # ==============================================
 
             with col2:
 
                 st.metric(
-                    "🚀 Radar",
-                    f"{score}/100"
+
+                    "🎯 Fırsat Skoru",
+
+                    f"{score_icon} "
+                    f"{opportunity}/100"
+
                 )
 
                 st.metric(
-                    "🧠 AI Score",
+
+                    "🚀 Ham Radar",
+
+                    f"{radar_score}/100"
+
+                )
+
+                st.metric(
+
+                    "⚠️ Risk",
+
+                    f"{risk_icon} "
+                    f"{risk}/30"
+
+                )
+
+
+            # ==============================================
+            # SAĞ
+            # ==============================================
+
+            with col3:
+
+                st.metric(
+
+                    "AI Score",
+
                     f"{stock['score']}/100"
+
                 )
 
                 st.metric(
-                    "📈 Trend Gücü",
+
+                    "Trend Gücü",
+
                     f"{stock['trend_strength']}/100"
+
                 )
-        st.divider()
+
+                st.metric(
+
+                    "Momentum",
+
+                    f"{stock['momentum_score']}/100"
+
+                )
+
+
+            # ------------------------------------------------
+            # TEKNİK BİLGİLER
+            # ------------------------------------------------
+
+            st.write(
+
+                f"**Hacim:** "
+                f"{stock['volume_score']}/100   |   "
+
+                f"**RSI:** "
+                f"{stock['rsi']}   |   "
+
+                f"**Destek:** "
+                f"{stock['support']}   |   "
+
+                f"**Direnç:** "
+                f"{stock['resistance']}"
+
+            )
+
+
+            # ------------------------------------------------
+            # RADAR NEDENLERİ
+            # ------------------------------------------------
+
+            st.write(
+                "**🔎 Radar Analizi**"
+            )
+
+
+            if stock["reasons"]:
+
+                for reason in stock[
+                    "reasons"
+                ]:
+
+                    st.write(
+                        f"• {reason}"
+                    )
+
+            else:
+
+                st.write(
+                    "Yeterli açıklama verisi yok."
+                )
+
+
+            st.divider()

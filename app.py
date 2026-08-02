@@ -1,7 +1,7 @@
 import streamlit as st
 from datetime import datetime
 from modules.ai.allocation_ai import show_allocation_ai
-from modules.ai.market_ai import get_market_score
+
 from modules.ai.market_ai import (
     get_market_score,
     get_macro_comment

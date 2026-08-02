@@ -8,6 +8,8 @@ from modules.data.fundamental import (
     calculate_fundamental_score
 )
 
+from modules.ai.market_ai import get_market_score
+
 st.set_page_config(
     page_title="Hisse Analiz Merkezi",
     page_icon="📈",
@@ -62,6 +64,8 @@ if st.button("Analiz Et"):
     fundamental = get_fundamental_data(symbol)
 
     fund_score = calculate_fundamental_score(fundamental)
+
+    market_score, market_reasons = get_market_score()
 
 
     st.divider()
@@ -157,17 +161,17 @@ if st.button("Analiz Et"):
     st.write("KONTROL DESTEK:", sonuc["support"])
     st.write("KONTROL DİRENÇ:", sonuc["resistance"])
     genel_skor = (
-        sonuc["score"] * 0.50 +
-        sonuc["volume_score"] * 0.15 +
-        sonuc["momentum_score"] * 0.15 +
-        fund_score * 0.20
+    sonuc["score"] * 0.50 +
+    fund_score * 0.20 +
+    sonuc["momentum_60_score"] * 0.15 +
+    market_score * 0.15
     )
 
     st.divider()
 
     st.subheader("🏆 Genel Yatırım Skoru")
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
 
     c1.metric(
         "📈 Teknik Skor",
@@ -186,6 +190,10 @@ if st.button("Analiz Et"):
     c4.metric(
         "🚀 60G Momentum",
         f"{sonuc['momentum_60_score']}/100"
+    )
+    c5.metric(
+    "🌍 Market Score",
+    f"{market_score}/100"
     )
 
     st.subheader(f"📊 {symbol} Teknik Analizi")

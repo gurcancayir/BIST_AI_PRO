@@ -3,7 +3,7 @@ from modules.ai.market_ai import (
     get_market_score,
     get_market_comment
 )
-
+from modules.ai.market_ai import get_market_score
 def show_market_score():
 
     st.markdown("### 🧠 AI Market Score")

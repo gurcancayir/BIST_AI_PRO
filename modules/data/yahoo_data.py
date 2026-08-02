@@ -9,9 +9,10 @@ SEKTOR_MAP = {
     "ODAS.IS": "Enerji",
 
     "ASELS.IS": "Savunma",
-    "ASTOR.IS": "Savunma",
+    "ASTOR.IS": "Enerji",
     "OTKAR.IS": "Savunma",
     "SDTTR.IS": "Savunma",
+    "ALTNY.IS": "Savunma",
 
     "THYAO.IS": "Ulaştırma",
     "PGSUS.IS": "Ulaştırma",
@@ -22,13 +23,20 @@ SEKTOR_MAP = {
 
     "FROTO.IS": "Otomotiv",
     "TOASO.IS": "Otomotiv",
-
+    "DOAS.IS": "Otomotiv",
+    
     "AKBNK.IS": "Banka",
     "GARAN.IS": "Banka",
 
     "SISE.IS": "Sanayi",
     "EREGL.IS": "Sanayi",
-    "KCHOL.IS": "Sanayi",
+    "KCAER.IS": "Sanayi",
+
+    "AGHOL.IS": "Holding",
+    "KCHOL.IS": "Holding",
+    "SAHOL.IS": "Holding",
+    "DOHOL.IS": "Holding",
+    "ALARK.IS": "Holding",
 
 }
 # ----------------------------------------------------------
@@ -107,41 +115,174 @@ def calculate_momentum_60_score(data):
 # ----------------------------------------------------------
 # MOMENTUM SKORU
 # ----------------------------------------------------------
+# ----------------------------------------------------------
+# GELİŞTİRİLMİŞ MOMENTUM SKORU
+# ----------------------------------------------------------
 
 def calculate_momentum_score(data):
 
     try:
+        if data is None:
+            print("[MOMENTUM] data None")
+            return 50
 
-        price_now = data["Close"].iloc[-1]
+        if len(data) < 61:
+            print(f"[MOMENTUM] Yetersiz veri: {len(data)}")
+            return 50
 
-        price_old = data["Close"].iloc[-20]
+        close = data["Close"]
 
+        price_now = float(close.iloc[-1])
+        price_20 = float(close.iloc[-21])
+        price_60 = float(close.iloc[-61])
 
-        change = (
-            (price_now / price_old) - 1
-        ) * 100
+        change_20 = ((price_now / price_20) - 1) * 100
+        change_60 = ((price_now / price_60) - 1) * 100
 
+        # 20 günlük skor
+        if change_20 >= 15:
+            score_20 = 100
+        elif change_20 >= 10:
+            score_20 = 90
+        elif change_20 >= 5:
+            score_20 = 80
+        elif change_20 >= 2:
+            score_20 = 70
+        elif change_20 >= 0:
+            score_20 = 60
+        elif change_20 >= -3:
+            score_20 = 50
+        elif change_20 >= -7:
+            score_20 = 40
+        else:
+            score_20 = 25
 
-        if change >= 15:
-            return 100
+        # 60 günlük skor
+        if change_60 >= 30:
+            score_60 = 100
+        elif change_60 >= 20:
+            score_60 = 90
+        elif change_60 >= 10:
+            score_60 = 80
+        elif change_60 >= 5:
+            score_60 = 70
+        elif change_60 >= 0:
+            score_60 = 60
+        elif change_60 >= -5:
+            score_60 = 50
+        elif change_60 >= -10:
+            score_60 = 40
+        else:
+            score_60 = 25
 
-        elif change >= 8:
-            return 85
+        momentum_score = (
+            score_20 * 0.45
+            +
+            score_60 * 0.55
+        )
 
-        elif change >= 3:
-            return 70
+        print(
+            f"[MOMENTUM] "
+            f"20G={change_20:.2f}% | "
+            f"60G={change_60:.2f}% | "
+            f"SKOR={momentum_score:.1f}"
+        )
 
-        elif change >= 0:
-            return 55
+        return round(momentum_score, 1)
+
+    except Exception as e:
+
+        print(
+            f"[MOMENTUM HATA] {type(e).__name__}: {e}"
+        )
+
+        return 50
+    
+        # --------------------------------------------------
+        # 60 GÜNLÜK MOMENTUM
+        # --------------------------------------------------
+
+        if change_60 >= 30:
+            score_60 = 100
+
+        elif change_60 >= 20:
+            score_60 = 90
+
+        elif change_60 >= 10:
+            score_60 = 80
+
+        elif change_60 >= 5:
+            score_60 = 70
+
+        elif change_60 >= 0:
+            score_60 = 60
+
+        elif change_60 >= -5:
+            score_60 = 50
+
+        elif change_60 >= -10:
+            score_60 = 40
 
         else:
-            return 30
+            score_60 = 25
 
 
-    except:
+        # --------------------------------------------------
+        # 20 GÜN + 60 GÜN BİRLİKTE
+        # --------------------------------------------------
+
+        momentum_score = (
+            score_20 * 0.45
+            +
+            score_60 * 0.55
+        )
+
+
+        return round(
+            momentum_score,
+            1
+        )
+
+
+    except Exception:
 
         return 50
 
+
+def get_momentum_details(data):
+
+    try:
+
+        if data is None or len(data) < 61:
+            return {
+                "momentum_20": None,
+                "momentum_60": None
+            }
+
+        price_now = float(data["Close"].iloc[-1])
+
+        price_20 = float(data["Close"].iloc[-21])
+        price_60 = float(data["Close"].iloc[-61])
+
+        momentum_20 = (
+            (price_now / price_20) - 1
+        ) * 100
+
+        momentum_60 = (
+            (price_now / price_60) - 1
+        ) * 100
+
+        return {
+            "momentum_20": round(momentum_20, 2),
+            "momentum_60": round(momentum_60, 2)
+        }
+
+    except Exception:
+
+        return {
+            "momentum_20": None,
+            "momentum_60": None
+        }
 # ----------------------------------------------------------
 # AYARLAR
 # ----------------------------------------------------------
@@ -154,12 +295,14 @@ INTERVAL = "1d"
 # VERİ İNDİR
 # ----------------------------------------------------------
 
+@st.cache_data(ttl=1800)
 
 @st.cache_data(ttl=1800)
 def get_history(symbol):
 
     """
     Yahoo Finance'den hisse geçmiş verisini indirir.
+    Boş/NaN kapanış kayıtlarını temizler.
     """
 
     try:
@@ -170,25 +313,67 @@ def get_history(symbol):
         ticker = yf.Ticker(symbol)
 
         df = ticker.history(
-
             period=HISTORY_PERIOD,
-
             interval=INTERVAL,
-
             auto_adjust=True
+        )
 
+        if df is None or df.empty:
+            return None
+
+        # --------------------------------------------------
+        # GEÇERSİZ / BOŞ KAYITLARI TEMİZLE
+        # --------------------------------------------------
+
+        required_columns = [
+            "Open",
+            "High",
+            "Low",
+            "Close",
+            "Volume"
+        ]
+
+        existing_columns = [
+            col for col in required_columns
+            if col in df.columns
+        ]
+
+        if "Close" not in existing_columns:
+            print(
+                f"[YAHOO HATA] {symbol} -> Close kolonu yok"
+            )
+            return None
+
+        df = df.dropna(
+            subset=existing_columns
         )
 
         if df.empty:
             return None
 
+        # Son fiyatın gerçekten geçerli olduğundan emin ol
+        if pd.isna(df["Close"].iloc[-1]):
+            print(
+                f"[YAHOO HATA] {symbol} -> Son Close NaN"
+            )
+            return None
+
+        print(
+            f"[YAHOO OK] {symbol} -> "
+            f"{len(df)} kayıt | "
+            f"Son fiyat: {float(df['Close'].iloc[-1]):.2f}"
+        )
+
         return df
 
-    except Exception:
+    except Exception as e:
+
+        print(
+            f"[YAHOO HATA] {symbol}: "
+            f"{type(e).__name__}: {e}"
+        )
 
         return None
-
-
 # ----------------------------------------------------------
 # ŞİRKET BİLGİLERİ
 # ----------------------------------------------------------
@@ -531,59 +716,221 @@ def get_resistance(df, period=20):
 # AI TREND GÜCÜ SKORU
 # ----------------------------------------------------------
 
-def calculate_trend_strength(df):
+# ----------------------------------------------------------
+# GELİŞMİŞ TREND GÜCÜ SKORU
+# ----------------------------------------------------------
 
-    if df is None:
-        return 50
+def calculate_trend_strength(df):
 
     try:
 
-        price = get_last_price(df)
+        if df is None or len(df) < 220:
+            return 50
 
-        ema20 = get_ema(df,20)
+        close = df["Close"]
 
-        ema50 = get_ema(df,50)
+        price = float(close.iloc[-1])
 
-        ema200 = get_ema(df,200)
+        ema20_series = close.ewm(
+            span=20,
+            adjust=False
+        ).mean()
 
+        ema50_series = close.ewm(
+            span=50,
+            adjust=False
+        ).mean()
 
-        score = 0
+        ema200_series = close.ewm(
+            span=200,
+            adjust=False
+        ).mean()
 
+        ema20 = float(ema20_series.iloc[-1])
+        ema50 = float(ema50_series.iloc[-1])
+        ema200 = float(ema200_series.iloc[-1])
 
-        # EMA sıralaması
+        # --------------------------------------------------
+        # 1. EMA SIRALAMASI - 25 PUAN
+        # --------------------------------------------------
 
         if ema20 > ema50 > ema200:
-            score += 40
+            ema_order_score = 25
 
         elif ema20 > ema50:
-            score += 25
+            ema_order_score = 18
 
         elif ema20 > ema200:
-            score += 15
+            ema_order_score = 12
+
+        elif ema50 > ema200:
+            ema_order_score = 8
+
+        elif ema20 < ema50 < ema200:
+            ema_order_score = 0
+
+        else:
+            ema_order_score = 5
 
 
-        # Fiyat konumu
+        # --------------------------------------------------
+        # 2. FİYATIN EMA'LARA GÖRE KONUMU - 25 PUAN
+        # --------------------------------------------------
+
+        price_score = 0
 
         if price > ema20:
-            score += 20
-
+            price_score += 8
 
         if price > ema50:
-            score += 20
-
+            price_score += 8
 
         if price > ema200:
-            score += 20
+            price_score += 9
 
 
-        return min(score,100)
+        # --------------------------------------------------
+        # 3. EMA20 - EMA50 UZAKLIĞI - 15 PUAN
+        # --------------------------------------------------
+
+        spread_20_50 = (
+            (ema20 / ema50) - 1
+        ) * 100
+
+        if spread_20_50 >= 8:
+            spread_score = 15
+
+        elif spread_20_50 >= 5:
+            spread_score = 12
+
+        elif spread_20_50 >= 3:
+            spread_score = 9
+
+        elif spread_20_50 >= 1:
+            spread_score = 6
+
+        elif spread_20_50 >= 0:
+            spread_score = 3
+
+        else:
+            spread_score = 0
 
 
-    except:
+        # --------------------------------------------------
+        # 4. EMA50 - EMA200 UZAKLIĞI - 15 PUAN
+        # --------------------------------------------------
+
+        spread_50_200 = (
+            (ema50 / ema200) - 1
+        ) * 100
+
+        if spread_50_200 >= 15:
+            long_trend_score = 15
+
+        elif spread_50_200 >= 10:
+            long_trend_score = 12
+
+        elif spread_50_200 >= 5:
+            long_trend_score = 9
+
+        elif spread_50_200 >= 2:
+            long_trend_score = 6
+
+        elif spread_50_200 >= 0:
+            long_trend_score = 3
+
+        else:
+            long_trend_score = 0
+
+
+        # --------------------------------------------------
+        # 5. EMA EĞİMİ - 20 PUAN
+        # --------------------------------------------------
+
+        lookback = 10
+
+        ema20_old = float(
+            ema20_series.iloc[-lookback]
+        )
+
+        ema50_old = float(
+            ema50_series.iloc[-lookback]
+        )
+
+        ema20_slope = (
+            (ema20 / ema20_old) - 1
+        ) * 100
+
+        ema50_slope = (
+            (ema50 / ema50_old) - 1
+        ) * 100
+
+
+        slope_score = 0
+
+        # EMA20 eğimi
+        if ema20_slope >= 3:
+            slope_score += 10
+
+        elif ema20_slope >= 1:
+            slope_score += 7
+
+        elif ema20_slope >= 0:
+            slope_score += 4
+
+
+        # EMA50 eğimi
+        if ema50_slope >= 2:
+            slope_score += 10
+
+        elif ema50_slope >= 0.5:
+            slope_score += 7
+
+        elif ema50_slope >= 0:
+            slope_score += 4
+
+
+        # --------------------------------------------------
+        # TOPLAM
+        # --------------------------------------------------
+
+        score = (
+            ema_order_score
+            + price_score
+            + spread_score
+            + long_trend_score
+            + slope_score
+        )
+
+        score = max(
+            0,
+            min(score, 100)
+        )
+
+
+        print(
+            f"[TREND] "
+            f"EMA20={ema20:.2f} "
+            f"EMA50={ema50:.2f} "
+            f"EMA200={ema200:.2f} "
+            f"Trend={score}"
+        )
+
+
+        return round(
+            score,
+            1
+        )
+
+
+    except Exception as e:
+
+        print(
+            f"[TREND HATA] "
+            f"{type(e).__name__}: {e}"
+        )
 
         return 50
-
-
 # ----------------------------------------------------------
 # TREND
 # ----------------------------------------------------------
@@ -650,169 +997,234 @@ def get_trend(df):
 # ----------------------------------------------------------
 # AI SCORE
 # ----------------------------------------------------------
+# ----------------------------------------------------------
+# GELİŞMİŞ AI SKORU
+# ----------------------------------------------------------
 
 def calculate_ai_score(df):
 
-    score = 50
+    try:
 
-    rsi = get_rsi(df)
+        if df is None or len(df) < 220:
+            return 50
 
-    macd, signal = get_macd(df)
+        # ==================================================
+        # TEMEL VERİLER
+        # ==================================================
 
-    trend = get_trend(df)
+        rsi = get_rsi(df)
 
-    volume = get_volume(df)
+        macd, signal = get_macd(df)
 
-    avg_volume = get_average_volume(df)
+        trend_strength = calculate_trend_strength(df)
 
-    momentum = get_momentum(df)
+        momentum_score = calculate_momentum_score(df)
 
-    volatility = get_volatility(df)
+        volume_score = calculate_volume_score(df)
 
-    price = get_last_price(df)
+        price = get_last_price(df)
 
-    ema20 = get_ema(df, 20)
+        ema20 = get_ema(df, 20)
 
-    ema50 = get_ema(df, 50)
+        ema50 = get_ema(df, 50)
 
-    upper, lower = get_bollinger(df)
+        ema200 = get_ema(df, 200)
 
-    support = get_support(df)
+        volatility = get_volatility(df)
 
-    resistance = get_resistance(df)
+        daily_change = get_daily_change(df)
 
-  
-    # RSI
 
-    if rsi is not None:
+        # ==================================================
+        # 1 — TREND %25
+        # ==================================================
 
-        if 45 <= rsi <= 65:
-            score += 10
+        trend_component = trend_strength * 0.25
+
+
+        # ==================================================
+        # 2 — MOMENTUM %20
+        # ==================================================
+
+        momentum_component = momentum_score * 0.20
+
+
+        # ==================================================
+        # 3 — HACİM %15
+        # ==================================================
+
+        volume_component = volume_score * 0.15
+
+
+        # ==================================================
+        # 4 — RSI %15
+        # ==================================================
+
+        if rsi is None:
+
+            rsi_score = 50
+
+        elif 45 <= rsi <= 65:
+
+            rsi_score = 100
+
+        elif 40 <= rsi < 45:
+
+            rsi_score = 80
+
+        elif 65 < rsi <= 70:
+
+            rsi_score = 80
+
+        elif 35 <= rsi < 40:
+
+            rsi_score = 60
+
+        elif 70 < rsi <= 75:
+
+            rsi_score = 60
 
         elif rsi < 30:
-            score += 5
 
-        elif rsi > 75:
-            score -= 10
-
-# MACD
-
-    if macd is not None and signal is not None:
-
-        if macd > signal:
-            score += 15
-        else:
-            score -= 10
-
-    # Trend
-    # Hacim
-    # ----------------------------------------------------------
-    # TREND PUANI
-    # ----------------------------------------------------------
-
-    if trend == "Güçlü Yükseliş":
-        score += 20
-
-    elif trend == "Yükseliş":
-        score += 10
-
-    elif trend == "Düşüş":
-        score -= 10
-
-    elif trend == "Güçlü Düşüş":
-        score -= 20
-
-
-    # ----------------------------------------------------------
-    # HACİM
-    # ----------------------------------------------------------
-
-    if avg_volume > 0:
-
-        if volume > avg_volume:
-            score += 5
+            rsi_score = 40
 
         else:
-            score -= 5
+
+            rsi_score = 30
 
 
-    # ----------------------------------------------------------
-    # MOMENTUM
-    # ----------------------------------------------------------
+        rsi_component = rsi_score * 0.15
 
-    if momentum is not None:
 
-        if momentum > 0:
-            score += 10
+        # ==================================================
+        # 5 — MACD %10
+        # ==================================================
+
+        if macd is None or signal is None:
+
+            macd_score = 50
+
+        elif macd > signal:
+
+            macd_score = 100
 
         else:
-            score -= 10
+
+            macd_score = 30
 
 
-    # ----------------------------------------------------------
-    # VOLATİLİTE
-    # ----------------------------------------------------------
-
-    if volatility is not None:
-
-        if volatility < 3:
-            score += 5
-
-        elif volatility > 6:
-            score -= 5
+        macd_component = macd_score * 0.10
 
 
-    # ----------------------------------------------------------
-    # EMA
-    # ----------------------------------------------------------
+        # ==================================================
+        # 6 — EMA KONUMU %10
+        # ==================================================
 
-    if ema20 is not None and ema50 is not None and price is not None:
+        ema_score = 0
 
-        if price > ema20:
-            score += 5
+        if price is not None and ema20 is not None:
 
-        if ema20 > ema50:
-            score += 5
+            if price > ema20:
+                ema_score += 35
 
+        if price is not None and ema50 is not None:
 
-    # ----------------------------------------------------------
-    # BOLLINGER
-    # ----------------------------------------------------------
+            if price > ema50:
+                ema_score += 35
 
-    if upper is not None and lower is not None and price is not None:
+        if price is not None and ema200 is not None:
 
-        if price <= lower:
-            score += 10
-
-        elif price >= upper:
-            score -= 10
-
-        # ----------------------------------------------------------
-    # DESTEK / DİRENÇ
-    # ----------------------------------------------------------
-
-    if support is not None and resistance is not None:
-
-        if price <= support * 1.03:
-            score += 5
-
-        elif price >= resistance * 0.97:
-            score -= 5
+            if price > ema200:
+                ema_score += 30
 
 
-    return max(0, min(score, 100))
-
-    # Momentum
-# ----------------------------------------------------------
-# DESTEK / DİRENÇ
-# ----------------------------------------------------------
+        ema_component = ema_score * 0.10
 
 
+        # ==================================================
+        # 7 — GÜNLÜK FİYAT RİSKİ %5
+        # ==================================================
 
-# ----------------------------------------------------------
-# KARAR
-# ----------------------------------------------------------
+        if daily_change is None:
 
+            daily_score = 50
+
+        elif daily_change >= 3:
+
+            daily_score = 100
+
+        elif daily_change >= 1:
+
+            daily_score = 90
+
+        elif daily_change >= 0:
+
+            daily_score = 75
+
+        elif daily_change >= -2:
+
+            daily_score = 60
+
+        elif daily_change >= -4:
+
+            daily_score = 40
+
+        elif daily_change >= -6:
+
+            daily_score = 25
+
+        else:
+
+            daily_score = 10
+
+
+        daily_component = daily_score * 0.05
+
+
+        # ==================================================
+        # TOPLAM AI SKORU
+        # ==================================================
+
+        score = (
+
+            trend_component
+
+            + momentum_component
+
+            + volume_component
+
+            + rsi_component
+
+            + macd_component
+
+            + ema_component
+
+            + daily_component
+
+        )
+
+
+        score = max(
+            0,
+            min(score, 100)
+        )
+
+
+        return round(
+            score,
+            1
+        )
+
+
+    except Exception as e:
+
+        print(
+            f"[AI SCORE HATA] "
+            f"{type(e).__name__}: {e}"
+        )
+
+        return 50
+    
 def get_recommendation(score):
 
     if score >= 90:
@@ -858,6 +1270,8 @@ def get_stock_analysis(symbol):
     momentum_score = calculate_momentum_score(df)
 
     momentum_60_score = calculate_momentum_60_score(df)
+    
+    momentum_details = get_momentum_details(df)
 
     trend_strength = calculate_trend_strength(df)
 
@@ -925,9 +1339,13 @@ def get_stock_analysis(symbol):
 
         "volume_score": volume_score,
 
-        "momentum_score": momentum_score,
-        
+                "momentum_score": momentum_score,
+
         "momentum_60_score": momentum_60_score,
+
+        "momentum_20": momentum_details["momentum_20"],
+
+        "momentum_60": momentum_details["momentum_60"],
 
         "trend_strength": trend_strength,
 
