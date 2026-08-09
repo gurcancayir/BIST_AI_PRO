@@ -3,12 +3,15 @@ import yfinance as yf
 
 from modules.teknik import analiz_et
 from modules.data.yahoo_data import get_stock_analysis
+
 from modules.data.fundamental import (
     get_fundamental_data,
     calculate_fundamental_score
 )
 
 from modules.ai.market_ai import get_market_score
+from modules.data.financial_score import calculate_financial_score
+from modules.data.financial_score import get_financial_statement
 
 st.set_page_config(
     page_title="Hisse Analiz Merkezi",
@@ -56,34 +59,163 @@ if st.button("Analiz Et"):
         st.error("Analiz verisi alınamadı.")
         st.stop()
 
+# -------------------------------
+# TEMEL ANALİZ
+# -------------------------------
 
-    # -------------------------------
-    # TEMEL ANALİZ
-    # -------------------------------
+fundamental = get_fundamental_data(symbol)
 
-    fundamental = get_fundamental_data(symbol)
+fund_score = calculate_fundamental_score(
+    fundamental
+)
 
-    fund_score = calculate_fundamental_score(fundamental)
+market_score, market_reasons = get_market_score()
 
-    market_score, market_reasons = get_market_score()
+# -------------------------------
+# KAP FİNANSAL ANALİZ
+# -------------------------------
 
+kap_data = get_financial_statement(
+    symbol
+)
 
+kap_financial = calculate_financial_score(
+    symbol
+)
+
+if kap_financial:
+    kap_score = kap_financial["total_score"]
+    kap_signal = kap_financial["signal"]
+else:
+    kap_score = None
+    kap_signal = "Veri Yok"
+
+if kap_score is not None:
+    st.metric(
+        "🧾 KAP Finansal Skor",
+        f"{kap_score:.1f}/100"
+    )
+
+    st.caption(
+        f"Finansal Durum: {kap_signal}"
+    )
+else:
+    st.metric(
+        "🧾 KAP Finansal Skor",
+        "Veri Yok"
+    )
+
+# -------------------------------
+# KAP FİNANSAL VERİLER
+# -------------------------------
+
+if kap_data:
+
+    st.markdown(
+        "### 💰 KAP Finansal Veriler"
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+
+        revenue = kap_data.get(
+            "revenue"
+        )
+
+        if revenue is not None:
+            st.metric(
+                "Hasılat",
+                f"{revenue / 1_000_000_000:.2f} Mlyr TL"
+            )
+        else:
+            st.metric(
+                "Hasılat",
+                "Veri Yok"
+            )
+
+    with col2:
+
+        net_profit = kap_data.get(
+            "net_profit"
+        )
+
+        if net_profit is not None:
+            st.metric(
+                "Net Kâr",
+                f"{net_profit / 1_000_000_000:.2f} Mlyr TL"
+            )
+        else:
+            st.metric(
+                "Net Kâr",
+                "Veri Yok"
+            )
+
+    with col3:
+
+        cash = kap_data.get(
+            "cash"
+        )
+
+        if cash is not None:
+            st.metric(
+                "Nakit",
+                f"{cash / 1_000_000_000:.2f} Mlyr TL"
+            )
+        else:
+            st.metric(
+                "Nakit",
+                "Veri Yok"
+            )
+
+    col4, col5 = st.columns(2)
+
+    with col4:
+
+        equity = kap_data.get(
+            "equity"
+        )
+
+        if equity is not None:
+            st.metric(
+                "Özkaynak",
+                f"{equity / 1_000_000_000:.2f} Mlyr TL"
+            )
+        else:
+            st.metric(
+                "Özkaynak",
+                "Veri Yok"
+            )
+
+    with col5:
+
+        operating_cash_flow = kap_data.get(
+            "operating_cash_flow"
+        )
+
+        if operating_cash_flow is not None:
+            st.metric(
+                "Faaliyet Nakit Akışı",
+                f"{operating_cash_flow / 1_000_000_000:.2f} Mlyr TL"
+            )
+        else:
+            st.metric(
+                "Faaliyet Nakit Akışı",
+                "Veri Yok"
+            )
+
+    st.caption(
+        f"KAP Dönemi: {kap_data.get('period')} "
+        f"({kap_data.get('period_end')})"
+    )    
     st.divider()
 
     st.subheader("📊 Temel Analiz")
 
-
     st.write(
-        "🏢 Şirket:",
-        fundamental.get("company")
-    )
-
-
-    st.write(
-        "🏭 Sektör:",
+        "🟢 Sektör:",
         fundamental.get("sector")
     )
-
 
     market_cap = fundamental.get("market_cap")
 
@@ -93,7 +225,7 @@ if st.button("Analiz Et"):
             market_cap_text = f"{market_cap / 1_000_000_000:.1f} Milyar TL"
 
         elif market_cap >= 1_000_000:
-             market_cap_text = f"{market_cap / 1_000_000:.1f} Milyon TL"
+            market_cap_text = f"{market_cap / 1_000_000:.1f} Milyon TL"
 
         else:
             market_cap_text = f"{market_cap:,.0f} TL"
@@ -101,12 +233,10 @@ if st.button("Analiz Et"):
     else:
         market_cap_text = "-"
 
-
     st.write(
         "💰 Piyasa Değeri:",
         market_cap_text
     )
-
 
     c1, c2 = st.columns(2)
 
@@ -120,34 +250,19 @@ if st.button("Analiz Et"):
         f'{fundamental.get("pb_ratio", "-")}'
     )
 
-
     st.write(
         "📈 Kâr Marjı:",
         fundamental.get("profit_margin")
     )
-
 
     st.write(
         "📈 Ciro Büyümesi:",
         fundamental.get("revenue_growth")
     )
 
-
     st.write(
-        "⭐ ROE:",
-        fundamental.get("roe")
-    )
-
-
-    st.write(
-        "⚠️ Borç/Özsermaye:",
+        "💳 Borç/Özsermaye:",
         fundamental.get("debt_to_equity")
-    )
-
-
-    st.metric(
-        "⭐ Fundamental Skor",
-        f"{fund_score}/100"
     )
 
     st.divider()
@@ -177,9 +292,15 @@ if st.button("Analiz Et"):
     )
 
     c2.metric(
-        "📊 Temel Skor",
-        f"{fund_score}/100"
+    "📊 Temel Skor",
+    f"{fund_score}/100"
     )
+
+    if kap_score is not None:
+        st.metric("🏦 KAP Finansal Skor", f"{kap_score:.1f}/100")
+        st.caption(f"Finansal Durum: {kap_signal}")
+    else:
+        st.metric("🏦 KAP Finansal Skor", "Veri Yok")
 
     c3.metric(
         "🏆 Genel Skor",
