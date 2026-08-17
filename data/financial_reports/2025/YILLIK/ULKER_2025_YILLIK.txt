@@ -1,0 +1,842 @@
+--- SAYFA 1 ---
+Finansal Rapor
+ÜLKER BİSKÜVİ SANAYİ A.Ş.
+Finansal Rapor
+Konsolide
+2025 - 4. 3 Aylık Bildirim
+KAMUYU AYDINLATMA PLATFORMU
+Finansal Tablolara ilişkin Genel Açıklama
+KAP'ta yayınlanma tarihi ve saati: 10.03.2026 18:15:37
+https://www.kap.org.tr/tr/Bildirim/1569763
+
+--- SAYFA 2 ---
+Bağımsız Denetim Kuruluşu DRT BAĞIMSIZ DENETİM VE SERBEST MUHASEBECİ MALİ MÜŞAVİRLİK A.Ş.
+Denetim Türü Sürekli
+Denetim Sonucu Olumlu
+BAĞIMSIZ DENETÇİ RAPORU
+Ülker Bisküvi Sanayi A.Ş. Genel Kurulu'na
+A) Konsolide Finansal Tabloların Bağımsız Denetimi
+1) Görüş
+Ülker Bisküvi Sanayi A.Ş. ("Şirket") ile bağlı ortaklıklarının ("Grup") 31 Aralık 2025 tarihli konsolide finansal durum tablosu ile aynı tarihte sona eren hesap dönemine 
+ait; konsolide kar veya zarar, konsolide diğer kapsamlı gelir tablosu, konsolide özkaynak değişim tablosu ve konsolide nakit akış tablosu ile önemli muhasebe 
+politikalarının özeti de dahil olmak üzere konsolide finansal tablo dipnotlarından oluşan konsolide finansal tablolarını denetlemiş bulunuyoruz.
+Görüşümüze göre, ilişikteki konsolide finansal tablolar, Grup'un 31 Aralık 2025 tarihi itibarıyla konsolide finansal durumunu ve aynı tarihte sona eren hesap dönemine
+ait konsolide finansal performansını ve konsolide nakit akışlarını Türkiye Finansal Raporlama Standartları'na ("TFRS'lere") uygun olarak tüm önemli yönleriyle 
+gerçeğe uygun bir biçimde sunmaktadır.
+2) Görüşün Dayanağı
+Yaptığımız bağımsız denetim, Sermaye Piyasası Kurulu düzenlemeleri çerçevesinde kabul edilen ve Kamu Gözetimi, Muhasebe ve Denetim Standartları Kurumu (KGK) 
+tarafından yayımlanan Türkiye Denetim Standartları'nın bir parçası olan Bağımsız Denetim Standartları'na (BDS'lere) uygun olarak yürütülmüştür. Bu Standartlar 
+kapsamındaki sorumluluklarımız, raporumuzun Bağımsız Denetçinin Konsolide Finansal Tabloların Bağımsız Denetimine İlişkin Sorumlulukları bölümünde ayrıntılı bir
+şekilde açıklanmıştır. KGK tarafından yayımlanan ve kamu yararını ilgilendiren kuruluşların konsolide finansal tablolarının bağımsız denetimleri için geçerli olan 
+Bağımsız Denetçiler için Etik Kurallar (Bağımsızlık Standartları Dahil) (Etik Kurallar) ile Sermaye Piyasası Kurulu mevzuatında ve ilgili diğer mevzuatta kamu yararını 
+ilgilendiren kuruluşların konsolide finansal tablolarının bağımsız denetimleriyle ilgili olarak yer alan etik hükümlere olarak Grup'tan bağımsız olduğumuzu beyan 
+ederiz. Etik Kurallar ve mevzuat kapsamındaki etiğe ilişkin diğer sorumluluklar da tarafımızca yerine getirilmiştir. Bağımsız denetim sırasında elde ettiğimiz bağımsız 
+denetim kanıtlarının, görüşümüzün oluşturulması için yeterli ve uygun bir dayanak oluşturduğuna inanıyoruz.
+3) Kilit Denetim Konuları
+Kilit denetim konuları, mesleki muhakememize göre cari döneme ait konsolide finansal tabloların bağımsız denetiminde en çok önem arz eden konulardır. Kilit 
+denetim konuları, bir bütün olarak konsolide finansal tabloların bağımsız denetimi çerçevesinde ve konsolide finansal tablolara ilişkin görüşümüzün 
+oluşturulmasında ele alınmış olup, bu konular hakkında ayrı bir görüş bildirmiyoruz.
+Kilit Denetim Konusu Denetimde bu konu nasıl ele alındı
+Gerçeğe uygun değer farkı diğer kapsamlı gelire 
+yansıtılan finansal varlıkların gerçeğe uygun değer 
+hesaplamaları
+Uygulanan denetim prosedürleri bunlarla sınırlı 
+kalmamak üzere aşağıdakileri içermektedir:
+Bağımsız Denetçi Görüşü
+
+--- SAYFA 3 ---
+Dipnot 5'de detayları görülebileceği üzere, 31 Aralık 
+2025 itibariyle, Grup'un konsolide finansal 
+tablolarında gerçeğe uygun değer farkı diğer 
+kapsamlı gelire yansıtılan finansal varlıklar olarak 
+muhasebeleştirilen 5.150.749 bin TL tutarında, aktif 
+piyasalarda kote olmayan finansal yatırımları G-New 
+Inc ve Godiva Belgium BVBA şirketlerindeki 
+paylarından oluşmaktadır. Bu finansal yatırımların 
+gerçeğe uygun değeri indirgenmiş nakit akımları 
+kullanılarak, gelir yaklaşımı ile hesaplanmıştır. 
+Gerçeğe uygun değer hesaplamasının piyasada 
+kolaylıkla gözlenemeyen verileri içermesi, 
+hesaplamanın nihai büyüme oranı, ağırlıklı ortalama 
+sermaye maliyeti tahminlerine, gelecek 10 yıllık 
+projeksiyonların başarılmasına bağlı olması 
+nedenleri ve ilgili finansal varlıkların konsolide 
+finansal tablolar için önemli olması sebebi ile, 
+tarafımızca bir kilit denetim konusu olarak 
+değerlendirilmiştir.
+o Grup'un finansal varlıklarının gerçeğe uygun değer tespiti ile ilgili süreçleri 
+analiz edilmiş ve bu süreçlere ilişkin kontrollerin tasarımı ve uygulanması 
+değerlendirilmiştir.
+o Yönetim tarafından atanan değerleme uzmanlarının yetkinlikleri ve 
+tarafsızlıkları değerlendirilmiştir.
+o Grup'un finansal yatırımlarının gerçeğe uygun değerlerine esas teşkil eden, 
+değerleme yöntemleri, büyüme oranları, ağırlıklı ortalama sermaye maliyeti 
+oranları ve ekonomik ve finansal veriler gibi önemli tahmin ve varsayımların 
+uygunluğu tarafımızca değerlendirilmiştir.
+o Değerleme sırasında kullanılan tahmin ve varsayımların piyasa verileri ile 
+uygunluğunun kontrolü için şirket içi değerleme uzmanları çalışmalara dâhil 
+edilmiştir.
+o Nakit akış tahminlerinin, geçmiş yıl finansal performans sonuçları ile 
+karşılaştırarak değerlendirilmesi ve tahminlerin geriye dönük doğruluğunu 
+değerlendirmek için yıl içinde gerçekleşen sonuçlarla ilk tahminlerin 
+karşılaştırılması yapılmıştır.
+o Yönetimin yaptığı değerleme sonucun temel varsayımlarda oluşabilecek 
+değişikliklere duyarlılığı analiz edilmiştir.
+Konsolide finansal tablolar ve dipnotlarında yer alan 
+açıklamaların yeterliliği TFRS kapsamında 
+değerlendirilmiştir.
+4) Yönetimin ve Üst Yönetimden Sorumlu Olanların Konsolide Finansal Tablolara İlişkin Sorumlulukları
+Grup yönetimi; konsolide finansal tabloların TFRS'lere uygun olarak hazırlanmasından, gerçeğe uygun bir biçimde sunumundan ve hata veya hile kaynaklı önemli 
+yanlışlık içermeyecek şekilde hazırlanması için gerekli gördüğü iç kontrolden sorumludur.
+Konsolide finansal tabloları hazırlarken yönetim; Grup'un sürekliliğini devam ettirme kabiliyetinin değerlendirilmesinden, gerektiğinde süreklilikle ilgili hususları 
+açıklamaktan ve Grup'u tasfiye etme ya da ticari faaliyeti sona erdirme niyeti ya da mecburiyeti bulunmadığı sürece işletmenin sürekliliği esasını kullanmaktan 
+sorumludur.
+Üst yönetimden sorumlu olanlar, Grup'un finansal raporlama sürecinin gözetiminden sorumludur.
+5) Bağımsız Denetçinin Konsolide Finansal Tabloların Bağımsız Denetimine İlişkin Sorumlulukları
+Bir bağımsız denetimde, biz bağımsız denetçilerin sorumlulukları şunlardır:
+Amacımız, bir bütün olarak konsolide finansal tabloların hata veya hile kaynaklı önemli yanlışlık içerip içermediğine ilişkin makul güvence elde etmek ve görüşümüzü 
+içeren bir bağımsız denetçi raporu düzenlemektir. Sermaye Piyasası Kurulu düzenlemelerine ve BDS'lere uygun olarak yürütülen bir bağımsız denetim sonucunda 
+verilen makul güvence; yüksek bir güvence seviyesidir ancak, var olan önemli bir yanlışlığın her zaman tespit edileceğini garanti etmez. Yanlışlıklar hata veya hile 
+kaynaklı olabilir. Yanlışlıkların, tek başına veya toplu olarak, finansal tablo kullanıcılarının bu konsolide tablolara istinaden alacakları ekonomik kararları etkilemesi 
+makul ölçüde bekleniyorsa bu yanlışlıklar önemli olarak kabul edilir.
+Sermaye Piyasası Kurulu düzenlemelerine ve BDS'lere uygun olarak yürütülen bir bağımsız denetimin gereği olarak, bağımsız denetim boyunca mesleki 
+muhakememizi kullanmakta ve mesleki şüpheciliğimizi sürdürmekteyiz. Tarafımızca ayrıca:
+· Konsolide finansal tablolardaki hata veya hile kaynaklı "önemli yanlışlık" riskleri belirlenmekte ve değerlendirilmekte; bu risklere karşılık veren denetim prosedürleri
+tasarlanmakta ve uygulanmakta ve görüşümüze dayanak teşkil edecek yeterli ve uygun denetim kanıtı elde edilmektedir (Hile; muvazaa, sahtekarlık, kasıtlı ihmal, 
+gerçeğe aykırı beyan veya iç kontrol ihlali fiillerini içerebildiğinden, hile kaynaklı önemli bir yanlışlığı tespit edememe riski, hata kaynaklı önemli bir yanlışlığı tespit 
+edememe riskinden yüksektir).
+
+--- SAYFA 4 ---
+· Grup'un iç kontrolünün etkinliğine ilişkin bir görüş bildirmek amacıyla değil ama duruma uygun denetim prosedürlerini tasarlamak amacıyla denetimle ilgili iç 
+kontrol değerlendirilmektedir.
+· Yönetim tarafından kullanılan muhasebe politikalarının uygunluğu ile yapılan muhasebe tahminlerinin ve ilgili açıklamaların makul olup olmadığı 
+değerlendirilmektedir.
+· Elde edilen denetim kanıtlarına dayanarak, Grup'un sürekliliğini devam ettirme kabiliyetine ilişkin ciddi şüphe oluşturabilecek olay veya şartlarla ilgili önemli bir 
+belirsizliğin mevcut olup olmadığı hakkında ve yönetimin işletmenin sürekliliği esasını kullanmasının uygunluğu hakkında sonuca varılmaktadır. Önemli bir 
+belirsizliğin mevcut olduğu sonucuna varmamız halinde, raporumuzda, konsolide finansal tablolardaki ilgili açıklamalara dikkat çekmemiz ya da bu açıklamaların 
+yetersiz olması durumunda olumlu görüş dışında bir görüş vermemiz gerekmektedir. Vardığımız sonuçlar, bağımsız denetçi raporu tarihine kadar elde edilen denetim 
+kanıtlarına dayanmaktadır. Bununla birlikte, gelecekteki olay veya şartlar Grup'un sürekliliğini sona erdirebilir.
+· Konsolide finansal tabloların, açıklamalar dahil olmak üzere, genel sunumu, yapısı ve içeriği ile bu tabloların, temelini oluşturan işlem ve olayları gerçeğe uygun 
+sunumu sağlayacak şekilde yansıtıp yansıtmadığı değerlendirilmektedir.
+· Grup finansal tabloları hakkında oluşturulacak görüşe dayanak teşkil edecek şekilde, grup bünyesindeki işletme veya işletme birimlerine ilişkin finansal bilgiler 
+hakkında yeterli ve uygun denetim kanıtı elde etmek amacıyla grup denetimi planlanmakta ve yürütülmektedir. Grup denetiminin amaçları açısından yapılan 
+denetim çalışmasının yönlendirilmesinden, gözetiminden ve gözden geçirilmesinden sorumluyuz. Verdiğimiz denetim görüşünden de tek başımıza sorumluyuz.
+Diğer hususların yanı sıra, denetim sırasında tespit ettiğimiz önemli iç kontrol eksiklikleri dahil olmak üzere, bağımsız denetimin planlanan kapsamı ve zamanlaması 
+ile önemli denetim bulgularını üst yönetimden sorumlu olanlara bildirmekteyiz.
+Bağımsızlığa ilişkin etik hükümlere uygunluk sağladığımızı üst yönetimden sorumlu olanlara bildirmiş bulunmaktayız. Ayrıca bağımsızlık üzerinde etkisi olduğu 
+düşünülebilecek tüm ilişkiler ve diğer hususlar ile, varsa, tehditleri ortadan kaldırmak amacıyla atılan adımlar ile alınan önlemleri üst yönetimden sorumlu olanlara 
+iletmiş bulunmaktayız.
+Üst yönetimden sorumlu olanlara bildirilen konular arasından, cari döneme ait konsolide finansal tabloların bağımsız denetiminde en çok önem arz eden konuları 
+yani kilit denetim konularını belirlemekteyiz. Mevzuatın konunun kamuya açıklanmasına izin vermediği durumlarda veya konuyu kamuya açıklamanın doğuracağı 
+olumsuz sonuçların, kamuya açıklamanın doğuracağı kamu yararını aşacağının makul şekilde beklendiği oldukça istisnai durumlarda, ilgili hususun bağımsız denetçi 
+raporumuzda bildirilmemesine karar verebiliriz.
+B) Mevzuattan Kaynaklanan Diğer Yükümlülüklere İlişkin Rapor
+6102 sayılı Türk Ticaret Kanunu'nun ("TTK") 398'inci maddesinin dördüncü fıkrası uyarınca düzenlenen Riskin Erken Saptanması Sistemi ve Komitesi Hakkında 
+Denetçi Raporu 10 Mart 2026 tarihinde Şirket'in Yönetim Kurulu'na sunulmuştur.
+TTK'nın 402'nci maddesinin dördüncü fıkrası uyarınca; Grup'un 1 Ocak – 31 Aralık 2025 hesap döneminde defter tutma düzeninin, konsolide finansal tablolarının, TTK 
+ile Şirket esas sözleşmesinin finansal raporlamaya ilişkin hükümlerine uygun olmadığına dair önemli bir hususa rastlanmamıştır.
+TTK'nın 402'nci maddesinin dördüncü fıkrası uyarınca; Yönetim Kurulu tarafımıza denetim kapsamında istenen açıklamaları yapmış ve talep edilen belgeleri vermiştir
+.
+Bu bağımsız denetimi yürütüp sonuçlandıran sorumlu denetçi Ömer Yüksel'dir.
+DRT BAĞIMSIZ DENETİM VE SERBEST MUHASEBECİ MALİ MÜŞAVİRLİK A.Ş.
+Member of DELOITTE TOUCHE TOHMATSU LIMITED
+
+--- SAYFA 5 ---
+Ömer Yüksel, SMMM
+Sorumlu Denetçi
+İstanbul, 10 Mart 2026
+
+--- SAYFA 6 ---
+    
+    
+   
+  
+  
+   
+   
+    
+   
+   
+  
+   
+   
+   
+    
+    
+   
+   
+   
+    
+   
+   
+    
+    
+   
+   
+   
+  
+ 
+  
+   
+   
+   
+    
+    
+   
+   
+   
+  
+   
+   
+   
+   
+    
+   
+   
+   
+    
+    
+   
+    
+    
+   
+   
+   
+  
+ 
+Sunum Para Birimi 1.000 TL
+Finansal Tablo Niteliği Konsolide
+Dipnot Referansı Cari Dönem
+31.12.2025
+Önceki Dönem
+31.12.2024
+Finansal Durum Tablosu (Bilanço)
+Varlıklar
+DÖNEN VARLIKLAR
+Nakit ve Nakit Benzerleri 4 23.318.683 34.435.342
+Finansal Yatırımlar 5 6.420 7.124
+Ticari Alacaklar 29.319.910 28.665.008
+İlişkili Taraflardan Ticari Alacaklar 7,33 18.882.923 19.007.087
+İlişkili Olmayan Taraflardan Ticari Alacaklar 7 10.436.987 9.657.921
+Diğer Alacaklar 2.132.097 3.473.872
+İlişkili Taraflardan Diğer Alacaklar 8 1.794.230 2.602.702
+İlişkili Olmayan Taraflardan Diğer Alacaklar 8 337.867 871.170
+Türev Araçlar 9 2.950.730 570.196
+Stoklar 10 23.671.382 15.485.420
+Peşin Ödenmiş Giderler 1.812.998 1.371.762
+İlişkili Olmayan Taraflara Peşin Ödenmiş Giderler 18 1.812.998 1.371.762
+Cari Dönem Vergisiyle İlgili Varlıklar 90.598 163.100
+Diğer Dönen Varlıklar 20 1.603.267 1.052.644
+ARA TOPLAM 84.906.085 85.224.468
+TOPLAM DÖNEN VARLIKLAR 84.906.085 85.224.468
+DURAN VARLIKLAR
+Finansal Yatırımlar 5 5.150.749 6.422.172
+Maddi Duran Varlıklar 11 31.331.326 30.441.770
+Maddi Olmayan Duran Varlıklar 4.957.617 5.107.850
+Şerefiye 12 2.869.864 2.887.411
+Diğer Maddi Olmayan Duran Varlıklar 13 2.087.753 2.220.439
+Peşin Ödenmiş Giderler 18 204.024 140.220
+Ertelenmiş Vergi Varlığı 31 316.962 201.650
+TOPLAM DURAN VARLIKLAR 41.960.678 42.313.662
+TOPLAM VARLIKLAR 126.866.763 127.538.130
+KAYNAKLAR
+KISA VADELİ YÜKÜMLÜLÜKLER
+Kısa Vadeli Borçlanmalar 6 12.491.954 5.502.715
+Uzun Vadeli Borçlanmaların Kısa Vadeli Kısımları 6 5.045.649 14.490.330
+Ticari Borçlar 14.206.723 13.440.665
+İlişkili Taraflara Ticari Borçlar 7 5.036.055 4.072.329
+İlişkili Olmayan Taraflara Ticari Borçlar 7 9.170.668 9.368.336
+Çalışanlara Sağlanan Faydalar Kapsamında Borçlar 19 640.301 685.627
+Diğer Borçlar 1.863 11.532
+İlişkili Olmayan Taraflara Diğer Borçlar 8 1.863 11.532
+Ertelenmiş Gelirler (Müşteri Sözleşmelerinden Doğan 
+Yükümlülüklerin Dışında Kalanlar) 21 68.313 132.136
+Dönem Karı Vergi Yükümlülüğü 31 245.107 348.524
+Kısa Vadeli Karşılıklar 2.022.147 1.901.323
+Çalışanlara Sağlanan Faydalara İlişkin Kısa Vadeli 
+Karşılıklar 17 908.887 1.124.353
+Diğer Kısa Vadeli Karşılıklar 15 1.113.260 776.970
+Diğer Kısa Vadeli Yükümlülükler 20 567.711 718.689
+ARA TOPLAM 35.289.768 37.231.541
+TOPLAM KISA VADELİ YÜKÜMLÜLÜKLER 35.289.768 37.231.541
+UZUN VADELİ YÜKÜMLÜLÜKLER
+Uzun Vadeli Borçlanmalar 6 39.807.777 42.847.532
+Uzun Vadeli Karşılıklar 2.411.558 2.195.068
+Çalışanlara Sağlanan Faydalara İlişkin Uzun Vadeli 
+Karşılıklar 17 2.411.558 2.195.068
+Ertelenmiş Vergi Yükümlülüğü 31 3.481.978 1.446.343
+TOPLAM UZUN VADELİ YÜKÜMLÜLÜKLER 45.701.313 46.488.943
+TOPLAM YÜKÜMLÜLÜKLER 80.991.081 83.720.484
+ÖZKAYNAKLAR
+Ana Ortaklığa Ait Özkaynaklar 43.301.842 40.946.740
+Ödenmiş Sermaye 369.276 369.276
+Sermaye Düzeltme Farkları 11.646.759 11.646.759
+Finansal Durum Tablosu (Bilanço)
+
+--- SAYFA 7 ---
+  
+   
+   
+    
+    
+    
+      
+     
+     
+    
+     
+      
+      
+     
+    
+    
+    Paylara İlişkin Primler (İskontolar) 6.302.621 6.302.621
+Ortak Kontrole Tabi Teşebbüs veya İşletmeleri İçeren 
+Birleşmelerin Etkisi -5.690.753 -5.690.753
+Kar veya Zararda Yeniden Sınıflandırılmayacak 
+Birikmiş Diğer Kapsamlı Gelirler (Giderler) 5.865.029 6.167.172
+Yeniden Değerleme ve Ölçüm Kazançları (Kayıpları) 4.268.646 2.933.736
+Maddi Duran Varlık Yeniden Değerleme Artışları (
+Azalışları) 5.976.811 4.475.351
+Tanımlanmış Fayda Planları Yeniden Ölçüm 
+Kazançları (Kayıpları) -1.708.165 -1.541.615
+Özkaynağa Dayalı Finansal Araçlara Yapılan 
+Yatırımlara İlişkin Finansal Riskten Korunma 
+Kazançları (Kayıpları)
+1.596.383 3.233.436
+Kar veya Zararda Yeniden Sınıflandırılacak Birikmiş 
+Diğer Kapsamlı Gelirler (Giderler) -2.330.981 -3.929.536
+Yabancı Para Çevrim Farkları -2.324.754 -2.306.399
+Riskten Korunma Kazançları (Kayıpları) -6.227 -1.623.137
+Nakit Akış Riskinden Korunma Kazançları (
+Kayıpları) -6.227 -1.623.137
+Kardan Ayrılan Kısıtlanmış Yedekler 3.219.852 2.887.610
+Geçmiş Yıllar Karları veya Zararları 19.045.516 13.506.881
+Net Dönem Karı veya Zararı 4.874.523 9.686.710
+Kontrol Gücü Olmayan Paylar 2.573.840 2.870.906
+TOPLAM ÖZKAYNAKLAR 45.875.682 43.817.646
+TOPLAM KAYNAKLAR 126.866.763 127.538.130
+
+--- SAYFA 8 ---
+  
+    
+   
+    
+   
+    
+   
+  
+    
+    
+    
+   
+   
+   
+   
+  
+ 
+   
+    
+   
+  
+ 
+   
+   
+  
+  
+  
+   
+   
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+ 
+Sunum Para Birimi 1.000 TL
+Finansal Tablo Niteliği Konsolide
+Dipnot Referansı Cari Dönem
+01.01.2025 - 31.12.2025
+Önceki Dönem
+01.01.2024 - 31.12.2024
+Kar veya Zarar ve Diğer Kapsamlı Gelir Tablosu
+KAR VEYA ZARAR KISMI
+Hasılat 23 111.904.601 110.077.710
+Satışların Maliyeti 23 -79.559.084 -77.267.768
+TİCARİ FAALİYETLERDEN BRÜT KAR (ZARAR) 32.345.517 32.809.942
+BRÜT KAR (ZARAR) 32.345.517 32.809.942
+Genel Yönetim Giderleri 24, 25 -2.990.173 -2.978.490
+Pazarlama Giderleri 24, 25 -12.762.944 -11.257.232
+Araştırma ve Geliştirme Giderleri 24, 25 -628.460 -543.371
+Esas Faaliyetlerden Diğer Gelirler 26 3.025.401 2.719.952
+Esas Faaliyetlerden Diğer Giderler 26 -2.253.736 -2.061.723
+ESAS FAALİYET KARI (ZARARI) 16.735.605 18.689.078
+Yatırım Faaliyetlerinden Gelirler 27 11.057.857 7.995.382
+Yatırım Faaliyetlerinden Giderler 27 -679.996 -344.443
+FİNANSMAN GELİRİ (GİDERİ) ÖNCESİ FAALİYET KARI (ZARARI) 27.113.466 26.340.017
+Finansman Gelirleri 28 5.600 340.709
+Finansman Giderleri 29 -23.361.989 -17.187.100
+Net Parasal Pozisyon Kazançları (Kayıpları) 30 2.922.250 4.858.948
+SÜRDÜRÜLEN FAALİYETLER VERGİ ÖNCESİ KARI (ZARARI) 6.679.327 14.352.574
+Sürdürülen Faaliyetler Vergi (Gideri) Geliri -1.473.115 -3.860.107
+Dönem Vergi (Gideri) Geliri 31 -1.092.526 -822.302
+Ertelenmiş Vergi (Gideri) Geliri 31 -380.589 -3.037.805
+SÜRDÜRÜLEN FAALİYETLER DÖNEM KARI (ZARARI) 5.206.212 10.492.467
+DÖNEM KARI (ZARARI) 5.206.212 10.492.467
+Dönem Karının (Zararının) Dağılımı
+Kontrol Gücü Olmayan Paylar 331.689 805.757
+Ana Ortaklık Payları 4.874.523 9.686.710
+Pay Başına Kazanç
+Pay Başına Kazanç
+Pay Başına Kazanç (Zarar)
+Sürdürülen Faaliyetlerden Pay Başına Kazanç (
+Zarar)
+Pay başına kazanç 32 13,20000000 26,23000000
+Sulandırılmış Pay Başına Kazanç (Zarar)
+DİĞER KAPSAMLI GELİR KISMI
+Kar veya Zararda Yeniden Sınıflandırılmayacaklar -312.308 -393.465
+Özkaynağa Dayalı Finansal Araçlara Yatırımlardan 
+Kaynaklanan Kazançlar (Kayıplar) -1.279.308 -1.175.345
+Maddi Duran Varlıklar Yeniden Değerleme Artışları (
+Azalışları) 1.921.322 263.671
+Tanımlanmış Fayda Planları Yeniden Ölçüm Kazançları (
+Kayıpları) -226.874 -603.325
+Kar veya Zararda Yeniden Sınıflandırılmayacak Diğer 
+Kapsamlı Gelire İlişkin Vergiler -727.448 1.121.534
+Özkaynağa Dayalı Finansal Araçlara Yatırımlardan 
+Kaynaklanan Kazançlar (Kayıplar), Vergi Etkisi -357.745 586.234
+Maddi Duran Varlıklar Yeniden Değerleme Artışları (
+Azalışları), Vergi Etkisi -419.862 391.913
+Tanımlanmış Fayda Planları Yeniden Ölçüm 
+Kazançları (Kayıpları), Vergi Etkisi 50.159 143.387
+Kar veya Zarar Olarak Yeniden Sınıflandırılacaklar 999.282 -3.225.816
+Yurtdışındaki İşletmelerin Çevrimine İlişkin Yabancı Para 
+Çevrim Farkları -144.952 -3.227.466
+Yurtdışındaki İşletmelerin Çevrimine İlişkin Yabancı 
+Para Çevrim Farklarından Kazançlar (Kayıplar) -144.952 -3.227.466
+Nakit Akış Riskinden Korunmaya İlişkin Diğer Kapsamlı 
+Gelir (Gider) 1.489.663 2.200
+Nakit Akış Riskinden Korunma Kazançları (Kayıpları) 1.489.663 2.200
+Kar veya Zararda Yeniden Sınıflandırılacak Diğer 
+Kapsamlı Gelire İlişkin Vergiler -345.429 -550
+Nakit Akış Riskinden Korunmaya İlişkin Diğer 
+Kapsamlı Gelir, Vergi Etkisi -345.429 -550
+Kar veya Zarar ve Diğer Kapsamlı Gelir Tablosu
+
+--- SAYFA 9 ---
+   
+   
+  
+  
+DİĞER KAPSAMLI GELİR (GİDER) 686.974 -3.619.281
+TOPLAM KAPSAMLI GELİR (GİDER) 5.893.186 6.873.186
+Toplam Kapsamlı Gelirin Dağılımı
+Kontrol Gücü Olmayan Paylar 194.927 -111.010
+Ana Ortaklık Payları 5.698.259 6.984.196
+
+--- SAYFA 10 ---
+  
+  
+   
+  
+   
+  
+   
+   
+  
+  
+  
+ 
+  
+  
+  
+   
+    
+    
+   
+   
+   
+    
+    
+   
+  
+   
+   
+   
+    
+   
+   
+    
+    
+   
+    
+    
+    
+   
+    
+    
+    
+   
+   
+  
+  
+ 
+Sunum Para Birimi 1.000 TL
+Finansal Tablo Niteliği Konsolide
+Dipnot Referansı Cari Dönem
+01.01.2025 - 31.12.2025
+Önceki Dönem
+01.01.2024 - 31.12.2024
+Nakit Akış Tablosu (Dolaylı Yöntem)
+İŞLETME FAALİYETLERİNDEN NAKİT AKIŞLARI 5.903.389 7.576.119
+Dönem Karı (Zararı) 5.206.212 10.492.467
+Dönem Net Karı (Zararı) Mutabakatı İle İlgili Düzeltmeler 17.676.552 13.364.960
+Amortisman ve İtfa Gideri İle İlgili Düzeltmeler 11,13 2.452.097 2.383.060
+Değer Düşüklüğü (İptali) İle İlgili Düzeltmeler 124.557 74.428
+Alacaklarda Değer Düşüklüğü (İptali) ile İlgili 
+Düzeltmeler 7 50.569 34.236
+Diğer Finansal Varlıklar veya Yatırımlar Değer 
+Düşüklüğü (İptali) ile İlgili Düzeltmeler 27 -1.097 -1.322
+Stok Değer Düşüklüğü (İptali) ile İlgili Düzeltmeler 10 75.085 41.514
+Karşılıklar İle İlgili Düzeltmeler 1.883.598 1.433.641
+Çalışanlara Sağlanan Faydalara İlişkin Karşılıklar (
+İptali) ile İlgili Düzeltmeler 17 1.532.178 1.665.533
+Dava ve/veya Ceza Karşılıkları (İptali) ile İlgili 
+Düzeltmeler 15 64.651 29.988
+Diğer Karşılıklar (İptalleri) ile İlgili Düzeltmeler 286.769 -261.880
+Faiz (Gelirleri) ve Giderleri İle İlgili Düzeltmeler 1.298.430 2.765.960
+Faiz Gelirleri ile İlgili Düzeltmeler 27 -4.358.784 -3.469.948
+Faiz Giderleri ile İlgili Düzeltmeler 29 5.657.214 6.235.908
+Vergi (Geliri) Gideri İle İlgili Düzeltmeler 31 1.473.115 3.860.107
+Duran Varlıkların Elden Çıkarılmasından Kaynaklanan 
+Kayıplar (Kazançlar) İle İlgili Düzeltmeler -2.982 -4.927
+Maddi Duran Varlıkların Elden Çıkarılmasından 
+Kaynaklanan Kayıplar (Kazançlar) ile İlgili Düzeltmeler 27 -2.982 -4.927
+Yatırım ya da Finansman Faaliyetlerinden Kaynaklanan 
+Nakit Akışlarına Neden Olan Diğer Kalemlere İlişkin 
+Düzeltmeler
+27,28,29 11.741.143 6.484.623
+Parasal Pozisyon Kazanç ve Kayıplarıyla İlgili 
+Düzeltmeler -1.236.440 -3.583.050
+Kar (Zarar) Mutabakatı İle İlgili Diğer Düzeltmeler 27 -56.966 -48.882
+İşletme Sermayesinde Gerçekleşen Değişimler -14.744.147 -13.928.490
+Ticari Alacaklardaki Azalış (Artış) ile İlgili Düzeltmeler -6.849.539 -12.904.708
+İlişkili Taraflardan Ticari Alacaklardaki Azalış (Artış) -4.361.761 -10.193.851
+İlişkili Olmayan Taraflardan Ticari Alacaklardaki Azalış
+(Artış) -2.487.778 -2.710.857
+Faaliyetlerle İlgili Diğer Alacaklardaki Azalış (Artış) ile 
+İlgili Düzeltmeler -1.189.129 -661.313
+Stoklardaki Azalışlar (Artışlar) İle İlgili Düzeltmeler -9.732.298 -4.283.758
+Ticari Borçlardaki Artış (Azalış) ile İlgili Düzeltmeler 3.021.354 3.153.066
+İlişkili Taraflara Ticari Borçlardaki Artış (Azalış) 1.924.850 1.074.728
+İlişkili Olmayan Taraflara Ticari Borçlardaki Artış (
+Azalış) 1.096.504 2.078.338
+Faaliyetler ile İlgili Diğer Borçlardaki Artış (Azalış) ile İlgili 
+Düzeltmeler 5.465 768.223
+Faaliyetlerden Elde Edilen Nakit Akışları 8.138.617 9.928.937
+Çalışanlara Sağlanan Faydalara İlişkin Karşılıklar 
+Kapsamında Yapılan Ödemeler 17 -1.111.787 -1.053.861
+Vergi İadeleri (Ödemeleri) -1.123.441 -1.298.957
+YATIRIM FAALİYETLERİNDEN KAYNAKLANAN NAKİT AKIŞLARI 2.960.860 449.255
+Başka İşletmelerin veya Fonların Paylarının veya Borçlanma
+Araçlarının Edinimi İçin Yapılan Nakit Çıkışları -7.947 -20.075
+Maddi ve Maddi Olmayan Duran Varlıkların Satışından 
+Kaynaklanan Nakit Girişleri 161.546 15.069
+Maddi ve Maddi Olmayan Duran Varlıkların Alımından 
+Kaynaklanan Nakit Çıkışları -1.738.886 -3.351.922
+Maddi Duran Varlık Alımından Kaynaklanan Nakit 
+Çıkışları -1.715.843 -3.340.604
+Maddi Olmayan Duran Varlık Alımından Kaynaklanan 
+Nakit Çıkışları -23.043 -11.318
+Verilen Nakit Avans ve Borçlar -63.803 278.324
+Verilen Diğer Nakit Avans ve Borçlar -63.803 278.324
+Verilen Nakit Avans ve Borçlardan Geri Ödemeler 194.200 9.029
+İlişkili Taraflara Verilen Nakit Avans ve Borçlardan Geri 
+Ödemeler 194.200 9.029
+Alınan Faiz 27 4.358.784 3.469.948
+Diğer Nakit Girişleri (Çıkışları) 56.966 48.882
+Nakit Akış Tablosu (Dolaylı Yöntem)
+
+--- SAYFA 11 ---
+ 
+ 
+ 
+ 
+ 
+ 
+  
+  
+  
+  
+   
+  
+   
+  
+ FİNANSMAN FAALİYETLERİNDEN NAKİT AKIŞLARI -17.839.148 7.692.877
+Borçlanmadan Kaynaklanan Nakit Girişleri 28.925.964 36.285.897
+Kredilerden Nakit Girişleri 28.925.964 36.285.897
+Borç Ödemelerine İlişkin Nakit Çıkışları -33.560.771 -21.881.997
+Kredi Geri Ödemelerine İlişkin Nakit Çıkışları -33.560.771 -21.881.997
+Türev Araçlardan Nakit Çıkışları -3.032.387 0
+Ödenen Temettüler -3.835.150 -477.457
+Ödenen Faiz -5.224.851 -5.408.690
+Diğer Nakit Girişleri (Çıkışları) -1.111.953 -824.876
+ENFLASYON ETKİSİ -8.127.198 -6.771.495
+YABANCI PARA ÇEVRİM FARKLARININ ETKİSİNDEN ÖNCE NAKİT 
+VE NAKİT BENZERLERİNDEKİ NET ARTIŞ (AZALIŞ) -17.102.097 8.946.756
+Yabancı Para Çevrim Farklarının Nakit ve Nakit Benzerleri 
+Üzerindeki Etkisi 5.985.438 3.458.682
+NAKİT VE NAKİT BENZERLERİNDEKİ NET ARTIŞ (AZALIŞ) -11.116.659 12.405.438
+DÖNEM BAŞI NAKİT VE NAKİT BENZERLERİ 4 34.435.342 22.029.904
+DÖNEM SONU NAKİT VE NAKİT BENZERLERİ 4 23.318.683 34.435.342
+
+--- SAYFA 12 ---
+  
+  
+  
+  
+  
+   
+   
+  
+  
+  
+  
+  
+   
+   
+  
+  
+ 
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   
+   
+  
+  
+  
+  
+  
+   
+   
+  
+  
+ 
+Sunum Para Birimi 1.000 TL
+Finansal Tablo Niteliği Konsolide
+Dipnot Referansı
+Özkaynaklar
+Ana Ortaklığa Ait Özkaynaklar
+Kontrol Gücü Olmayan 
+Paylar
+Ödenmiş 
+Sermaye
+Sermaye Düzeltme 
+Farkları
+Pay İhraç Primleri / 
+İskontoları
+Ortak Kontrole Tabi Teşebbüs veya İşletmeleri İçeren Birleşmelerin 
+Etkisi
+Kar veya Zararda Yeniden Sınıflandırılmayacak Birikmiş Diğer Kapsamlı Gelirler veya Giderler Kar veya Zararda Yeniden Sınıflandırılacak Birikmiş Diğer Kapsamlı Gelirler veya Giderler
+Kardan Ayrılan Kısıtlanmış 
+Yedekler
+Birikmiş Karlar
+Özkaynağa Dayalı Finansal Araçlara Yatırımlardan Kaynaklanan Kazançlar (
+Kayıplar)
+Yeniden Değerleme ve Ölçüm Kazanç / Kayıpları
+Yabancı Para Çevrim 
+Farkları
+Riskten Korunma Kazanç / Kayıpları
+Yeniden Değerleme ve Sınıflandırma Kazanç / 
+Kayıpları
+Geçmiş Yıllar Kar / 
+Zararları
+Net Dönem Karı 
+Zararı
+Maddi Duran Varlık Yeniden Değerleme Artışları/
+Azalışları
+Tanımlanmış Fayda Planları Yeniden Ölçüm Kazançları/
+Kayıpları
+Nakit Akış Riskinden Korunma Kazançları (
+Kayıpları)
+Önceki Dönem
+01.01.2024 - 31.12.2024
+Özkaynaklar Değişim Tablosu
+Özkaynaklar Değişim Tablosu
+Dönem Başı Bakiyeler 369.276 11.646.759 6.302.621 -31.110.881 3.822.547 3.838.127 -1.095.076 -661 -1.624.787 2.887.610 32.541.580 6.385.429 33.962.544 3.459.373 37.421.917
+Muhasebe Politikalarındaki Değişikliklere İlişkin 
+Düzeltmeler
+Muhasebe Politikalarındaki Zorunlu Değişikliklere 
+İlişkin Düzeltmeler
+Muhasebe Politikalarındaki Gönüllü Değişikliklere 
+İlişkin Düzeltmeler
+Hatalara İlişkin Düzeltmeler
+Diğer Düzeltmeler
+Düzeltmelerden Sonraki Tutar
+Transferler 6.385.429 -6.385.429
+Toplam Kapsamlı Gelir (Gider) -589.111 637.224 -446.539 -2.305.738 1.650 9.686.710 6.984.196 -111.010 6.873.186
+Dönem Karı (Zararı)
+Diğer Kapsamlı Gelir (Gider)
+Sermaye Arttırımı
+Sermaye Azaltımı
+Sermaye Avansı
+Birleşme/Bölünme/Tasfiye Etkisi
+Ortak Kontrole Tabi Teşebbüs veya İşletmeleri 
+İçeren Birleşmelerin Etkisi 25.420.128 -25.420.128 0 0 0
+Dönemde Ödenen Kar Payı Avansları
+Kar Payları -477.457 -477.457
+Kar Payı Hariç Pay Sahiplerine Yapılan Diğer 
+Ödemeler
+Payların Geri Alım İşlemleri Nedeniyle Meydana 
+Gelen Artış (Azalış)
+Pay Bazlı İşlemler Nedeniyle Meydana Gelen Artış (
+Azalış)
+Bağlı Ortaklık Edinimi veya Elden Çıkarılması
+Bağlı Ortaklıklarda Kontrol Kaybı ile 
+Sonuçlanmayan Pay Oranı Değişikliklerine Bağlı 
+Artış/Azalış
+Kontrol Gücü Olmayan Pay Sahipleriyle Yapılan 
+İşlemler
+Pay Sahiplerinin Diğer Katkıları
+Nakit Akış Riskinden Korunma Kazançları (Kayıpları
+) Kaleminden Çıkarılan ve Finansal Olmayan 
+Varlığın (Yükümlülüğün) veya Gerçeğe Uygun Değer
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Opsiyonların Zaman Değerindeki Değişiklikler 
+Kaleminden Çıkarılan ve Finansal Olmayan Varlığın
+(Yükümlülüğün) veya Gerçeğe Uygun Değer 
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Forward Sözleşmesinin Forward Bileşeninin 
+Değerindeki Değişiklikler Kaleminden Çıkarılan ve 
+Finansal Olmayan Varlığın (Yükümlülüğün) veya 
+Gerçeğe Uygun Değer Riskinden Korunma 
+Muhasebesi Uygulanan Kesin Taahhüdün 
+Başlangıç Maliyetine veya Defter Değerine Dahil 
+Edilen Tutar
+Yabancı Para Alım Satım Marjlarındaki Değişiklikler
+Kaleminden Çıkarılan ve Finansal Olmayan Varlığın
+(Yükümlülüğün) veya Gerçeğe Uygun Değer 
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Diğer Değişiklikler Nedeni İle Artış (Azalış)
+Dönem Sonu Bakiyeler 369.276 11.646.759 6.302.621 -5.690.753 3.233.436 4.475.351 -1.541.615 -2.306.399 -1.623.137 2.887.610 13.506.881 9.686.710 40.946.740 2.870.906 43.817.646
+Özkaynaklar Değişim Tablosu
+Özkaynaklar Değişim Tablosu
+Dönem Başı Bakiyeler 369.276 11.646.759 6.302.621 -5.690.753 3.233.436 4.475.351 -1.541.615 -2.306.399 -1.623.137 2.887.610 13.506.881 9.686.710 40.946.740 2.870.906 43.817.646
+Muhasebe Politikalarındaki Değişikliklere İlişkin 
+Düzeltmeler
+Muhasebe Politikalarındaki Zorunlu Değişikliklere 
+İlişkin Düzeltmeler
+Muhasebe Politikalarındaki Gönüllü Değişikliklere 
+İlişkin Düzeltmeler
+Hatalara İlişkin Düzeltmeler
+Diğer Düzeltmeler
+Düzeltmelerden Sonraki Tutar
+Transferler 472.676 332.242 8.881.792 -9.686.710 0 0 0
+Toplam Kapsamlı Gelir (Gider) -1.637.053 1.501.460 -166.550 -18.355 1.144.234 4.874.523 5.698.259 194.927 5.893.186
+Dönem Karı (Zararı)
+Diğer Kapsamlı Gelir (Gider)
+Sermaye Arttırımı
+Sermaye Azaltımı
+Sermaye Avansı
+Birleşme/Bölünme/Tasfiye Etkisi
+Ortak Kontrole Tabi Teşebbüs veya İşletmeleri 
+İçeren Birleşmelerin Etkisi
+Özkaynaklar Değişim Tablosu
+
+--- SAYFA 13 ---
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+Cari Dönem
+01.01.2025 - 31.12.2025
+Dönemde Ödenen Kar Payı Avansları
+Kar Payları -3.343.157 -3.343.157 -491.993 -3.835.150
+Kar Payı Hariç Pay Sahiplerine Yapılan Diğer 
+Ödemeler
+Payların Geri Alım İşlemleri Nedeniyle Meydana 
+Gelen Artış (Azalış)
+Pay Bazlı İşlemler Nedeniyle Meydana Gelen Artış (
+Azalış)
+Bağlı Ortaklık Edinimi veya Elden Çıkarılması
+Bağlı Ortaklıklarda Kontrol Kaybı ile 
+Sonuçlanmayan Pay Oranı Değişikliklerine Bağlı 
+Artış/Azalış
+Kontrol Gücü Olmayan Pay Sahipleriyle Yapılan 
+İşlemler
+Pay Sahiplerinin Diğer Katkıları
+Nakit Akış Riskinden Korunma Kazançları (Kayıpları
+) Kaleminden Çıkarılan ve Finansal Olmayan 
+Varlığın (Yükümlülüğün) veya Gerçeğe Uygun Değer
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Opsiyonların Zaman Değerindeki Değişiklikler 
+Kaleminden Çıkarılan ve Finansal Olmayan Varlığın
+(Yükümlülüğün) veya Gerçeğe Uygun Değer 
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Forward Sözleşmesinin Forward Bileşeninin 
+Değerindeki Değişiklikler Kaleminden Çıkarılan ve 
+Finansal Olmayan Varlığın (Yükümlülüğün) veya 
+Gerçeğe Uygun Değer Riskinden Korunma 
+Muhasebesi Uygulanan Kesin Taahhüdün 
+Başlangıç Maliyetine veya Defter Değerine Dahil 
+Edilen Tutar
+Yabancı Para Alım Satım Marjlarındaki Değişiklikler
+Kaleminden Çıkarılan ve Finansal Olmayan Varlığın
+(Yükümlülüğün) veya Gerçeğe Uygun Değer 
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Diğer Değişiklikler Nedeni İle Artış (Azalış)
+Dönem Sonu Bakiyeler 369.276 11.646.759 6.302.621 -5.690.753 1.596.383 5.976.811 -1.708.165 -2.324.754 -6.227 3.219.852 19.045.516 4.874.523 43.301.842 2.573.840 45.875.682

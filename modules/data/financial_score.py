@@ -1,534 +1,642 @@
-import sqlite3
-from datetime import datetime
-from pathlib import Path
+import math
 
 
-# ==========================================================
-# DB YOLU
-# ==========================================================
-
-BASE_DIR = Path(__file__).resolve().parents[2]
-DB_PATH = BASE_DIR / "borsa.db"
+# ============================================================
+# BIST AI PRO
+# KAP / FİNANSAL RAPOR TABANLI FİNANSAL SAĞLIK SKORU
+# ============================================================
 
 
-# ==========================================================
-# PUAN SINIRLAMA
-# ==========================================================
-
-def clamp(value, minimum=0, maximum=100):
-    return max(minimum, min(float(value), maximum))
-
-
-# ==========================================================
-# GÜVENLİ BÖLME
-# ==========================================================
-
-def safe_div(numerator, denominator):
-    if numerator is None or denominator in (None, 0):
-        return None
-
+def safe_div(a, b):
+    """
+    Güvenli bölme.
+    """
     try:
-        return float(numerator) / float(denominator)
+        if b in (None, 0):
+            return None
+        return a / b
     except (TypeError, ValueError, ZeroDivisionError):
         return None
 
 
-# ==========================================================
-# TEK DÖNEM FİNANSAL VERİ GETİR
-# ==========================================================
-
-def get_financial_statement(symbol, period_end=None):
-    symbol = str(symbol).upper().strip()
-
-    if symbol.endswith(".IS"):
-        symbol = symbol[:-3]
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-
-    if period_end:
-        row = conn.execute(
-            """
-            SELECT *
-            FROM financial_statements
-            WHERE symbol = ?
-              AND period_end = ?
-            ORDER BY
-                CASE
-                    WHEN report_type = 'Konsolide' THEN 0
-                    ELSE 1
-                END
-            LIMIT 1
-            """,
-            (symbol, str(period_end)),
-        ).fetchone()
-    else:
-        row = conn.execute(
-            """
-            SELECT *
-            FROM financial_statements
-            WHERE symbol = ?
-            ORDER BY period_end DESC
-            LIMIT 1
-            """,
-            (symbol,),
-        ).fetchone()
-
-    conn.close()
-
-    return dict(row) if row else None
-
-
-# ==========================================================
-# ÖNCEKİ DÖNEMİ BUL
-# ==========================================================
-
-def get_previous_statement(symbol, current_period_end):
-    symbol = str(symbol).upper().strip()
-
-    if symbol.endswith(".IS"):
-        symbol = symbol[:-3]
-
-    current_date = str(current_period_end)
-
-    try:
-        year = int(current_date[:4])
-        month_day = current_date[4:]
-        previous_date = str(year - 1) + month_day
-    except (ValueError, TypeError):
-        return None
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-
-    row = conn.execute(
-        """
-        SELECT *
-        FROM financial_statements
-        WHERE symbol = ?
-          AND period_end = ?
-        ORDER BY
-            CASE
-                WHEN report_type = 'Konsolide' THEN 0
-                ELSE 1
-            END
-        LIMIT 1
-        """,
-        (symbol, previous_date),
-    ).fetchone()
-
-    conn.close()
-
-    return dict(row) if row else None
-# ==========================================================
-# 1 - CİRO SKORU
-# AĞIRLIK: %15
-# ==========================================================
-
-def calculate_revenue_score(current, previous=None):
-
-    revenue = current.get("revenue")
-
-    if revenue is None or revenue <= 0:
+def clamp(value, minimum=0, maximum=100):
+    """
+    Skoru 0-100 arasında tutar.
+    """
+    if value is None:
         return 0
 
-    if not previous:
-        return 50
-
-    previous_revenue = previous.get("revenue")
-
-    if previous_revenue in (None, 0):
-        return 50
-
-    growth = (revenue - previous_revenue) / abs(previous_revenue)
-
-    if growth >= 0.30:
-        return 100
-    elif growth >= 0.20:
-        return 90
-    elif growth >= 0.10:
-        return 80
-    elif growth >= 0.05:
-        return 70
-    elif growth >= 0:
-        return 60
-    elif growth >= -0.05:
-        return 50
-    elif growth >= -0.15:
-        return 35
-    else:
-        return 20
+    return max(minimum, min(maximum, value))
 
 
-# ==========================================================
-# 2 - NET KÂR SKORU
-# AĞIRLIK: %20
-# ==========================================================
+# ============================================================
+# 1. LİKİDİTE SKORU
+# ============================================================
 
-def calculate_profit_score(current):
+def calculate_liquidity_score(current_assets, current_liabilities):
+    """
+    Cari oran:
+        Dönen Varlıklar / Kısa Vadeli Yükümlülükler
 
-    profit = current.get("net_profit")
+    Skorlama:
+        >= 2.00  -> 100
+        1.50     -> 85
+        1.20     -> 70
+        1.00     -> 50
+        0.75     -> 25
+        < 0.75   -> 0
+    """
 
-    if profit is None:
-        return 50
-
-    if profit > 0:
-        return 100
-    elif profit == 0:
-        return 50
-    else:
-        return 10
-
-
-# ==========================================================
-# 3 - KÂR MARJI SKORU
-# AĞIRLIK: %15
-# ==========================================================
-
-def calculate_margin_score(current):
-
-    revenue = current.get("revenue")
-    profit = current.get("net_profit")
-
-    margin = safe_div(profit, revenue)
-
-    if margin is None:
-        return 50
-
-    if margin >= 0.20:
-        return 100
-    elif margin >= 0.15:
-        return 90
-    elif margin >= 0.10:
-        return 80
-    elif margin >= 0.05:
-        return 70
-    elif margin >= 0:
-        return 60
-    elif margin >= -0.05:
-        return 40
-    else:
-        return 20
-
-
-# ==========================================================
-# 4 - BORÇLULUK SKORU
-# AĞIRLIK: %15
-# ==========================================================
-
-def calculate_debt_score(current):
-
-    short_term = current.get("short_term_financial_debt") or 0
-    current_long_term = current.get("current_portion_long_term_debt") or 0
-    long_term = current.get("long_term_financial_debt") or 0
-    cash = current.get("cash") or 0
-    equity = current.get("equity")
-
-    total_debt = (
-        float(short_term)
-        + float(current_long_term)
-        + float(long_term)
-    )
-
-    if equity in (None, 0):
-        return 50
-
-    net_debt = total_debt - float(cash)
-    net_debt_equity = net_debt / float(equity)
-
-    if net_debt_equity <= 0:
-        return 100
-    elif net_debt_equity <= 0.25:
-        return 90
-    elif net_debt_equity <= 0.50:
-        return 80
-    elif net_debt_equity <= 0.75:
-        return 70
-    elif net_debt_equity <= 1.00:
-        return 60
-    elif net_debt_equity <= 1.50:
-        return 45
-    elif net_debt_equity <= 2.00:
-        return 30
-    else:
-        return 15
-
-
-# ==========================================================
-# 5 - ÖZKAYNAK SKORU
-# AĞIRLIK: %10
-# ==========================================================
-
-def calculate_equity_score(current):
-
-    equity = current.get("equity")
-    assets = current.get("total_assets")
-
-    ratio = safe_div(equity, assets)
+    ratio = safe_div(current_assets, current_liabilities)
 
     if ratio is None:
-        return 50
+        return 0, None
 
-    if ratio >= 0.60:
-        return 100
+    if ratio >= 2.00:
+        score = 100
+    elif ratio >= 1.50:
+        score = 85
+    elif ratio >= 1.20:
+        score = 70
+    elif ratio >= 1.00:
+        score = 50
+    elif ratio >= 0.75:
+        score = 25
+    else:
+        score = 0
+
+    return score, ratio
+
+
+# ============================================================
+# 2. BORÇLULUK SKORU
+# ============================================================
+
+def calculate_debt_score(
+    short_term_debt,
+    short_term_long_term_debt,
+    long_term_debt,
+    equity,
+):
+    """
+    Finansal borç / özkaynak oranı.
+
+    Düşük borç = yüksek skor.
+    """
+
+    total_debt = (
+        (short_term_debt or 0)
+        + (short_term_long_term_debt or 0)
+        + (long_term_debt or 0)
+    )
+
+    debt_equity = safe_div(total_debt, equity)
+
+    if debt_equity is None:
+        return 0, None
+
+    if debt_equity <= 0.20:
+        score = 100
+    elif debt_equity <= 0.35:
+        score = 90
+    elif debt_equity <= 0.50:
+        score = 80
+    elif debt_equity <= 0.75:
+        score = 65
+    elif debt_equity <= 1.00:
+        score = 45
+    elif debt_equity <= 1.50:
+        score = 25
+    else:
+        score = 0
+
+    return score, debt_equity
+
+
+# ============================================================
+# 3. NET NAKİT / BORÇ SKORU
+# ============================================================
+
+def calculate_net_cash_score(
+    cash,
+    current_financial_investments,
+    noncurrent_financial_investments,
+    total_debt,
+):
+    """
+    Net nakit:
+
+        Nakit + finansal yatırımlar - finansal borç
+
+    Pozitif net nakit şirket lehine değerlendirilir.
+    """
+
+    liquid_financial_assets = (
+        (cash or 0)
+        + (current_financial_investments or 0)
+        + (noncurrent_financial_investments or 0)
+    )
+
+    net_cash = liquid_financial_assets - (total_debt or 0)
+
+    if total_debt in (None, 0):
+        if net_cash > 0:
+            return 100, net_cash
+        return 50, net_cash
+
+    net_cash_ratio = safe_div(net_cash, total_debt)
+
+    if net_cash_ratio is None:
+        return 0, net_cash
+
+    if net_cash_ratio >= 1.00:
+        score = 100
+    elif net_cash_ratio >= 0.50:
+        score = 90
+    elif net_cash_ratio >= 0.20:
+        score = 80
+    elif net_cash_ratio >= 0:
+        score = 70
+    elif net_cash_ratio >= -0.25:
+        score = 50
+    elif net_cash_ratio >= -0.50:
+        score = 30
+    else:
+        score = 10
+
+    return score, net_cash
+
+
+# ============================================================
+# 4. ÖZKAYNAK GÜCÜ
+# ============================================================
+
+def calculate_equity_score(equity, total_assets):
+    """
+    Özkaynak / toplam varlık.
+    """
+
+    ratio = safe_div(equity, total_assets)
+
+    if ratio is None:
+        return 0, None
+
+    if ratio >= 0.70:
+        score = 100
+    elif ratio >= 0.60:
+        score = 90
     elif ratio >= 0.50:
-        return 90
+        score = 80
     elif ratio >= 0.40:
-        return 80
+        score = 65
     elif ratio >= 0.30:
-        return 70
+        score = 45
     elif ratio >= 0.20:
-        return 55
-    elif ratio >= 0.10:
-        return 40
+        score = 25
     else:
-        return 20
+        score = 0
+
+    return score, ratio
 
 
-# ==========================================================
-# 6 - NAKİT AKIŞI SKORU
-# AĞIRLIK: %15
-# ==========================================================
+# ============================================================
+# 5. KÂRLILIK SKORU
+# ============================================================
 
-def calculate_cash_flow_score(current):
+def calculate_profitability_score(
+    revenue,
+    gross_profit,
+    operating_profit,
+    net_profit,
+    equity,
+    total_assets,
+):
+    """
+    Brüt marj + faaliyet marjı + net marj
+    + ROE + ROA birlikte değerlendirilir.
+    """
 
-    cfo = current.get("operating_cash_flow")
+    gross_margin = safe_div(gross_profit, revenue)
+    operating_margin = safe_div(operating_profit, revenue)
+    net_margin = safe_div(net_profit, revenue)
 
-    if cfo is None:
-        return 50
+    roe = safe_div(net_profit, equity)
+    roa = safe_div(net_profit, total_assets)
 
-    if cfo > 0:
-        return 100
-    elif cfo == 0:
-        return 50
+    scores = []
+
+    # Brüt kâr marjı
+    if gross_margin is not None:
+        if gross_margin >= 0.30:
+            scores.append(100)
+        elif gross_margin >= 0.20:
+            scores.append(85)
+        elif gross_margin >= 0.15:
+            scores.append(70)
+        elif gross_margin >= 0.10:
+            scores.append(55)
+        elif gross_margin > 0:
+            scores.append(30)
+        else:
+            scores.append(0)
+
+    # Esas faaliyet marjı
+    if operating_margin is not None:
+        if operating_margin >= 0.25:
+            scores.append(100)
+        elif operating_margin >= 0.15:
+            scores.append(85)
+        elif operating_margin >= 0.10:
+            scores.append(70)
+        elif operating_margin >= 0.05:
+            scores.append(55)
+        elif operating_margin > 0:
+            scores.append(30)
+        else:
+            scores.append(0)
+
+    # Net kâr marjı
+    if net_margin is not None:
+        if net_margin >= 0.20:
+            scores.append(100)
+        elif net_margin >= 0.15:
+            scores.append(90)
+        elif net_margin >= 0.10:
+            scores.append(80)
+        elif net_margin >= 0.05:
+            scores.append(65)
+        elif net_margin > 0:
+            scores.append(40)
+        else:
+            scores.append(0)
+
+    # ROE
+    if roe is not None:
+        if roe >= 0.30:
+            scores.append(100)
+        elif roe >= 0.20:
+            scores.append(90)
+        elif roe >= 0.15:
+            scores.append(80)
+        elif roe >= 0.10:
+            scores.append(65)
+        elif roe > 0:
+            scores.append(40)
+        else:
+            scores.append(0)
+
+    # ROA
+    if roa is not None:
+        if roa >= 0.15:
+            scores.append(100)
+        elif roa >= 0.10:
+            scores.append(90)
+        elif roa >= 0.07:
+            scores.append(80)
+        elif roa >= 0.04:
+            scores.append(65)
+        elif roa > 0:
+            scores.append(40)
+        else:
+            scores.append(0)
+
+    if not scores:
+        return 0, {}
+
+    score = sum(scores) / len(scores)
+
+    return score, {
+        "gross_margin": gross_margin,
+        "operating_margin": operating_margin,
+        "net_margin": net_margin,
+        "roe": roe,
+        "roa": roa,
+    }
+
+
+# ============================================================
+# 6. NAKİT AKIŞI SKORU
+# ============================================================
+
+def calculate_cashflow_score(
+    operating_cashflow,
+    net_profit,
+    capex,
+):
+    """
+    Operasyonel nakit akışı ve serbest nakit akışı.
+
+    CFO = işletme faaliyetlerinden nakit akışı
+
+    FCF = CFO - Capex
+    """
+
+    operating_cashflow = operating_cashflow or 0
+    net_profit = net_profit or 0
+    capex = abs(capex or 0)
+
+    free_cashflow = operating_cashflow - capex
+
+    scores = []
+
+    # CFO pozitif mi?
+    if operating_cashflow > 0:
+        scores.append(70)
     else:
-        return 15
+        scores.append(10)
 
+    # CFO / Net kâr
+    cfo_profit_ratio = safe_div(
+        operating_cashflow,
+        net_profit
+    )
 
-# ==========================================================
-# 7 - BÜYÜME SKORU
-# AĞIRLIK: %10
-# ==========================================================
+    if cfo_profit_ratio is not None:
 
-def calculate_growth_score(current, previous=None):
+        if cfo_profit_ratio >= 1.00:
+            scores.append(100)
 
-    if not previous:
-        return 50
+        elif cfo_profit_ratio >= 0.75:
+            scores.append(85)
 
-    revenue = current.get("revenue")
-    previous_revenue = previous.get("revenue")
+        elif cfo_profit_ratio >= 0.50:
+            scores.append(70)
 
-    if revenue is None or previous_revenue in (None, 0):
-        return 50
+        elif cfo_profit_ratio >= 0.25:
+            scores.append(45)
 
-    growth = (
-        float(revenue) - float(previous_revenue)
-    ) / abs(float(previous_revenue))
+        else:
+            scores.append(20)
 
-    if growth >= 0.30:
-        return 100
-    elif growth >= 0.20:
-        return 90
-    elif growth >= 0.10:
-        return 80
-    elif growth >= 0.05:
-        return 70
-    elif growth >= 0:
-        return 60
-    elif growth >= -0.05:
-        return 50
-    elif growth >= -0.15:
-        return 35
+    # FCF
+    if free_cashflow > 0:
+        scores.append(100)
     else:
-        return 20
+        scores.append(30)
+
+    score = sum(scores) / len(scores)
+
+    return score, {
+        "operating_cashflow": operating_cashflow,
+        "free_cashflow": free_cashflow,
+        "cfo_profit_ratio": cfo_profit_ratio,
+    }
 
 
-# ==========================================================
-# SİNYAL
-# ==========================================================
+# ============================================================
+# 7. KÂR KALİTESİ
+# ============================================================
 
-def get_signal(score):
+def calculate_profit_quality_score(
+    net_profit,
+    operating_profit,
+    operating_cashflow,
+):
+    """
+    Net kârın operasyonel faaliyetlerle desteklenip
+    desteklenmediğini ölçer.
+    """
 
-    if score >= 80:
-        return "GÜÇLÜ"
+    scores = []
 
-    if score >= 65:
-        return "POZİTİF"
-
-    if score >= 50:
-        return "NÖTR"
-
-    if score >= 35:
-        return "ZAYIF"
-
-    return "RİSKLİ"
-
-
-# ==========================================================
-# FİNANSAL SKOR HESAPLA
-# ==========================================================
-
-def calculate_financial_score(symbol, period_end=None):
-
-    current = get_financial_statement(
-        symbol,
-        period_end
+    # CFO / Net kâr
+    cfo_profit_ratio = safe_div(
+        operating_cashflow,
+        net_profit
     )
 
-    if not current:
-        return None
+    if cfo_profit_ratio is not None:
 
-    previous = get_previous_statement(
-        symbol,
-        current["period_end"]
+        if cfo_profit_ratio >= 1.00:
+            scores.append(100)
+
+        elif cfo_profit_ratio >= 0.75:
+            scores.append(85)
+
+        elif cfo_profit_ratio >= 0.50:
+            scores.append(70)
+
+        elif cfo_profit_ratio >= 0.25:
+            scores.append(45)
+
+        else:
+            scores.append(20)
+
+    # Faaliyet kârı pozitif mi?
+    if operating_profit > 0:
+        scores.append(100)
+    else:
+        scores.append(0)
+
+    if not scores:
+        return 0
+
+    return sum(scores) / len(scores)
+
+
+# ============================================================
+# 8. ANA FİNANSAL SAĞLIK SKORU
+# ============================================================
+
+def calculate_financial_score(data):
+    """
+    Ana finansal sağlık skoru.
+
+    Ağırlıklar:
+
+        Likidite       %15
+        Borçluluk      %20
+        Kârlılık       %20
+        Özkaynak       %15
+        Nakit akışı    %20
+        Kâr kalitesi   %10
+    """
+
+    current_assets = data.get("current_assets", 0)
+    current_liabilities = data.get("current_liabilities", 0)
+
+    short_term_debt = data.get("short_term_debt", 0)
+    short_term_long_term_debt = data.get(
+        "short_term_long_term_debt",
+        0
+    )
+    long_term_debt = data.get("long_term_debt", 0)
+
+    equity = data.get("equity", 0)
+    total_assets = data.get("total_assets", 0)
+
+    cash = data.get("cash", 0)
+
+    current_financial_investments = data.get(
+        "current_financial_investments",
+        0
     )
 
-    revenue_score = calculate_revenue_score(
-        current,
-        previous
+    noncurrent_financial_investments = data.get(
+        "noncurrent_financial_investments",
+        0
     )
 
-    profit_score = calculate_profit_score(
-        current
+    revenue = data.get("revenue", 0)
+    gross_profit = data.get("gross_profit", 0)
+    operating_profit = data.get("operating_profit", 0)
+    net_profit = data.get("net_profit", 0)
+
+    operating_cashflow = data.get(
+        "operating_cashflow",
+        0
     )
 
-    margin_score = calculate_margin_score(
-        current
+    capex = data.get("capex", 0)
+
+    # --------------------------------------------------------
+    # ALT SKORLAR
+    # --------------------------------------------------------
+
+    liquidity_score, current_ratio = calculate_liquidity_score(
+        current_assets,
+        current_liabilities
     )
 
-    debt_score = calculate_debt_score(
-        current
+    debt_score, debt_equity = calculate_debt_score(
+        short_term_debt,
+        short_term_long_term_debt,
+        long_term_debt,
+        equity
     )
 
-    equity_score = calculate_equity_score(
-        current
+    total_debt = (
+        (short_term_debt or 0)
+        + (short_term_long_term_debt or 0)
+        + (long_term_debt or 0)
     )
 
-    cash_flow_score = calculate_cash_flow_score(
-        current
+    net_cash_score, net_cash = calculate_net_cash_score(
+        cash,
+        current_financial_investments,
+        noncurrent_financial_investments,
+        total_debt
     )
 
-    growth_score = calculate_growth_score(
-        current,
-        previous
+    # Borç skoru ile net nakit skorunun ortalaması
+    debt_health_score = (
+        debt_score * 0.60
+        + net_cash_score * 0.40
     )
 
-    total_score = (
-        revenue_score * 0.15
-        + profit_score * 0.20
-        + margin_score * 0.15
-        + debt_score * 0.15
-        + equity_score * 0.10
-        + cash_flow_score * 0.15
-        + growth_score * 0.10
+    equity_score, equity_ratio = calculate_equity_score(
+        equity,
+        total_assets
     )
 
-    total_score = round(
-        clamp(total_score),
+    profitability_score, profitability = (
+        calculate_profitability_score(
+            revenue,
+            gross_profit,
+            operating_profit,
+            net_profit,
+            equity,
+            total_assets
+        )
+    )
+
+    cashflow_score, cashflow = calculate_cashflow_score(
+        operating_cashflow,
+        net_profit,
+        capex
+    )
+
+    profit_quality_score = calculate_profit_quality_score(
+        net_profit,
+        operating_profit,
+        operating_cashflow
+    )
+
+    # --------------------------------------------------------
+    # ANA SKOR
+    # --------------------------------------------------------
+
+    financial_score = (
+        liquidity_score * 0.15
+        + debt_health_score * 0.20
+        + profitability_score * 0.20
+        + equity_score * 0.15
+        + cashflow_score * 0.20
+        + profit_quality_score * 0.10
+    )
+
+    financial_score = round(
+        clamp(financial_score),
         2
     )
 
-    result = {
-        "symbol": current["symbol"],
-        "period": current["period"],
-        "period_end": current["period_end"],
-        "revenue_score": round(revenue_score, 2),
-        "profit_score": round(profit_score, 2),
-        "margin_score": round(margin_score, 2),
-        "debt_score": round(debt_score, 2),
+    # --------------------------------------------------------
+    # DURUM
+    # --------------------------------------------------------
+
+    if financial_score >= 80:
+        status = "🟢 ÇOK GÜÇLÜ"
+
+    elif financial_score >= 70:
+        status = "🟢 GÜÇLÜ"
+
+    elif financial_score >= 60:
+        status = "🟡 SAĞLIKLI"
+
+    elif financial_score >= 50:
+        status = "🟠 ORTA"
+
+    elif financial_score >= 40:
+        status = "🟠 ZAYIF"
+
+    else:
+        status = "🔴 RİSKLİ"
+
+    return {
+        "financial_score": financial_score,
+        "status": status,
+
+        # Alt skorlar
+        "liquidity_score": round(liquidity_score, 2),
+        "debt_score": round(debt_health_score, 2),
+        "profitability_score": round(profitability_score, 2),
         "equity_score": round(equity_score, 2),
-        "cash_flow_score": round(cash_flow_score, 2),
-        "growth_score": round(growth_score, 2),
-        "total_score": total_score,
-        "signal": get_signal(total_score),
-        "analysis_date": datetime.now().isoformat(),
-    }
-
-    return result
-
-
-# ==========================================================
-# FINANCIAL_SCORES TABLOSUNA KAYDET
-# ==========================================================
-
-def save_financial_score_result(result):
-
-    if not result:
-        return False
-
-    conn = sqlite3.connect(DB_PATH)
-
-    conn.execute(
-        """
-        INSERT INTO financial_scores (
-            symbol,
-            analysis_date,
-            fiscal_year,
-            fiscal_period,
-            revenue_score,
-            profit_score,
-            margin_score,
-            debt_score,
-            equity_score,
-            cash_flow_score,
-            growth_score,
-            total_score,
-            signal
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(symbol, fiscal_year, fiscal_period)
-        DO UPDATE SET
-            analysis_date = excluded.analysis_date,
-            revenue_score = excluded.revenue_score,
-            profit_score = excluded.profit_score,
-            margin_score = excluded.margin_score,
-            debt_score = excluded.debt_score,
-            equity_score = excluded.equity_score,
-            cash_flow_score = excluded.cash_flow_score,
-            growth_score = excluded.growth_score,
-            total_score = excluded.total_score,
-            signal = excluded.signal
-        """,
-        (
-            result["symbol"],
-            result["analysis_date"],
-            int(str(result["period_end"])[:4]),
-            result["period"],
-            result["revenue_score"],
-            result["profit_score"],
-            result["margin_score"],
-            result["debt_score"],
-            result["equity_score"],
-            result["cash_flow_score"],
-            result["growth_score"],
-            result["total_score"],
-            result["signal"],
+        "cashflow_score": round(cashflow_score, 2),
+        "profit_quality_score": round(
+            profit_quality_score,
+            2
         ),
-    )
 
-    conn.commit()
-    conn.close()
+        # Oranlar
+        "current_ratio": current_ratio,
+        "debt_equity": debt_equity,
+        "equity_ratio": equity_ratio,
+        "net_cash": net_cash,
 
-    return True
+        # Kârlılık
+        "gross_margin": profitability.get(
+            "gross_margin"
+        ),
+        "operating_margin": profitability.get(
+            "operating_margin"
+        ),
+        "net_margin": profitability.get(
+            "net_margin"
+        ),
+        "roe": profitability.get("roe"),
+        "roa": profitability.get("roa"),
 
+        # Nakit
+        "operating_cashflow": cashflow.get(
+            "operating_cashflow"
+        ),
+        "free_cashflow": cashflow.get(
+            "free_cashflow"
+        ),
+        "cfo_profit_ratio": cashflow.get(
+            "cfo_profit_ratio"
+        ),
 
-# ==========================================================
-# HESAPLA + KAYDET
-# ==========================================================
-
-def calculate_and_save_financial_score(
-    symbol,
-    period_end=None
-):
-
-    result = calculate_financial_score(
-        symbol,
-        period_end
-    )
-
-    if not result:
-        return None
-
-    save_financial_score_result(result)
-
-    return result
+        # Borç
+        "total_debt": total_debt,
+    }

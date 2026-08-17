@@ -1,0 +1,747 @@
+--- SAYFA 1 ---
+FİNANSAL RAPOR
+ÜLKER BİSKÜVİ SANAYİ A.Ş.
+Finansal Rapor
+Konsolide
+2025 - 2. 3 Aylık Bildirim
+KAMUYU AYDINLATMA PLATFORMU
+Finansal Tablolara ilişkin Genel Açıklama
+KAP'ta yayınlanma tarihi ve saati: 18.08.2025 18:16:22
+https://www.kap.org.tr/tr/Bildirim/1479968
+
+--- SAYFA 2 ---
+Bağımsız Denetim Kuruluşu DRT BAĞIMSIZ DENETİM VE SERBEST MUHASEBECİ MALİ MÜŞAVİRLİK A.Ş.
+Denetim Türü Sınırlı
+Denetim Sonucu Olumlu
+ARA DÖNEM ÖZET KONSOLİDE FİNANSAL BİLGİLERE İLİŞKİN
+SINIRLI DENETİM RAPORU
+Ülker Bisküvi Sanayi A.Ş. Genel Kurulu'na
+Giriş
+Ülker Bisküvi Sanayi A.Ş.'nin ("Şirket") ve bağlı ortaklıklarının (hep birlikte "Grup" olarak anılacaktır) 30 Haziran 2025 tarihli ilişikteki ara dönem özet konsolide 
+finansal durum tablosunun ve aynı tarihte sona eren altı aylık dönemine ait ilgili ara dönem özet konsolide kar veya zarar tablosunun, ara dönem özet konsolide 
+diğer kapsamlı gelir tablosunun, ara dönem özet konsolide özkaynaklar değişim tablosunun ve ara dönem özet konsolide nakit akış tablosunun sınırlı denetimini 
+yürütmüş bulunuyoruz. Grup yönetimi, söz konusu ara dönem özet konsolide finansal bilgilerin Türkiye Muhasebe Standardı 34 "Ara Dönem Finansal Raporlama" 
+Standardı'na ("TMS 34") uygun olarak hazırlanmasından ve sunumundan sorumludur. Sorumluluğumuz, yaptığımız sınırlı denetime dayanarak söz konusu ara 
+dönem konsolide finansal bilgilere ilişkin bir sonuç bildirmektir.
+Sınırlı Denetimin Kapsamı
+Yaptığımız sınırlı denetim, Sınırlı Bağımsız Denetim Standardı (SBDS) 2410 "Ara Dönem Finansal Bilgilerin, İşletmenin Yıllık Finansal Tablolarının Bağımsız 
+Denetimini Yürüten Denetçi Tarafından Sınırlı Bağımsız Denetimi"ne uygun olarak yürütülmüştür. Ara dönem özet konsolide finansal bilgilere ilişkin sınırlı 
+denetim, başta finans ve muhasebe konularından sorumlu kişiler olmak üzere ilgili kişilerin sorgulanması ve analitik prosedürler ile diğer sınırlı denetim 
+prosedürlerinin uygulanmasından oluşur. Ara dönem özet konsolide finansal bilgilerin sınırlı denetiminin kapsamı; Bağımsız Denetim Standartları'na uygun 
+olarak yapılan ve amacı ara dönem özet konsolide finansal tablolar hakkında bir görüş bildirmek olan bağımsız denetimin kapsamına kıyasla önemli ölçüde 
+dardır. Sonuç olarak ara dönem özet konsolide finansal bilgilerin sınırlı denetimi, denetim şirketinin, bir bağımsız denetimde belirlenebilecek tüm önemli 
+hususlara vakıf olabileceğine ilişkin bir güvence sağlamamaktadır. Bu sebeple, bir bağımsız denetim görüşü bildirmemekteyiz.
+Sonuç
+Sınırlı denetimimize göre ilişikteki ara dönem özet konsolide finansal bilgilerin, tüm önemli yönleriyle TMS 34 "Ara Dönem Finansal Raporlama" Standardı'na 
+uygun olarak hazırlanmadığı kanaatine varmamıza sebep olacak herhangi bir husus dikkatimizi çekmemiştir.
+DRT BAĞIMSIZ DENETİM VE SERBEST MUHASEBECİ MALİ MÜŞAVİRLİK A.Ş.
+Member of DELOITTE TOUCHE TOHMATSU LIMITED
+Ömer Yüksel, SMMM
+Bağımsız Denetçi Görüşü
+
+--- SAYFA 3 ---
+Sorumlu Denetçi
+İstanbul, 18 Ağustos 2025
+
+--- SAYFA 4 ---
+    
+    
+   
+  
+  
+   
+   
+    
+   
+   
+  
+   
+   
+   
+    
+    
+   
+   
+   
+    
+   
+   
+    
+    
+   
+   
+   
+  
+ 
+  
+   
+   
+   
+    
+    
+   
+   
+   
+  
+   
+   
+   
+   
+    
+   
+   
+   
+    
+    
+   
+    
+    
+   
+   
+   
+  
+ 
+Sunum Para Birimi 1.000 TL
+Finansal Tablo Niteliği Konsolide
+Dipnot Referansı Cari Dönem
+30.06.2025
+Önceki Dönem
+31.12.2024
+Finansal Durum Tablosu (Bilanço)
+Varlıklar
+DÖNEN VARLIKLAR
+Nakit ve Nakit Benzerleri 4 27.391.388 30.694.746
+Finansal Yatırımlar 5 6.021 6.351
+Ticari Alacaklar 26.522.023 25.551.223
+İlişkili Taraflardan Ticari Alacaklar 7,22 17.455.651 16.942.410
+İlişkili Olmayan Taraflardan Ticari Alacaklar 7 9.066.372 8.608.813
+Diğer Alacaklar 2.651.416 3.096.516
+İlişkili Taraflardan Diğer Alacaklar 8,22 2.213.936 2.319.979
+İlişkili Olmayan Taraflardan Diğer Alacaklar 8 437.480 776.537
+Türev Araçlar 9 2.029.464 508.257
+Stoklar 10 23.571.112 13.803.290
+Peşin Ödenmiş Giderler 1.250.361 1.222.752
+İlişkili Olmayan Taraflara Peşin Ödenmiş Giderler 1.250.361 1.222.752
+Cari Dönem Vergisiyle İlgili Varlıklar 96.062 145.383
+Diğer Dönen Varlıklar 1.150.351 938.299
+ARA TOPLAM 84.668.198 75.966.817
+TOPLAM DÖNEN VARLIKLAR 84.668.198 75.966.817
+DURAN VARLIKLAR
+Finansal Yatırımlar 5 5.593.308 5.724.553
+Maddi Duran Varlıklar 11 26.432.007 27.134.982
+Maddi Olmayan Duran Varlıklar 4.655.670 4.553.002
+Şerefiye 12 2.713.447 2.573.762
+Diğer Maddi Olmayan Duran Varlıklar 13 1.942.223 1.979.240
+Peşin Ödenmiş Giderler 145.776 124.988
+Ertelenmiş Vergi Varlığı 20 220.504 179.746
+TOPLAM DURAN VARLIKLAR 37.047.265 37.717.271
+TOPLAM VARLIKLAR 121.715.463 113.684.088
+KAYNAKLAR
+KISA VADELİ YÜKÜMLÜLÜKLER
+Kısa Vadeli Borçlanmalar 6 14.005.143 4.904.973
+Uzun Vadeli Borçlanmaların Kısa Vadeli Kısımları 6 30.403.119 12.916.294
+Ticari Borçlar 10.029.705 11.980.650
+İlişkili Taraflara Ticari Borçlar 7,22 3.224.387 3.629.965
+İlişkili Olmayan Taraflara Ticari Borçlar 7 6.805.318 8.350.685
+Çalışanlara Sağlanan Faydalar Kapsamında Borçlar 616.152 611.150
+Diğer Borçlar 2.301 10.279
+İlişkili Olmayan Taraflara Diğer Borçlar 8 2.301 10.279
+Ertelenmiş Gelirler (Müşteri Sözleşmelerinden Doğan 
+Yükümlülüklerin Dışında Kalanlar) 80.087 117.782
+Dönem Karı Vergi Yükümlülüğü 20 224.470 310.665
+Kısa Vadeli Karşılıklar 2.268.990 1.694.790
+Çalışanlara Sağlanan Faydalara İlişkin Kısa Vadeli 
+Karşılıklar 756.234 1.002.219
+Diğer Kısa Vadeli Karşılıklar 1.512.756 692.571
+Diğer Kısa Vadeli Yükümlülükler 828.738 640.620
+ARA TOPLAM 58.458.705 33.187.203
+TOPLAM KISA VADELİ YÜKÜMLÜLÜKLER 58.458.705 33.187.203
+UZUN VADELİ YÜKÜMLÜLÜKLER
+Uzun Vadeli Borçlanmalar 6 20.879.282 38.193.147
+Uzun Vadeli Karşılıklar 2.086.916 1.956.625
+Çalışanlara Sağlanan Faydalara İlişkin Uzun Vadeli 
+Karşılıklar 2.086.916 1.956.625
+Ertelenmiş Vergi Yükümlülüğü 20 1.917.005 1.289.232
+TOPLAM UZUN VADELİ YÜKÜMLÜLÜKLER 24.883.203 41.439.004
+TOPLAM YÜKÜMLÜLÜKLER 83.341.908 74.626.207
+ÖZKAYNAKLAR
+Ana Ortaklığa Ait Özkaynaklar 36.116.656 36.498.834
+Ödenmiş Sermaye 369.276 369.276
+Sermaye Düzeltme Farkları 10.341.497 10.341.497
+Finansal Durum Tablosu (Bilanço)
+
+--- SAYFA 5 ---
+  
+   
+   
+    
+    
+    
+      
+     
+     
+    
+     
+      
+      
+     
+    
+    
+    Paylara İlişkin Primler (İskontolar) 5.617.989 5.617.989
+Ortak Kontrole Tabi Teşebbüs veya İşletmeleri İçeren 
+Birleşmelerin Etkisi -5.072.586 -5.072.586
+Kar veya Zararda Yeniden Sınıflandırılmayacak 
+Birikmiş Diğer Kapsamlı Gelirler (Giderler) 5.177.232 5.497.253
+Yeniden Değerleme ve Ölçüm Kazançları (Kayıpları) 2.697.342 2.615.055
+Maddi Duran Varlık Yeniden Değerleme Artışları (
+Azalışları) 4.132.874 3.989.209
+Tanımlanmış Fayda Planları Yeniden Ölçüm 
+Kazançları (Kayıpları) -1.435.532 -1.374.154
+Özkaynağa Dayalı Finansal Araçlara Yapılan 
+Yatırımlara İlişkin Finansal Riskten Korunma 
+Kazançları (Kayıpları)
+2.479.890 2.882.198
+Kar veya Zararda Yeniden Sınıflandırılacak Birikmiş 
+Diğer Kapsamlı Gelirler (Giderler) -3.864.753 -3.502.683
+Yabancı Para Çevrim Farkları -1.826.444 -2.055.862
+Riskten Korunma Kazançları (Kayıpları) -2.038.309 -1.446.821
+Nakit Akış Riskinden Korunma Kazançları (
+Kayıpları) -2.038.309 -1.446.821
+Kardan Ayrılan Kısıtlanmış Yedekler 2.870.086 2.573.939
+Geçmiş Yıllar Karları veya Zararları 17.398.002 12.039.674
+Net Dönem Karı veya Zararı 3.279.913 8.634.475
+Kontrol Gücü Olmayan Paylar 2.256.899 2.559.047
+TOPLAM ÖZKAYNAKLAR 38.373.555 39.057.881
+TOPLAM KAYNAKLAR 121.715.463 113.684.088
+
+--- SAYFA 6 ---
+  
+    
+   
+    
+   
+    
+   
+  
+    
+    
+    
+   
+   
+   
+  
+ 
+   
+    
+   
+  
+ 
+   
+   
+  
+  
+  
+   
+   
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+ 
+Sunum Para Birimi 1.000 TL
+Finansal Tablo Niteliği Konsolide
+Dipnot Referansı
+Cari Dönem
+01.01.2025 - 
+30.06.2025
+Önceki Dönem
+01.01.2024 - 
+30.06.2024
+Cari Dönem 3 Aylık
+01.04.2025 - 
+30.06.2025
+Önceki Dönem 3 
+Aylık
+01.04.2024 - 
+30.06.2024
+Kar veya Zarar ve Diğer Kapsamlı Gelir Tablosu
+KAR VEYA ZARAR KISMI
+Hasılat 15 51.639.553 49.370.684 23.057.685 20.675.043
+Satışların Maliyeti 15 -35.801.158 -33.882.146 -16.776.285 -14.358.485
+TİCARİ FAALİYETLERDEN BRÜT KAR (ZARAR) 15.838.395 15.488.538 6.281.400 6.316.558
+BRÜT KAR (ZARAR) 15.838.395 15.488.538 6.281.400 6.316.558
+Genel Yönetim Giderleri 16 -1.344.671 -1.245.971 -644.656 -541.355
+Pazarlama Giderleri 16 -6.091.594 -5.201.700 -2.644.952 -2.213.887
+Araştırma ve Geliştirme Giderleri 16 -282.400 -206.325 -133.675 -92.699
+Esas Faaliyetlerden Diğer Gelirler 1.627.459 1.982.666 427.797 4.354
+Esas Faaliyetlerden Diğer Giderler -1.129.405 -1.213.763 -365.573 -2.644
+ESAS FAALİYET KARI (ZARARI) 8.617.784 9.603.445 2.920.341 3.470.327
+Yatırım Faaliyetlerinden Gelirler 6.692.227 2.792.627 3.099.070 848.163
+Yatırım Faaliyetlerinden Giderler -616.948 -12.881 -7.310 -7.347
+FİNANSMAN GELİRİ (GİDERİ) ÖNCESİ FAALİYET KARI (ZARARI) 14.693.063 12.383.191 6.012.101 4.311.143
+Finansman Gelirleri 17 2.531 68.544 1.255 48.127
+Finansman Giderleri 18 -11.639.906 -7.880.839 -5.874.143 -3.173.576
+Net Parasal Pozisyon Kazançları (Kayıpları) 19 1.568.712 3.079.642 819.253 1.152.751
+SÜRDÜRÜLEN FAALİYETLER VERGİ ÖNCESİ KARI (ZARARI) 4.624.400 7.650.538 958.466 2.338.445
+Sürdürülen Faaliyetler Vergi (Gideri) Geliri -1.134.262 -2.216.058 -202.290 -536.254
+Dönem Vergi (Gideri) Geliri 20 -327.470 -617.611 -23.193 -318.915
+Ertelenmiş Vergi (Gideri) Geliri 20 -806.792 -1.598.447 -179.097 -217.339
+SÜRDÜRÜLEN FAALİYETLER DÖNEM KARI (ZARARI) 3.490.138 5.434.480 756.176 1.802.191
+DÖNEM KARI (ZARARI) 3.490.138 5.434.480 756.176 1.802.191
+Dönem Karının (Zararının) Dağılımı
+Kontrol Gücü Olmayan Paylar 210.225 559.472 34.595 100.107
+Ana Ortaklık Payları 3.279.913 4.875.008 721.581 1.702.084
+Pay Başına Kazanç
+Pay Başına Kazanç
+Pay Başına Kazanç (Zarar)
+Sürdürülen Faaliyetlerden Pay Başına Kazanç (
+Zarar)
+Pay başına kazanç 21 8,88000000 13,20000000 1,95000000 4,61000000
+Sulandırılmış Pay Başına Kazanç (Zarar)
+DİĞER KAPSAMLI GELİR KISMI
+Kar veya Zararda Yeniden Sınıflandırılmayacaklar -320.021 -900.015 -2.196 -556.611
+Özkaynağa Dayalı Finansal Araçlara Yatırımlardan 
+Kaynaklanan Kazançlar (Kayıplar) -138.259 -1.058.717 -8.604 -657.148
+Tanımlanmış Fayda Planları Yeniden Ölçüm Kazançları (
+Kayıpları) -81.837 -337.669 -124.549 -124.554
+Kar veya Zararda Yeniden Sınıflandırılmayacak Diğer 
+Kapsamlı Gelire İlişkin Vergiler -99.925 496.371 130.957 225.091
+Özkaynağa Dayalı Finansal Araçlara Yatırımlardan 
+Kaynaklanan Kazançlar (Kayıplar), Vergi Etkisi -264.049 124.166 16.639 47.734
+Maddi Duran Varlıklar Yeniden Değerleme Artışları (
+Azalışları), Vergi Etkisi 143.665 284.052 83.180 144.793
+Tanımlanmış Fayda Planları Yeniden Ölçüm 
+Kazançları (Kayıpları), Vergi Etkisi 20.459 88.153 31.138 32.564
+Kar veya Zarar Olarak Yeniden Sınıflandırılacaklar -418.119 -2.304.109 -473.872 -42.318
+Yurtdışındaki İşletmelerin Çevrimine İlişkin Yabancı Para 
+Çevrim Farkları 173.369 -2.609.060 76.001 -647.360
+Yurtdışındaki İşletmelerin Çevrimine İlişkin Yabancı 
+Para Çevrim Farklarından Kazançlar (Kayıplar) 173.369 -2.609.060 76.001 -647.360
+Nakit Akış Riskinden Korunmaya İlişkin Diğer Kapsamlı 
+Gelir (Gider) -788.651 406.602 -733.165 806.723
+Nakit Akış Riskinden Korunma Kazançları (Kayıpları) -788.651 406.602 -733.165 806.723
+Kar veya Zararda Yeniden Sınıflandırılacak Diğer 
+Kapsamlı Gelire İlişkin Vergiler 197.163 -101.651 183.292 -201.681
+Nakit Akış Riskinden Korunmaya İlişkin Diğer 
+Kapsamlı Gelir, Vergi Etkisi 197.163 -101.651 183.292 -201.681
+DİĞER KAPSAMLI GELİR (GİDER) -738.140 -3.204.124 -476.068 -598.929
+Kar veya Zarar ve Diğer Kapsamlı Gelir Tablosu
+
+--- SAYFA 7 ---
+   
+   
+  
+  TOPLAM KAPSAMLI GELİR (GİDER) 2.751.998 2.230.356 280.108 1.203.262
+Toplam Kapsamlı Gelirin Dağılımı
+Kontrol Gücü Olmayan Paylar 154.176 -80.835 35.639 -41.047
+Ana Ortaklık Payları 2.597.822 2.311.191 244.469 1.244.309
+
+--- SAYFA 8 ---
+  
+   
+  
+   
+  
+   
+   
+  
+  
+  
+ 
+  
+  
+  
+   
+    
+    
+   
+   
+   
+    
+    
+   
+  
+   
+   
+   
+    
+   
+   
+    
+    
+   
+    
+    
+    
+   
+    
+    
+    
+   
+   
+  
+   
+  
+ 
+Sunum Para Birimi 1.000 TL
+Finansal Tablo Niteliği Konsolide
+Dipnot Referansı Cari Dönem
+01.01.2025 - 30.06.2025
+Önceki Dönem
+01.01.2024 - 30.06.2024
+Nakit Akış Tablosu (Dolaylı Yöntem)
+İŞLETME FAALİYETLERİNDEN NAKİT AKIŞLARI -4.480.642 3.003.562
+Dönem Karı (Zararı) 3.490.138 5.434.480
+Sürdürülen Faaliyetlerden Dönem Karı (Zararı) 3.490.138 5.434.480
+Dönem Net Karı (Zararı) Mutabakatı İle İlgili Düzeltmeler 8.544.713 6.553.999
+Amortisman ve İtfa Gideri İle İlgili Düzeltmeler 11,13 1.065.995 1.047.090
+Değer Düşüklüğü (İptali) İle İlgili Düzeltmeler 41.028 4.886
+Alacaklarda Değer Düşüklüğü (İptali) ile İlgili 
+Düzeltmeler 7 29.191 -3.209
+Diğer Finansal Varlıklar veya Yatırımlar Değer 
+Düşüklüğü (İptali) ile İlgili Düzeltmeler -606 -586
+Stok Değer Düşüklüğü (İptali) ile İlgili Düzeltmeler 10 12.443 8.681
+Karşılıklar İle İlgili Düzeltmeler 1.633.440 1.397.336
+Çalışanlara Sağlanan Faydalara İlişkin Karşılıklar (
+İptali) ile İlgili Düzeltmeler 808.557 771.805
+Dava ve/veya Ceza Karşılıkları (İptali) ile İlgili 
+Düzeltmeler -4.016 0
+Diğer Karşılıklar (İptalleri) ile İlgili Düzeltmeler 828.899 625.531
+Faiz (Gelirleri) ve Giderleri İle İlgili Düzeltmeler 416.238 2.303.862
+Faiz Gelirleri ile İlgili Düzeltmeler -2.385.725 -819.163
+Faiz Giderleri ile İlgili Düzeltmeler 18 2.801.963 3.123.025
+Vergi (Geliri) Gideri İle İlgili Düzeltmeler 20 1.134.262 2.216.058
+Duran Varlıkların Elden Çıkarılmasından Kaynaklanan 
+Kayıplar (Kazançlar) İle İlgili Düzeltmeler 378 -4.085
+Maddi Duran Varlıkların Elden Çıkarılmasından 
+Kaynaklanan Kayıplar (Kazançlar) ile İlgili Düzeltmeler 378 -4.085
+Yatırım ya da Finansman Faaliyetlerinden Kaynaklanan 
+Nakit Akışlarına Neden Olan Diğer Kalemlere İlişkin 
+Düzeltmeler
+17,18 5.172.997 2.756.724
+Parasal Pozisyon Kazanç ve Kayıplarıyla İlgili 
+Düzeltmeler -892.714 -3.144.565
+Kar (Zarar) Mutabakatı İle İlgili Diğer Düzeltmeler -26.911 -23.307
+İşletme Sermayesinde Gerçekleşen Değişimler -15.456.990 -7.523.923
+Ticari Alacaklardaki Azalış (Artış) ile İlgili Düzeltmeler -4.289.534 -4.135.209
+İlişkili Taraflardan Ticari Alacaklardaki Azalış (Artış) -2.934.489 -2.622.715
+İlişkili Olmayan Taraflardan Ticari Alacaklardaki Azalış
+(Artış) -1.355.045 -1.512.494
+Faaliyetlerle İlgili Diğer Alacaklardaki Azalış (Artış) ile 
+İlgili Düzeltmeler -412.037 -450.969
+Stoklardaki Azalışlar (Artışlar) İle İlgili Düzeltmeler -10.308.451 -2.594.710
+Ticari Borçlardaki Artış (Azalış) ile İlgili Düzeltmeler -762.438 -675.018
+İlişkili Taraflara Ticari Borçlardaki Artış (Azalış) 113.182 -253.505
+İlişkili Olmayan Taraflara Ticari Borçlardaki Artış (
+Azalış) -875.620 -421.513
+Faaliyetler ile İlgili Diğer Borçlardaki Artış (Azalış) ile İlgili 
+Düzeltmeler 315.470 331.983
+Faaliyetlerden Elde Edilen Nakit Akışları -3.422.139 4.464.556
+Çalışanlara Sağlanan Faydalara İlişkin Karşılıklar 
+Kapsamında Yapılan Ödemeler -694.160 -654.633
+Vergi İadeleri (Ödemeleri) -364.343 -806.361
+YATIRIM FAALİYETLERİNDEN KAYNAKLANAN NAKİT AKIŞLARI 1.704.006 88.532
+Başka İşletmelerin veya Fonların Paylarının veya Borçlanma
+Araçlarının Edinimi İçin Yapılan Nakit Çıkışları -7.014 -16.581
+Maddi ve Maddi Olmayan Duran Varlıkların Satışından 
+Kaynaklanan Nakit Girişleri 51.144 30.355
+Maddi ve Maddi Olmayan Duran Varlıkların Alımından 
+Kaynaklanan Nakit Çıkışları -506.467 -858.857
+Maddi Duran Varlık Alımından Kaynaklanan Nakit 
+Çıkışları -501.878 -852.730
+Maddi Olmayan Duran Varlık Alımından Kaynaklanan 
+Nakit Çıkışları 13 -4.589 -6.127
+Verilen Nakit Avans ve Borçlar -20.787 -41.841
+Verilen Diğer Nakit Avans ve Borçlar -20.787 -41.841
+Verilen Nakit Avans ve Borçlardan Geri Ödemeler -225.506 132.986
+İlişkili Taraflara Verilen Nakit Avans ve Borçlardan Geri 
+Ödemeler -225.506 132.986
+Alınan Faiz 2.385.725 819.163
+Nakit Akış Tablosu (Dolaylı Yöntem)
+
+--- SAYFA 9 ---
+ 
+ 
+ 
+ 
+ 
+ 
+  
+  
+  
+  
+   
+  
+   
+  
+ 
+  Diğer Nakit Girişleri (Çıkışları) 26.911 23.307
+FİNANSMAN FAALİYETLERİNDEN NAKİT AKIŞLARI 193.049 2.331.937
+Borçlanmadan Kaynaklanan Nakit Girişleri 11.929.882 10.215.411
+Kredilerden Nakit Girişleri 11.929.882 10.215.411
+Borç Ödemelerine İlişkin Nakit Çıkışları -3.889.711 -4.728.315
+Kredi Geri Ödemelerine İlişkin Nakit Çıkışları -3.889.711 -4.728.315
+Türev Araçlardan Nakit Çıkışları -1.384.824 0
+Ödenen Temettüler -3.436.324 -461.568
+Ödenen Faiz -2.507.883 -2.320.726
+Diğer Nakit Girişleri (Çıkışları) -518.091 -372.865
+ENFLASYON ETKİSİ -4.386.602 -3.893.947
+YABANCI PARA ÇEVRİM FARKLARININ ETKİSİNDEN ÖNCE NAKİT 
+VE NAKİT BENZERLERİNDEKİ NET ARTIŞ (AZALIŞ) -6.970.189 1.530.084
+Yabancı Para Çevrim Farklarının Nakit ve Nakit Benzerleri 
+Üzerindeki Etkisi 3.666.831 1.419.726
+NAKİT VE NAKİT BENZERLERİNDEKİ NET ARTIŞ (AZALIŞ) -3.303.358 2.949.810
+DÖNEM BAŞI NAKİT VE NAKİT BENZERLERİ 4 30.694.746 19.636.869
+DÖNEM SONU NAKİT VE NAKİT BENZERLERİ 4 27.391.388 22.586.679
+
+--- SAYFA 10 ---
+  
+  
+  
+  
+  
+   
+   
+  
+  
+  
+  
+  
+   
+   
+  
+  
+ 
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   
+   
+  
+  
+  
+  
+  
+   
+   
+  
+  
+ 
+Sunum Para Birimi 1.000 TL
+Finansal Tablo Niteliği Konsolide
+Dipnot Referansı
+Özkaynaklar
+Ana Ortaklığa Ait Özkaynaklar
+Kontrol Gücü Olmayan 
+Paylar
+Ödenmiş 
+Sermaye
+Sermaye Düzeltme 
+Farkları
+Pay İhraç Primleri / 
+İskontoları
+Ortak Kontrole Tabi Teşebbüs veya İşletmeleri İçeren Birleşmelerin 
+Etkisi
+Kar veya Zararda Yeniden Sınıflandırılmayacak Birikmiş Diğer Kapsamlı Gelirler veya Giderler Kar veya Zararda Yeniden Sınıflandırılacak Birikmiş Diğer Kapsamlı Gelirler veya Giderler
+Kardan Ayrılan Kısıtlanmış 
+Yedekler
+Birikmiş Karlar
+Özkaynağa Dayalı Finansal Araçlara Yatırımlardan Kaynaklanan Kazançlar (
+Kayıplar)
+Yeniden Değerleme ve Ölçüm Kazanç / Kayıpları
+Yabancı Para Çevrim 
+Farkları
+Riskten Korunma Kazanç / Kayıpları
+Yeniden Değerleme ve Sınıflandırma Kazanç / 
+Kayıpları
+Geçmiş Yıllar Kar / 
+Zararları
+Net Dönem Karı 
+Zararı
+Maddi Duran Varlık Yeniden Değerleme Artışları/
+Azalışları
+Tanımlanmış Fayda Planları Yeniden Ölçüm Kazançları/
+Kayıpları
+Nakit Akış Riskinden Korunma Kazançları (
+Kayıpları)
+Önceki Dönem
+01.01.2024 - 30.06.2024
+Özkaynaklar Değişim Tablosu
+Özkaynaklar Değişim Tablosu
+Dönem Başı Bakiyeler 369.276 10.341.497 5.617.989 -27.731.408 3.407.317 3.421.204 -976.121 -590 -1.448.292 2.573.939 29.006.696 5.691.801 30.273.308 3.083.592 33.356.900
+Muhasebe Politikalarındaki Değişikliklere İlişkin 
+Düzeltmeler
+Muhasebe Politikalarındaki Zorunlu Değişikliklere 
+İlişkin Düzeltmeler
+Muhasebe Politikalarındaki Gönüllü Değişikliklere 
+İlişkin Düzeltmeler
+Hatalara İlişkin Düzeltmeler
+Diğer Düzeltmeler
+Düzeltmelerden Sonraki Tutar
+Transferler 5.691.801 -5.691.801
+Toplam Kapsamlı Gelir (Gider) -934.550 294.987 -256.243 -1.972.962 304.951 4.875.008 2.311.191 -80.835 2.230.356
+Dönem Karı (Zararı)
+Diğer Kapsamlı Gelir (Gider)
+Sermaye Arttırımı
+Sermaye Azaltımı
+Sermaye Avansı
+Birleşme/Bölünme/Tasfiye Etkisi
+Ortak Kontrole Tabi Teşebbüs veya İşletmeleri 
+İçeren Birleşmelerin Etkisi
+Dönemde Ödenen Kar Payı Avansları
+Kar Payları -461.568 -461.568
+Kar Payı Hariç Pay Sahiplerine Yapılan Diğer 
+Ödemeler
+Payların Geri Alım İşlemleri Nedeniyle Meydana 
+Gelen Artış (Azalış)
+Pay Bazlı İşlemler Nedeniyle Meydana Gelen Artış (
+Azalış)
+Bağlı Ortaklık Edinimi veya Elden Çıkarılması
+Bağlı Ortaklıklarda Kontrol Kaybı ile 
+Sonuçlanmayan Pay Oranı Değişikliklerine Bağlı 
+Artış/Azalış
+Kontrol Gücü Olmayan Pay Sahipleriyle Yapılan 
+İşlemler
+Pay Sahiplerinin Diğer Katkıları
+Nakit Akış Riskinden Korunma Kazançları (Kayıpları
+) Kaleminden Çıkarılan ve Finansal Olmayan 
+Varlığın (Yükümlülüğün) veya Gerçeğe Uygun Değer
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Opsiyonların Zaman Değerindeki Değişiklikler 
+Kaleminden Çıkarılan ve Finansal Olmayan Varlığın
+(Yükümlülüğün) veya Gerçeğe Uygun Değer 
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Forward Sözleşmesinin Forward Bileşeninin 
+Değerindeki Değişiklikler Kaleminden Çıkarılan ve 
+Finansal Olmayan Varlığın (Yükümlülüğün) veya 
+Gerçeğe Uygun Değer Riskinden Korunma 
+Muhasebesi Uygulanan Kesin Taahhüdün 
+Başlangıç Maliyetine veya Defter Değerine Dahil 
+Edilen Tutar
+Yabancı Para Alım Satım Marjlarındaki Değişiklikler
+Kaleminden Çıkarılan ve Finansal Olmayan Varlığın
+(Yükümlülüğün) veya Gerçeğe Uygun Değer 
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Diğer Değişiklikler Nedeni İle Artış (Azalış)
+Dönem Sonu Bakiyeler 369.276 10.341.497 5.617.989 -27.731.408 2.472.767 3.716.191 -1.232.364 -1.973.552 -1.143.341 2.573.939 34.698.497 4.875.008 32.584.499 2.541.189 35.125.688
+Özkaynaklar Değişim Tablosu
+Özkaynaklar Değişim Tablosu
+Dönem Başı Bakiyeler 369.276 10.341.497 5.617.989 -5.072.586 2.882.198 3.989.209 -1.374.154 -2.055.862 -1.446.821 2.573.939 12.039.674 8.634.475 36.498.834 2.559.047 39.057.881
+Muhasebe Politikalarındaki Değişikliklere İlişkin 
+Düzeltmeler
+Muhasebe Politikalarındaki Zorunlu Değişikliklere 
+İlişkin Düzeltmeler
+Muhasebe Politikalarındaki Gönüllü Değişikliklere 
+İlişkin Düzeltmeler
+Hatalara İlişkin Düzeltmeler
+Diğer Düzeltmeler
+Düzeltmelerden Sonraki Tutar
+Transferler 296.147 8.338.328 -8.634.475
+Toplam Kapsamlı Gelir (Gider) -402.308 143.665 -61.378 229.418 -591.488 3.279.913 2.597.822 154.176 2.751.998
+Dönem Karı (Zararı)
+Diğer Kapsamlı Gelir (Gider)
+Sermaye Arttırımı
+Sermaye Azaltımı
+Sermaye Avansı
+Birleşme/Bölünme/Tasfiye Etkisi
+Ortak Kontrole Tabi Teşebbüs veya İşletmeleri 
+İçeren Birleşmelerin Etkisi
+Özkaynaklar Değişim Tablosu
+
+--- SAYFA 11 ---
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+Cari Dönem
+01.01.2025 - 30.06.2025
+Dönemde Ödenen Kar Payı Avansları
+Kar Payları -2.980.000 -2.980.000 -456.324 -3.436.324
+Kar Payı Hariç Pay Sahiplerine Yapılan Diğer 
+Ödemeler
+Payların Geri Alım İşlemleri Nedeniyle Meydana 
+Gelen Artış (Azalış)
+Pay Bazlı İşlemler Nedeniyle Meydana Gelen Artış (
+Azalış)
+Bağlı Ortaklık Edinimi veya Elden Çıkarılması
+Bağlı Ortaklıklarda Kontrol Kaybı ile 
+Sonuçlanmayan Pay Oranı Değişikliklerine Bağlı 
+Artış/Azalış
+Kontrol Gücü Olmayan Pay Sahipleriyle Yapılan 
+İşlemler
+Pay Sahiplerinin Diğer Katkıları
+Nakit Akış Riskinden Korunma Kazançları (Kayıpları
+) Kaleminden Çıkarılan ve Finansal Olmayan 
+Varlığın (Yükümlülüğün) veya Gerçeğe Uygun Değer
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Opsiyonların Zaman Değerindeki Değişiklikler 
+Kaleminden Çıkarılan ve Finansal Olmayan Varlığın
+(Yükümlülüğün) veya Gerçeğe Uygun Değer 
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Forward Sözleşmesinin Forward Bileşeninin 
+Değerindeki Değişiklikler Kaleminden Çıkarılan ve 
+Finansal Olmayan Varlığın (Yükümlülüğün) veya 
+Gerçeğe Uygun Değer Riskinden Korunma 
+Muhasebesi Uygulanan Kesin Taahhüdün 
+Başlangıç Maliyetine veya Defter Değerine Dahil 
+Edilen Tutar
+Yabancı Para Alım Satım Marjlarındaki Değişiklikler
+Kaleminden Çıkarılan ve Finansal Olmayan Varlığın
+(Yükümlülüğün) veya Gerçeğe Uygun Değer 
+Riskinden Korunma Muhasebesi Uygulanan Kesin 
+Taahhüdün Başlangıç Maliyetine veya Defter 
+Değerine Dahil Edilen Tutar
+Diğer Değişiklikler Nedeni İle Artış (Azalış)
+Dönem Sonu Bakiyeler 369.276 10.341.497 5.617.989 -5.072.586 2.479.890 4.132.874 -1.435.532 -1.826.444 -2.038.309 2.870.086 17.398.002 3.279.913 36.116.656 2.256.899 38.373.555
