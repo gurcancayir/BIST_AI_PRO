@@ -2,37 +2,43 @@
 # BIST AI PRO
 # 05_Gunluk_Trade.py
 #
-# GÜNLÜK TRADE MERKEZİ
+# GÜNLÜK TRADE MERKEZİ - PRO / HAVUZ MODELİ
 #
+# AMAÇ:
 # BIST500
 #   ↓
-# Likidite Filtresi
+# Günlük veri + likidite
 #   ↓
-# Teknik Ön Filtre
+# Geniş trade havuzu
 #   ↓
-# 9 EMA / Pullback
+# Günlük setup skoru
 #   ↓
-# 15 Dakika Trend
+# En güçlü adaylarda 15D teyit
 #   ↓
-# VWAP
+# Trade skoru
 #   ↓
-# RSI
+# Karar
 #   ↓
-# Hacim
+# 🟢 GÜÇLÜ TRADE
+# 🟡 TRADE ADAYI
+# 🔵 İZLE
 #   ↓
-# Destek / Direnç
-#   ↓
-# Risk / Reward
-#   ↓
-# TRADE SKORU
-#   ↓
-# GÜNLÜK AL / İZLE / UYGUN DEĞİL
+# Trade Adayları için:
+# 🟢 A SINIFI
+# 🟡 B SINIFI
+# 🔵 C SINIFI
 #
+# ÖNEMLİ TASARIM:
+# 1) 500 hissenin her biri için ayrı ayrı 15D veri indirilmez.
+# 2) Önce günlük veri ile geniş havuz oluşturulur.
+# 3) Sadece en güçlü günlük adaylara 15D teyit uygulanır.
+# 4) 15D veri alınamazsa hisse havuzdan silinmez.
+# 5) Tek bir sert kriter hisseyi otomatik olarak çöpe atmaz.
+# 6) Hangi aşamada kaç hissenin kaldığı açıkça gösterilir.
+# 7) A/B/C sınıflandırması mevcut karar sistemini bozmaz.
 # ============================================================
 
 import sqlite3
-import math
-import time
 from pathlib import Path
 from datetime import datetime
 
@@ -43,13 +49,26 @@ import yfinance as yf
 
 
 # ============================================================
-# SAYFA AYARLARI
+# SAYFA
 # ============================================================
 
 st.set_page_config(
     page_title="BIST AI PRO - Günlük Trade Merkezi",
     page_icon="⚡",
     layout="wide",
+)
+
+st.title("⚡ Günlük Trade Merkezi PRO")
+
+st.markdown(
+    """
+    **BIST500 → Günlük Setup → Trade Havuzu → 15D Teyit → Sıralama**
+
+    Bu sürümün amacı önce **geniş ve ölçülebilir bir trade havuzu**
+    oluşturmaktır. Ardından en güçlü adaylar 15 dakikalık veride teyit edilir.
+
+    **Trade Adayları ayrıca A / B / C kalite sınıfına ayrılır.**
+    """
 )
 
 
@@ -60,39 +79,47 @@ st.set_page_config(
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "borsa.db"
 
-MIN_LIQUIDITY = 20_000_000
+DEFAULT_MIN_LIQUIDITY = 20_000_000
+HISTORY_PERIOD = "3mo"
 
-HISTORY_PERIOD = "1mo"
+# Havuz
+POOL_MIN_SCORE = 48
 
-TRADE_THRESHOLD = 80
-PULLBACK_THRESHOLD = 65
-INTRADAY_THRESHOLD = 65
+# Karar seviyeleri
+STRONG_SCORE = 76
+CANDIDATE_SCORE = 62
+WATCH_SCORE = 52
 
-GENERAL_WEIGHT = 0.20
-CONFIRMATION_WEIGHT = 0.15
-PULLBACK_WEIGHT = 0.30
-INTRADAY_WEIGHT = 0.20
-VWAP_WEIGHT = 0.10
-VOLUME_WEIGHT = 0.05
-
-
-# ============================================================
-# BAŞLIK
-# ============================================================
-
-st.title("⚡ Günlük Trade Merkezi")
-
-st.markdown(
-    """
-    **BIST500 → Likidite → Pullback → 15 Dakika Trend → VWAP → RSI → Hacim → Risk/Reward**
-    
-    Bu sayfa kısa vadeli günlük trade fırsatlarını tarar.
-    """
-)
+# 15D sadece bu kadar günlük adayda çalıştırılır.
+MAX_INTRADAY_CHECK = 120
 
 
 # ============================================================
-# VERİTABANI
+# TRADE A / B / C EŞİKLERİ
+# ============================================================
+
+# A SINIFI
+# Çok güçlü trade adayı.
+A_TRADE_SCORE = 78
+A_TOMORROW_SCORE = 78
+A_DAILY_SCORE = 68
+A_TREND = 55
+A_PULLBACK = 55
+A_RR = 1.50
+A_INTRADAY = 60
+
+# B SINIFI
+# Güçlü fakat A kadar teyitli olmayan aday.
+B_TRADE_SCORE = 70
+B_TOMORROW_SCORE = 70
+B_DAILY_SCORE = 62
+B_TREND = 45
+B_PULLBACK = 40
+B_RR = 1.20
+
+
+# ============================================================
+# DB
 # ============================================================
 
 @st.cache_data(ttl=60)
@@ -101,33 +128,34 @@ def get_db_stocks():
     if not DB_PATH.exists():
         return pd.DataFrame()
 
-    conn = sqlite3.connect(DB_PATH)
+    try:
 
-    tables = pd.read_sql_query(
-        """
-        SELECT name
-        FROM sqlite_master
-        WHERE type='table'
-        """,
-        conn,
-    )["name"].tolist()
+        with sqlite3.connect(DB_PATH) as conn:
 
-    if "stocks" not in tables:
-        conn.close()
+            tables = pd.read_sql_query(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type='table'
+                """,
+                conn,
+            )["name"].tolist()
+
+            if "stocks" not in tables:
+                return pd.DataFrame()
+
+            return pd.read_sql_query(
+                "SELECT * FROM stocks",
+                conn,
+            )
+
+    except Exception:
+
         return pd.DataFrame()
-
-    df = pd.read_sql_query(
-        "SELECT * FROM stocks",
-        conn,
-    )
-
-    conn.close()
-
-    return df
 
 
 # ============================================================
-# TICKER TEMİZLEME
+# TICKER
 # ============================================================
 
 def normalize_ticker(value):
@@ -140,19 +168,20 @@ def normalize_ticker(value):
     ticker = ticker.replace(".IS", "")
     ticker = ticker.replace(" BIST", "")
     ticker = ticker.replace("$", "")
+    ticker = ticker.replace(" ", "")
 
     if ticker.endswith("."):
         ticker = ticker[:-1]
 
-    if not ticker:
-        return None
-
-    return ticker
+    return ticker or None
 
 
-# ============================================================
-# BIST500 EVRENİ
-# ============================================================
+def yahoo_symbol(ticker):
+
+    ticker = normalize_ticker(ticker)
+
+    return f"{ticker}.IS" if ticker else None
+
 
 def get_universe():
 
@@ -161,7 +190,7 @@ def get_universe():
     if df.empty:
         return []
 
-    possible_columns = [
+    possible = [
         "symbol",
         "ticker",
         "code",
@@ -169,12 +198,14 @@ def get_universe():
         "hisse_kodu",
     ]
 
-    column = None
-
-    for c in possible_columns:
-        if c in df.columns:
-            column = c
-            break
+    column = next(
+        (
+            c
+            for c in possible
+            if c in df.columns
+        ),
+        None,
+    )
 
     if column is None:
         return []
@@ -192,19 +223,31 @@ def get_universe():
 
 
 # ============================================================
-# YAHOO TICKER
+# YARDIMCI
 # ============================================================
 
-def yahoo_symbol(ticker):
+def scalar(value, default=np.nan):
+    """
+    Pandas/yfinance değerini güvenli float'a çevir.
+    """
 
-    return f"{ticker}.IS"
+    try:
+
+        if isinstance(value, pd.Series):
+            value = value.iloc[0]
+
+        value = float(value)
+
+        if np.isfinite(value):
+            return value
+
+    except Exception:
+        pass
+
+    return default
 
 
-# ============================================================
-# TEKNİK GÖSTERGELER
-# ============================================================
-
-def calculate_indicators(df):
+def clean_ohlcv(df):
 
     if df is None or df.empty:
         return None
@@ -212,319 +255,739 @@ def calculate_indicators(df):
     df = df.copy()
 
     if isinstance(df.columns, pd.MultiIndex):
+
         df.columns = df.columns.get_level_values(0)
 
-    required = ["Open", "High", "Low", "Close", "Volume"]
+    required = [
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+    ]
 
-    for col in required:
-        if col not in df.columns:
-            return None
-
-    df = df.dropna(subset=["Close"])
-
-    if len(df) < 30:
+    if not all(
+        c in df.columns
+        for c in required
+    ):
         return None
+
+    for c in required:
+
+        df[c] = pd.to_numeric(
+            df[c],
+            errors="coerce",
+        )
+
+    df = df.dropna(
+        subset=["Close"]
+    )
+
+    if df.empty:
+        return None
+
+    return df
+
+
+# ============================================================
+# GÜNLÜK GÖSTERGELER
+# ============================================================
+
+def calculate_daily_indicators(df):
+
+    df = clean_ohlcv(df)
+
+    if df is None or len(df) < 30:
+        return None
+
+    df = df.copy()
 
     close = df["Close"]
     high = df["High"]
     low = df["Low"]
     volume = df["Volume"]
 
-    # --------------------------------------------------------
     # EMA
-    # --------------------------------------------------------
+    for span in [
+        5,
+        9,
+        20,
+        50,
+    ]:
 
-    df["EMA5"] = close.ewm(span=5, adjust=False).mean()
-    df["EMA9"] = close.ewm(span=9, adjust=False).mean()
-    df["EMA20"] = close.ewm(span=20, adjust=False).mean()
-    df["EMA50"] = close.ewm(span=50, adjust=False).mean()
+        df[f"EMA{span}"] = close.ewm(
+            span=span,
+            adjust=False,
+        ).mean()
 
-    # --------------------------------------------------------
-    # RSI
-    # --------------------------------------------------------
-
+    # RSI - Wilder benzeri EMA yaklaşımı
     delta = close.diff()
 
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
+    gain = delta.clip(
+        lower=0
+    )
 
-    avg_gain = gain.rolling(14).mean()
-    avg_loss = loss.rolling(14).mean()
+    loss = -delta.clip(
+        upper=0
+    )
 
-    rs = avg_gain / avg_loss.replace(0, np.nan)
+    avg_gain = gain.ewm(
+        alpha=1 / 14,
+        adjust=False,
+        min_periods=14,
+    ).mean()
 
-    df["RSI"] = 100 - (100 / (1 + rs))
+    avg_loss = loss.ewm(
+        alpha=1 / 14,
+        adjust=False,
+        min_periods=14,
+    ).mean()
 
-    # --------------------------------------------------------
+    rs = (
+        avg_gain
+        / avg_loss.replace(
+            0,
+            np.nan,
+        )
+    )
+
+    df["RSI"] = (
+        100
+        - (
+            100
+            / (1 + rs)
+        )
+    )
+
+    df["RSI"] = (
+        df["RSI"]
+        .fillna(50)
+        .clip(0, 100)
+    )
+
     # Hacim
-    # --------------------------------------------------------
-
-    df["VOL20"] = volume.rolling(20).mean()
+    df["VOL20"] = volume.rolling(
+        20,
+        min_periods=10,
+    ).mean()
 
     df["VolumeRatio"] = (
-        volume / df["VOL20"].replace(0, np.nan)
-    )
+        volume
+        / df["VOL20"].replace(
+            0,
+            np.nan,
+        )
+    ).replace(
+        [np.inf, -np.inf],
+        np.nan,
+    ).fillna(1.0)
 
-    # --------------------------------------------------------
     # ATR
-    # --------------------------------------------------------
-
     prev_close = close.shift(1)
 
-    tr1 = high - low
-    tr2 = (high - prev_close).abs()
-    tr3 = (low - prev_close).abs()
-
-    true_range = pd.concat(
-        [tr1, tr2, tr3],
-        axis=1
+    tr = pd.concat(
+        [
+            high - low,
+            (
+                high
+                - prev_close
+            ).abs(),
+            (
+                low
+                - prev_close
+            ).abs(),
+        ],
+        axis=1,
     ).max(axis=1)
 
-    df["ATR"] = true_range.rolling(14).mean()
+    df["ATR"] = tr.ewm(
+        alpha=1 / 14,
+        adjust=False,
+        min_periods=14,
+    ).mean()
 
-    # --------------------------------------------------------
-    # VWAP
-    # --------------------------------------------------------
+    # Günlük VWAP yerine son 20 gün ağırlıklı referans.
+    typical = (
+        high
+        + low
+        + close
+    ) / 3
 
-    typical_price = (high + low + close) / 3
+    pv = (
+        typical * volume
+    ).rolling(
+        20,
+        min_periods=5,
+    ).sum()
 
-    cumulative_volume = volume.cumsum()
+    vv = volume.rolling(
+        20,
+        min_periods=5,
+    ).sum()
 
-    cumulative_pv = (
-        typical_price * volume
-    ).cumsum()
-
-    df["VWAP"] = (
-        cumulative_pv /
-        cumulative_volume.replace(0, np.nan)
+    df["VWAP20"] = (
+        pv
+        / vv.replace(
+            0,
+            np.nan,
+        )
     )
+
+    # Momentumlar
+    df["Return_1D"] = (
+        close.pct_change(1)
+        * 100
+    )
+
+    df["Return_5D"] = (
+        close.pct_change(5)
+        * 100
+    )
+
+    df["Return_20D"] = (
+        close.pct_change(20)
+        * 100
+    )
+
+    df["ATR_Pct"] = (
+        df["ATR"]
+        / close.replace(
+            0,
+            np.nan,
+        )
+        * 100
+    ).fillna(0)
+
+    df["EMA9_Slope_5D"] = (
+        df["EMA9"].pct_change(5)
+        * 100
+    )
+
+    df["EMA20_Slope_5D"] = (
+        df["EMA20"].pct_change(5)
+        * 100
+    )
+
+    df["Prev20High"] = (
+        high.shift(1)
+        .rolling(
+            20,
+            min_periods=10,
+        )
+        .max()
+    )
+
+    df["BreakoutDistance"] = (
+        (
+            df["Prev20High"]
+            - close
+        )
+        / close
+        * 100
+    ).replace(
+        [np.inf, -np.inf],
+        np.nan,
+    ).fillna(99)
 
     return df
 
 
 # ============================================================
-# PULLBACK SKORU
+# GÜNLÜK SETUP PUANLARI
 # ============================================================
 
-def calculate_pullback_score(row):
+def trend_score(row):
 
-    price = float(row["Close"])
-    ema9 = float(row["EMA9"])
-    ema20 = float(row["EMA20"])
+    price = scalar(
+        row["Close"]
+    )
+
+    ema9 = scalar(
+        row["EMA9"]
+    )
+
+    ema20 = scalar(
+        row["EMA20"]
+    )
+
+    ema50 = scalar(
+        row["EMA50"]
+    )
 
     score = 0
 
-    # Fiyat EMA9 üzerinde
-    if price >= ema9:
-        score += 25
-
-    # EMA9 - EMA20 trend
-    if ema9 > ema20:
-        score += 25
-
-    # EMA9'a yakınlık
-    distance = abs(price - ema9) / price * 100
-
-    if distance <= 0.50:
+    if price > ema20:
         score += 30
 
-    elif distance <= 1.00:
-        score += 25
-
-    elif distance <= 2.00:
-        score += 15
-
-    elif distance <= 3.00:
-        score += 5
-
-    # Fiyat EMA20 üzerinde
-    if price > ema20:
+    elif price >= ema20 * 0.985:
         score += 20
 
-    return min(score, 100)
+    elif price >= ema20 * 0.97:
+        score += 10
+
+    if ema9 > ema20:
+        score += 25
+
+    elif ema9 >= ema20 * 0.995:
+        score += 15
+
+    if ema20 > ema50:
+        score += 25
+
+    elif ema20 >= ema50 * 0.995:
+        score += 15
+
+    ret5 = scalar(
+        row["Return_5D"],
+        0,
+    )
+
+    if ret5 > 0:
+        score += 10
+
+    elif ret5 > -2:
+        score += 5
+
+    return min(
+        score,
+        100,
+    )
 
 
-# ============================================================
-# 15 DAKİKA TREND
-# ============================================================
+def pullback_score(row):
 
-def calculate_intraday():
+    price = scalar(
+        row["Close"]
+    )
 
-    try:
+    ema9 = scalar(
+        row["EMA9"]
+    )
 
-        data = yf.download(
-            period="5d",
-            interval="15m",
-            progress=False,
-            auto_adjust=False,
-            threads=False,
-        )
+    ema20 = scalar(
+        row["EMA20"]
+    )
 
-        if data is None or data.empty:
-            return None
+    if price <= 0:
+        return 0
 
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-
-        required = ["Open", "High", "Low", "Close", "Volume"]
-
-        if not all(c in data.columns for c in required):
-            return None
-
-        data = data.dropna(subset=["Close"])
-
-        if len(data) < 30:
-            return None
-
-        close = data["Close"]
-
-        data["EMA9"] = close.ewm(
-            span=9,
-            adjust=False
-        ).mean()
-
-        data["EMA20"] = close.ewm(
-            span=20,
-            adjust=False
-        ).mean()
-
-        typical = (
-            data["High"]
-            + data["Low"]
-            + data["Close"]
-        ) / 3
-
-        data["VWAP"] = (
-            typical * data["Volume"]
-        ).cumsum() / data["Volume"].cumsum()
-
-        last = data.iloc[-1]
-
-        score = 0
-
-        if last["EMA9"] > last["EMA20"]:
-            score += 40
-
-        if last["Close"] > last["EMA9"]:
-            score += 25
-
-        if last["Close"] > last["VWAP"]:
-            score += 25
-
-        if len(data) >= 2:
-
-            previous = data.iloc[-2]
-
-            if last["Close"] > previous["Close"]:
-                score += 10
-
-        return {
-            "score": min(score, 100),
-            "price": float(last["Close"]),
-            "ema9": float(last["EMA9"]),
-            "ema20": float(last["EMA20"]),
-            "vwap": float(last["VWAP"]),
-        }
-
-    except Exception:
-        return None
-
-
-# ============================================================
-# TEKNİK SKOR
-# ============================================================
-
-def calculate_confirmation(row):
+    distance9 = (
+        abs(price - ema9)
+        / price
+        * 100
+    )
 
     score = 0
 
-    price = float(row["Close"])
-    ema9 = float(row["EMA9"])
-    ema20 = float(row["EMA20"])
-    ema50 = float(row["EMA50"])
-    rsi = float(row["RSI"])
-    volume_ratio = float(row["VolumeRatio"])
+    if price >= ema9:
+        score += 30
 
-    # Trend
-    if price > ema9:
-        score += 20
+    elif price >= ema9 * 0.985:
+        score += 22
+
+    elif price >= ema9 * 0.97:
+        score += 14
+
+    if distance9 <= 1:
+        score += 25
+
+    elif distance9 <= 2:
+        score += 22
+
+    elif distance9 <= 4:
+        score += 16
+
+    elif distance9 <= 6:
+        score += 10
+
+    else:
+        score += 4
+
+    if price > ema20:
+        score += 25
+
+    elif price >= ema20 * 0.985:
+        score += 18
+
+    elif price >= ema20 * 0.97:
+        score += 10
 
     if ema9 > ema20:
         score += 20
 
-    if ema20 > ema50:
-        score += 15
+    elif ema9 >= ema20 * 0.995:
+        score += 12
 
-    # RSI
-    if 50 <= rsi <= 70:
-        score += 20
+    return min(
+        score,
+        100,
+    )
 
-    elif 45 <= rsi < 50:
-        score += 10
 
-    # Hacim
-    if volume_ratio >= 1.50:
-        score += 15
+def rsi_score(row):
 
-    elif volume_ratio >= 1.20:
-        score += 10
+    rsi = scalar(
+        row["RSI"],
+        50,
+    )
 
-    elif volume_ratio >= 1.00:
-        score += 5
+    if 50 <= rsi <= 68:
+        return 100
 
-    # Momentum
-    if price > float(row["Close"]) * 0.995:
-        score += 10
+    if 45 <= rsi < 50:
+        return 80
 
-    return min(score, 100)
+    if 68 < rsi <= 75:
+        return 75
+
+    if 40 <= rsi < 45:
+        return 60
+
+    if 75 < rsi <= 80:
+        return 45
+
+    return 30
+
+
+def volume_score(row):
+
+    vr = scalar(
+        row["VolumeRatio"],
+        1,
+    )
+
+    if vr >= 1.50:
+        return 100
+
+    if vr >= 1.20:
+        return 90
+
+    if vr >= 1.00:
+        return 80
+
+    if vr >= 0.80:
+        return 65
+
+    if vr >= 0.60:
+        return 50
+
+    return 35
+
+
+def daily_vwap_score(row):
+
+    price = scalar(
+        row["Close"]
+    )
+
+    vwap = scalar(
+        row["VWAP20"],
+        price,
+    )
+
+    if price >= vwap:
+        return 100
+
+    if price >= vwap * 0.99:
+        return 75
+
+    if price >= vwap * 0.97:
+        return 55
+
+    return 35
+
+
+# ============================================================
+# YARIN TRADE SKORU
+# ============================================================
+
+def tomorrow_setup_score(
+    row,
+    rr,
+):
+
+    trend = trend_score(row)
+    pull = pullback_score(row)
+    rsi = rsi_score(row)
+    vol = volume_score(row)
+    vwap = daily_vwap_score(row)
+
+    ret5 = scalar(
+        row["Return_5D"],
+        0,
+    )
+
+    atr_pct = scalar(
+        row["ATR_Pct"],
+        0,
+    )
+
+    slope9 = scalar(
+        row["EMA9_Slope_5D"],
+        0,
+    )
+
+    breakout_dist = scalar(
+        row["BreakoutDistance"],
+        99,
+    )
+
+    if 1 <= ret5 <= 8:
+        momentum = 100
+
+    elif (
+        0 <= ret5 < 1
+        or 8 < ret5 <= 12
+    ):
+        momentum = 80
+
+    elif -2 <= ret5 < 0:
+        momentum = 60
+
+    elif ret5 > 12:
+        momentum = 45
+
+    else:
+        momentum = 35
+
+    if (
+        slope9 > 1.0
+        and scalar(row["EMA9"])
+        > scalar(row["EMA20"])
+    ):
+        slope_score = 100
+
+    elif slope9 > 0.3:
+        slope_score = 80
+
+    elif slope9 > -0.3:
+        slope_score = 60
+
+    else:
+        slope_score = 35
+
+    if breakout_dist >= 4:
+        room_score = 100
+
+    elif breakout_dist >= 2.5:
+        room_score = 85
+
+    elif breakout_dist >= 1.5:
+        room_score = 70
+
+    elif breakout_dist >= 0.75:
+        room_score = 50
+
+    else:
+        room_score = 30
+
+    if 1.5 <= atr_pct <= 5.0:
+        volatility_score = 100
+
+    elif (
+        1.0 <= atr_pct < 1.5
+        or 5.0 < atr_pct <= 7.0
+    ):
+        volatility_score = 80
+
+    elif (
+        0.7 <= atr_pct < 1.0
+        or 7.0 < atr_pct <= 9.0
+    ):
+        volatility_score = 60
+
+    else:
+        volatility_score = 40
+
+    rr_s = rr_score(rr)
+
+    score = (
+        trend * 0.22
+        + pull * 0.20
+        + momentum * 0.13
+        + rsi * 0.08
+        + vol * 0.08
+        + vwap * 0.08
+        + slope_score * 0.07
+        + room_score * 0.06
+        + volatility_score * 0.03
+        + rr_s * 0.05
+    )
+
+    return round(
+        min(
+            max(score, 0),
+            100,
+        ),
+        1,
+    )
 
 
 # ============================================================
 # DESTEK / DİRENÇ
 # ============================================================
 
-def calculate_support_resistance(df):
+def support_resistance(df):
 
-    recent = df.tail(20)
+    recent = df.tail(30)
 
-    support = float(recent["Low"].min())
-    resistance = float(recent["High"].max())
+    support = scalar(
+        recent["Low"].min()
+    )
+
+    resistance = scalar(
+        recent["High"].max()
+    )
 
     return support, resistance
 
 
 # ============================================================
-# RISK / REWARD
+# RİSK / ÖDÜL
 # ============================================================
 
-def calculate_risk_reward(price, support, resistance, atr):
+def risk_reward(
+    price,
+    support,
+    resistance,
+    atr,
+):
 
     if price <= 0:
         return 0, 0, 0, 0
 
-    if atr <= 0:
+    if (
+        not np.isfinite(atr)
+        or atr <= 0
+    ):
         atr = price * 0.02
 
-    stop = min(
-        support,
-        price - (1.2 * atr)
+    # --------------------------------------------------------
+    # STOP
+    # --------------------------------------------------------
+
+    atr_stop = (
+        price
+        - (1.20 * atr)
     )
 
-    if stop <= 0 or stop >= price:
+    if (
+        np.isfinite(support)
+        and 0 < support < price
+    ):
+
+        support_stop = (
+            support * 0.995
+        )
+
+    else:
+
+        support_stop = np.nan
+
+    if np.isfinite(
+        support_stop
+    ):
+
+        support_distance = (
+            price
+            - support_stop
+        )
+
+        atr_distance = (
+            price
+            - atr_stop
+        )
+
+        if (
+            support_distance
+            > atr_distance * 1.50
+        ):
+
+            stop = atr_stop
+
+        else:
+
+            stop = support_stop
+
+    else:
+
+        stop = atr_stop
+
+    if (
+        stop <= 0
+        or stop >= price
+    ):
+
         stop = price * 0.97
 
-    target = resistance
+    risk = price - stop
+
+    # --------------------------------------------------------
+    # HEDEF
+    # --------------------------------------------------------
+
+    atr_target = (
+        price
+        + (2.50 * atr)
+    )
+
+    if (
+        np.isfinite(resistance)
+        and resistance > price
+    ):
+
+        resistance_target = resistance
+
+    else:
+
+        resistance_target = np.nan
+
+    if np.isfinite(
+        resistance_target
+    ):
+
+        resistance_reward = (
+            resistance_target
+            - price
+        )
+
+        atr_reward = (
+            atr_target
+            - price
+        )
+
+        if (
+            resistance_reward
+            < atr_reward * 0.75
+        ):
+
+            target = atr_target
+
+        else:
+
+            target = resistance_target
+
+    else:
+
+        target = atr_target
 
     if target <= price:
-        target = price + (2 * atr)
 
-    risk = price - stop
-    reward = target - price
+        target = (
+            price
+            + (2.0 * atr)
+        )
 
-    if risk <= 0:
-        rr = 0
-    else:
-        rr = reward / risk
+    reward = max(
+        target - price,
+        0,
+    )
+
+    rr = (
+        reward / risk
+        if risk > 0
+        else 0
+    )
 
     return (
         stop,
@@ -534,170 +997,929 @@ def calculate_risk_reward(price, support, resistance, atr):
     )
 
 
+def rr_score(rr):
+
+    if rr >= 2.5:
+        return 100
+
+    if rr >= 2.0:
+        return 90
+
+    if rr >= 1.5:
+        return 80
+
+    if rr >= 1.2:
+        return 70
+
+    if rr >= 1.0:
+        return 55
+
+    if rr >= 0.8:
+        return 40
+
+    return 25
+
+
 # ============================================================
-# TEK HİSSE ANALİZ
+# 15 DAKİKA
 # ============================================================
 
-def analyze_stock(ticker):
+@st.cache_data(
+    ttl=300,
+    show_spinner=False,
+)
+def calculate_intraday(ticker):
 
     try:
 
-        symbol = yahoo_symbol(ticker)
+        symbol = yahoo_symbol(
+            ticker
+        )
 
-        daily = yf.download(
+        data = yf.download(
             symbol,
-            period=HISTORY_PERIOD,
-            interval="1d",
+            period="5d",
+            interval="15m",
             progress=False,
             auto_adjust=False,
             threads=False,
         )
 
-        if daily is None or daily.empty:
-            return None
-
-        if isinstance(daily.columns, pd.MultiIndex):
-            daily.columns = daily.columns.get_level_values(0)
-
-        daily = calculate_indicators(daily)
-
-        if daily is None or daily.empty:
-            return None
-
-        row = daily.iloc[-1]
-
-        price = float(row["Close"])
-
-        avg_volume = float(row["VOL20"])
-
-        liquidity = price * avg_volume
-
-        if liquidity < MIN_LIQUIDITY:
-            return None
-
-        pullback_score = calculate_pullback_score(row)
-
-        confirmation_score = calculate_confirmation(row)
-
-        intraday = calculate_intraday()
-
-        if intraday is None:
-            return None
-
-        intraday_score = intraday["score"]
-
-        vwap_score = 100 if price > float(row["VWAP"]) else 0
-
-        volume_ratio = float(row["VolumeRatio"])
-
-        if volume_ratio >= 1.50:
-            volume_score = 100
-
-        elif volume_ratio >= 1.20:
-            volume_score = 80
-
-        elif volume_ratio >= 1.00:
-            volume_score = 60
-
-        elif volume_ratio >= 0.80:
-            volume_score = 40
-
-        else:
-            volume_score = 20
-
-        # ----------------------------------------------------
-        # DESTEK / DİRENÇ
-        # ----------------------------------------------------
-
-        support, resistance = calculate_support_resistance(
-            daily
+        data = clean_ohlcv(
+            data
         )
-
-        atr = float(row["ATR"])
-
-        stop, target, risk, rr = calculate_risk_reward(
-            price,
-            support,
-            resistance,
-            atr,
-        )
-
-        # ----------------------------------------------------
-        # GENEL SKOR
-        # ----------------------------------------------------
-
-        general_score = confirmation_score
-
-        trade_score = (
-            general_score * GENERAL_WEIGHT
-            + confirmation_score * CONFIRMATION_WEIGHT
-            + pullback_score * PULLBACK_WEIGHT
-            + intraday_score * INTRADAY_WEIGHT
-            + vwap_score * VWAP_WEIGHT
-            + volume_score * VOLUME_WEIGHT
-        )
-
-        # ----------------------------------------------------
-        # RISK/REWARD BONUS
-        # ----------------------------------------------------
-
-        if rr >= 3:
-            trade_score += 5
-
-        elif rr >= 2:
-            trade_score += 3
-
-        trade_score = min(trade_score, 100)
-
-        # ----------------------------------------------------
-        # KARAR
-        # ----------------------------------------------------
 
         if (
-            trade_score >= TRADE_THRESHOLD
-            and pullback_score >= PULLBACK_THRESHOLD
-            and intraday_score >= INTRADAY_THRESHOLD
-            and price > float(row["EMA9"])
-            and price > float(row["VWAP"])
-            and rr >= 1.5
+            data is None
+            or len(data) < 25
         ):
-            decision = "🟢 GÜNLÜK AL"
+            return None
+
+        close = data["Close"]
+
+        data["EMA9"] = close.ewm(
+            span=9,
+            adjust=False,
+        ).mean()
+
+        data["EMA20"] = close.ewm(
+            span=20,
+            adjust=False,
+        ).mean()
+
+        typical = (
+            data["High"]
+            + data["Low"]
+            + data["Close"]
+        ) / 3
+
+        volume = data["Volume"]
+
+        data["VWAP"] = (
+            (typical * volume).cumsum()
+            / volume.cumsum().replace(
+                0,
+                np.nan,
+            )
+        )
+
+        data["VOL20"] = volume.rolling(
+            20,
+            min_periods=5,
+        ).mean()
+
+        data["VolumeRatio"] = (
+            volume
+            / data["VOL20"].replace(
+                0,
+                np.nan,
+            )
+        ).replace(
+            [np.inf, -np.inf],
+            np.nan,
+        ).fillna(1)
+
+        last = data.iloc[-1]
+        prev = data.iloc[-2]
+
+        score = 0
+
+        # EMA trend
+        if last["EMA9"] > last["EMA20"]:
+            score += 30
 
         elif (
-            trade_score >= 70
-            and pullback_score >= 55
-            and intraday_score >= 55
+            last["EMA9"]
+            >= last["EMA20"] * 0.998
         ):
-            decision = "🟡 İZLE"
+            score += 20
 
-        else:
-            decision = "🔴 UYGUN DEĞİL"
+        # Fiyat EMA9
+        if last["Close"] > last["EMA9"]:
+            score += 25
+
+        elif (
+            last["Close"]
+            >= last["EMA9"] * 0.995
+        ):
+            score += 15
+
+        # VWAP
+        if last["Close"] > last["VWAP"]:
+            score += 25
+
+        elif (
+            last["Close"]
+            >= last["VWAP"] * 0.995
+        ):
+            score += 15
+
+        # Son mum
+        if last["Close"] > prev["Close"]:
+            score += 10
+
+        elif (
+            last["Close"]
+            >= prev["Close"] * 0.997
+        ):
+            score += 5
+
+        # Intraday hacim
+        if (
+            last["VolumeRatio"]
+            >= 1.20
+        ):
+            score += 10
+
+        elif (
+            last["VolumeRatio"]
+            >= 0.90
+        ):
+            score += 5
 
         return {
-            "Hisse": ticker,
-            "Fiyat": price,
-            "Likidite": liquidity,
-            "Trade Skoru": round(trade_score, 1),
-            "Pullback": round(pullback_score, 1),
-            "15D Trend": round(intraday_score, 1),
-            "Teyit": round(confirmation_score, 1),
-            "VWAP": "ÜSTÜNDE" if price > float(row["VWAP"]) else "ALTINDA",
-            "RSI": round(float(row["RSI"]), 1),
-            "Hacim Oranı": round(volume_ratio, 2),
-            "Destek": support,
-            "Direnç": resistance,
-            "Stop": stop,
-            "Hedef": target,
-            "R/R": round(rr, 2),
-            "Karar": decision,
+            "score": min(
+                score,
+                100,
+            ),
+
+            "price": scalar(
+                last["Close"]
+            ),
+
+            "ema9": scalar(
+                last["EMA9"]
+            ),
+
+            "ema20": scalar(
+                last["EMA20"]
+            ),
+
+            "vwap": scalar(
+                last["VWAP"]
+            ),
+
+            "volume_ratio": scalar(
+                last["VolumeRatio"],
+                1,
+            ),
         }
 
     except Exception:
+
         return None
 
 
 # ============================================================
-# EVREN
+# GÜNLÜK ANALİZ
+# ============================================================
+
+def analyze_daily(
+    ticker,
+    daily_df,
+    min_liquidity,
+):
+
+    try:
+
+        df = calculate_daily_indicators(
+            daily_df
+        )
+
+        if df is None:
+            return None, "veri_yetersiz"
+
+        row = df.iloc[-1]
+
+        price = scalar(
+            row["Close"]
+        )
+
+        if (
+            not np.isfinite(price)
+            or price <= 0
+        ):
+
+            return None, "fiyat"
+
+        avg_volume = scalar(
+            row["VOL20"],
+            0,
+        )
+
+        liquidity = (
+            price
+            * avg_volume
+        )
+
+        if liquidity < min_liquidity:
+            return None, "likidite"
+
+        t_score = trend_score(
+            row
+        )
+
+        p_score = pullback_score(
+            row
+        )
+
+        rsi_s = rsi_score(
+            row
+        )
+
+        vol_s = volume_score(
+            row
+        )
+
+        vwap_s = daily_vwap_score(
+            row
+        )
+
+        support, resistance = (
+            support_resistance(df)
+        )
+
+        atr = scalar(
+            row["ATR"],
+            price * 0.02,
+        )
+
+        stop, target, risk, rr = (
+            risk_reward(
+                price,
+                support,
+                resistance,
+                atr,
+            )
+        )
+
+        rr_s = rr_score(
+            rr
+        )
+
+        # Günlük skor
+        daily_score = (
+            t_score * 0.30
+            + p_score * 0.25
+            + rsi_s * 0.10
+            + vol_s * 0.10
+            + vwap_s * 0.10
+            + rr_s * 0.15
+        )
+
+        yarin_skor = (
+            tomorrow_setup_score(
+                row,
+                rr,
+            )
+        )
+
+        result = {
+
+            "Hisse": ticker,
+
+            "Fiyat": price,
+
+            "9 EMA": round(
+                scalar(
+                    row["EMA9"],
+                    price,
+                ),
+                2,
+            ),
+
+            "EMA20": round(
+                scalar(
+                    row["EMA20"],
+                    price,
+                ),
+                2,
+            ),
+
+            "EMA50": round(
+                scalar(
+                    row["EMA50"],
+                    price,
+                ),
+                2,
+            ),
+
+            "Likidite": liquidity,
+
+            "Yarın Skoru": yarin_skor,
+
+            "ATR %": round(
+                scalar(
+                    row["ATR_Pct"],
+                    0,
+                ),
+                2,
+            ),
+
+            "5G Getiri %": round(
+                scalar(
+                    row["Return_5D"],
+                    0,
+                ),
+                2,
+            ),
+
+            "20G Getiri %": round(
+                scalar(
+                    row["Return_20D"],
+                    0,
+                ),
+                2,
+            ),
+
+            "EMA9 Eğim %": round(
+                scalar(
+                    row["EMA9_Slope_5D"],
+                    0,
+                ),
+                2,
+            ),
+
+            "Dirence Mesafe %": round(
+                scalar(
+                    row["BreakoutDistance"],
+                    99,
+                ),
+                2,
+            ),
+
+            "Günlük Skor": round(
+                daily_score,
+                1,
+            ),
+
+            "Trend": round(
+                t_score,
+                1,
+            ),
+
+            "Pullback": round(
+                p_score,
+                1,
+            ),
+
+            "RSI Skor": round(
+                rsi_s,
+                1,
+            ),
+
+            "Hacim Skor": round(
+                vol_s,
+                1,
+            ),
+
+            "VWAP Skor": round(
+                vwap_s,
+                1,
+            ),
+
+            "RSI": round(
+                scalar(
+                    row["RSI"],
+                    50,
+                ),
+                1,
+            ),
+
+            "Hacim Oranı": round(
+                scalar(
+                    row["VolumeRatio"],
+                    1,
+                ),
+                2,
+            ),
+
+            "Destek": support,
+
+            "Direnç": resistance,
+
+            "Stop": stop,
+
+            "Hedef": target,
+
+            "R/R": round(
+                rr,
+                2,
+            ),
+
+            "15D Trend": 50.0,
+
+            "15D VWAP": "BEKLENİYOR",
+
+            "15D Skor": 50.0,
+
+            "Trade Skoru": round(
+                daily_score,
+                1,
+            ),
+
+            "Trade Sınıfı": "—",
+
+            "Karar": "🔵 YARIN İZLE",
+        }
+
+        return result, "ok"
+
+    except Exception:
+
+        return None, "hata"
+
+
+# ============================================================
+# TRADE A / B / C SINIFLANDIRMASI
+# ============================================================
+
+def classify_trade_candidate(
+    result
+):
+    """
+    Mevcut karar sistemini değiştirmez.
+
+    Sadece:
+        🟡 YARIN TRADE ADAYI
+
+    olan hisseleri kalite seviyesine ayırır.
+
+    🟢 A = Çok güçlü aday
+    🟡 B = Güçlü aday
+    🔵 C = İzlenmesi gereken aday
+    """
+
+    trade_score = float(
+        result.get(
+            "Trade Skoru",
+            0,
+        )
+    )
+
+    tomorrow_score = float(
+        result.get(
+            "Yarın Skoru",
+            0,
+        )
+    )
+
+    daily_score = float(
+        result.get(
+            "Günlük Skor",
+            0,
+        )
+    )
+
+    trend = float(
+        result.get(
+            "Trend",
+            0,
+        )
+    )
+
+    pullback = float(
+        result.get(
+            "Pullback",
+            0,
+        )
+    )
+
+    rr = float(
+        result.get(
+            "R/R",
+            0,
+        )
+    )
+
+    intra_score = float(
+        result.get(
+            "15D Skor",
+            50,
+        )
+    )
+
+    intra_vwap = str(
+        result.get(
+            "15D VWAP",
+            "VERİ YOK",
+        )
+    )
+
+    karar = str(
+        result.get(
+            "Karar",
+            "",
+        )
+    )
+
+    # --------------------------------------------------------
+    # SADECE TRADE ADAYLARI
+    # --------------------------------------------------------
+
+    if karar != "🟡 YARIN TRADE ADAYI":
+        return "—"
+
+    # --------------------------------------------------------
+    # A SINIFI
+    # --------------------------------------------------------
+
+    if (
+        trade_score >= A_TRADE_SCORE
+        and tomorrow_score >= A_TOMORROW_SCORE
+        and daily_score >= A_DAILY_SCORE
+        and trend >= A_TREND
+        and pullback >= A_PULLBACK
+        and rr >= A_RR
+        and intra_score >= A_INTRADAY
+        and intra_vwap == "ÜSTÜNDE"
+    ):
+
+        return "🟢 A"
+
+    # --------------------------------------------------------
+    # B SINIFI
+    # --------------------------------------------------------
+
+    if (
+        trade_score >= B_TRADE_SCORE
+        and tomorrow_score >= B_TOMORROW_SCORE
+        and daily_score >= B_DAILY_SCORE
+        and trend >= B_TREND
+        and pullback >= B_PULLBACK
+        and rr >= B_RR
+    ):
+
+        return "🟡 B"
+
+    # --------------------------------------------------------
+    # C SINIFI
+    # --------------------------------------------------------
+
+    return "🔵 C"
+
+
+# ============================================================
+# 15D TEYİDİNİ SONRADAN UYGULA
+# ============================================================
+
+def apply_intraday(result):
+
+    ticker = result["Hisse"]
+
+    intra = calculate_intraday(
+        ticker
+    )
+
+    if intra is None:
+
+        intra_score = 50.0
+        intra_vwap = "VERİ YOK"
+
+    else:
+
+        intra_score = float(
+            intra["score"]
+        )
+
+        intra_vwap = (
+            "ÜSTÜNDE"
+            if intra["price"]
+            >= intra["vwap"]
+            else "ALTINDA"
+        )
+
+    daily_score = float(
+        result["Günlük Skor"]
+    )
+
+    tomorrow_score = float(
+        result["Yarın Skoru"]
+    )
+
+    # Yarın için ana ağırlık günlük setup;
+    # 15D son seans teyidi.
+
+    trade_score = (
+        tomorrow_score * 0.80
+        + intra_score * 0.20
+    )
+
+    if intra_score >= 80:
+        trade_score += 2
+
+    if float(
+        result["R/R"]
+    ) >= 2:
+
+        trade_score += 2
+
+    trade_score = min(
+        trade_score,
+        100,
+    )
+
+    result["15D Trend"] = round(
+        intra_score,
+        1,
+    )
+
+    result["15D VWAP"] = (
+        intra_vwap
+    )
+
+    result["15D Skor"] = round(
+        intra_score,
+        1,
+    )
+
+    result["Trade Skoru"] = round(
+        trade_score,
+        1,
+    )
+
+    price = float(
+        result["Fiyat"]
+    )
+
+    rr = float(
+        result["R/R"]
+    )
+
+    trend = float(
+        result["Trend"]
+    )
+
+    pullback = float(
+        result["Pullback"]
+    )
+
+    rsi = float(
+        result["RSI"]
+    )
+
+    ema9 = float(
+        result.get(
+            "9 EMA",
+            price,
+        )
+    )
+
+    distance = (
+        abs(
+            (
+                price
+                / ema9
+                - 1
+            )
+            * 100
+        )
+        if ema9 > 0
+        else 99
+    )
+
+    # --------------------------------------------------------
+    # MEVCUT KARAR SİSTEMİ
+    # --------------------------------------------------------
+
+    if distance > 6:
+
+        decision = (
+            "🟠 YARIN İÇİN BEKLE"
+        )
+
+        reason = (
+            f"Fiyat 9 EMA'dan "
+            f"%{distance:.1f} uzak; "
+            "açılışta kovalanmamalı."
+        )
+
+    elif rsi >= 78:
+
+        decision = (
+            "🟠 YARIN İÇİN BEKLE"
+        )
+
+        reason = (
+            "RSI aşırı alım bölgesinde; "
+            "açılışta kovalanmamalı."
+        )
+
+    elif (
+        tomorrow_score >= 80
+        and daily_score >= 70
+        and trend >= 55
+        and pullback >= 55
+        and rr >= 1.50
+    ):
+
+        decision = (
+            "🟢 YARIN GÜÇLÜ ADAY"
+        )
+
+        reason = (
+            "Günlük trend + pullback "
+            "+ momentum + R/R güçlü."
+        )
+
+    elif (
+        tomorrow_score >= 70
+        and daily_score >= 62
+        and trend >= 45
+        and pullback >= 40
+        and rr >= 1.20
+    ):
+
+        decision = (
+            "🟡 YARIN TRADE ADAYI"
+        )
+
+        reason = (
+            "Günlük setup yeterli; "
+            "açılışta fiyat, VWAP ve "
+            "15D teyidi kontrol edilmeli."
+        )
+
+    elif tomorrow_score >= 58:
+
+        decision = (
+            "🔵 YARIN İZLE"
+        )
+
+        reason = (
+            "Olumlu yapı var ancak "
+            "güçlü trade avantajı henüz "
+            "tamamlanmadı."
+        )
+
+    else:
+
+        decision = (
+            "⚪ HAVUZ DIŞI"
+        )
+
+        reason = (
+            "Yarın için yeterli teknik "
+            "avantaj bulunmuyor."
+        )
+
+    result["Karar"] = decision
+    result["Açıklama"] = reason
+
+    # A/B/C ilk hesaplama
+    # Burada yalnızca mevcut karar
+    # TRADE ADAYI ise sınıflandırılır.
+
+    result["Trade Sınıfı"] = (
+        classify_trade_candidate(
+            result
+        )
+    )
+
+    return result
+
+
+# ============================================================
+# BATCH DAILY DOWNLOAD
+# ============================================================
+
+@st.cache_data(
+    ttl=300,
+    show_spinner=False,
+)
+def download_daily_batch(tickers):
+
+    symbols = [
+        yahoo_symbol(t)
+        for t in tickers
+        if yahoo_symbol(t)
+    ]
+
+    if not symbols:
+        return {}
+
+    try:
+
+        data = yf.download(
+            symbols,
+            period=HISTORY_PERIOD,
+            interval="1d",
+            progress=False,
+            auto_adjust=False,
+            threads=True,
+            group_by="ticker",
+        )
+
+        if (
+            data is None
+            or data.empty
+        ):
+            return {}
+
+        result = {}
+
+        if isinstance(
+            data.columns,
+            pd.MultiIndex,
+        ):
+
+            level0 = list(
+                data.columns
+                .get_level_values(0)
+            )
+
+            level1 = list(
+                data.columns
+                .get_level_values(1)
+            )
+
+            if any(
+                x in [
+                    "Open",
+                    "High",
+                    "Low",
+                    "Close",
+                    "Volume",
+                ]
+                for x in level1
+            ):
+
+                for symbol in symbols:
+
+                    if (
+                        symbol
+                        not in data.columns
+                        .get_level_values(0)
+                    ):
+                        continue
+
+                    part = data[
+                        symbol
+                    ].copy()
+
+                    if not part.empty:
+                        result[
+                            symbol
+                        ] = part
+
+            else:
+
+                for symbol in symbols:
+
+                    if (
+                        symbol
+                        not in data.columns
+                        .get_level_values(1)
+                    ):
+                        continue
+
+                    part = data.xs(
+                        symbol,
+                        axis=1,
+                        level=1,
+                    ).copy()
+
+                    if not part.empty:
+                        result[
+                            symbol
+                        ] = part
+
+        else:
+
+            if len(symbols) == 1:
+                result[
+                    symbols[0]
+                ] = data
+
+        return result
+
+    except Exception:
+
+        return {}
+
+
+# ============================================================
+# ANA ARAYÜZ
 # ============================================================
 
 universe = get_universe()
@@ -717,37 +1939,13 @@ if not universe:
 
 
 # ============================================================
-# ÜST PANEL
-# ============================================================
-
-c1, c2, c3, c4 = st.columns(4)
-
-c1.metric(
-    "BIST500 Evreni",
-    f"{len(universe)}"
-)
-
-c2.metric(
-    "Min. Likidite",
-    f"{MIN_LIQUIDITY / 1_000_000:.0f} Mn TL"
-)
-
-c3.metric(
-    "Trade Eşiği",
-    f"{TRADE_THRESHOLD}"
-)
-
-c4.metric(
-    "Tarama Tarihi",
-    datetime.now().strftime("%d.%m.%Y %H:%M")
-)
-
-
-# ============================================================
 # AYARLAR
 # ============================================================
 
-with st.expander("⚙️ Tarama Ayarları", expanded=False):
+with st.expander(
+    "⚙️ Trade Tarama Ayarları",
+    expanded=False,
+):
 
     col1, col2, col3 = st.columns(3)
 
@@ -757,17 +1955,17 @@ with st.expander("⚙️ Tarama Ayarları", expanded=False):
             "Minimum 20G Ortalama İşlem Hacmi (TL)",
             min_value=1_000_000,
             max_value=500_000_000,
-            value=MIN_LIQUIDITY,
+            value=DEFAULT_MIN_LIQUIDITY,
             step=5_000_000,
         )
 
     with col2:
 
-        trade_threshold = st.slider(
-            "Günlük AL Skoru",
-            60,
-            95,
-            TRADE_THRESHOLD,
+        pool_min_score = st.slider(
+            "Havuz Minimum Skoru",
+            35,
+            70,
+            POOL_MIN_SCORE,
         )
 
     with col3:
@@ -779,6 +1977,44 @@ with st.expander("⚙️ Tarama Ayarları", expanded=False):
             20,
         )
 
+    st.info(
+        """
+        **Önemli:** Bu sürümde önce geniş havuz oluşturulur.
+        15 dakikalık teyit yalnızca en güçlü günlük adaylarda aranır.
+        15D veri alınamaması hisseyi otomatik olarak elemez.
+
+        **A/B/C sınıfları yalnızca mevcut Trade Adayları
+        üzerinde uygulanır.**
+        """
+    )
+
+
+# ============================================================
+# ÜST METRİK
+# ============================================================
+
+c1, c2, c3, c4 = st.columns(4)
+
+c1.metric(
+    "BIST500 Evreni",
+    len(universe),
+)
+
+c2.metric(
+    "Min. Likidite",
+    f"{min_liquidity / 1_000_000:.0f} Mn TL",
+)
+
+c3.metric(
+    "Havuz Eşiği",
+    pool_min_score,
+)
+
+c4.metric(
+    "15D Teyit Limiti",
+    MAX_INTRADAY_CHECK,
+)
+
 
 # ============================================================
 # TARAMA
@@ -787,299 +2023,1192 @@ with st.expander("⚙️ Tarama Ayarları", expanded=False):
 st.markdown("---")
 
 if st.button(
-    "⚡ BIST500 GÜNLÜK TARAMAYI BAŞLAT",
+    "⚡ BIST500 GÜNLÜK TRADE TARAMASINI BAŞLAT",
     type="primary",
     use_container_width=True,
 ):
 
-    results = []
+    # --------------------------------------------------------
+    # 1) BATCH DAILY
+    # --------------------------------------------------------
 
-    progress = st.progress(0)
+    st.info(
+        f"📥 BIST500 günlük verisi toplu olarak indiriliyor... "
+        f"({len(universe)} hisse)"
+    )
 
-    status = st.empty()
+    daily_map = download_daily_batch(
+        tuple(universe)
+    )
 
-    total = len(universe)
+    if not daily_map:
 
-    for i, ticker in enumerate(universe):
+        st.error(
+            """
+            ❌ Günlük Yahoo verisi alınamadı.
 
-        status.text(
-            f"🔎 Taranıyor: {ticker} "
-            f"({i + 1}/{total})"
-        )
-
-        result = analyze_stock(ticker)
-
-        if result is not None:
-
-            results.append(result)
-
-        progress.progress(
-            int((i + 1) / total * 100)
-        )
-
-    progress.empty()
-
-    status.empty()
-
-    if not results:
-
-        st.warning(
-            "BIST500 içinde kriterleri karşılayan hisse bulunamadı."
+            İnternet / Yahoo Finance erişimini veya sembolleri kontrol edin.
+            """
         )
 
         st.stop()
 
-    result_df = pd.DataFrame(results)
+    results = []
 
-    result_df = result_df.sort_values(
+    stats = {
+
+        "universe": len(universe),
+
+        "daily_data": 0,
+
+        "liquidity": 0,
+
+        "daily_pool": 0,
+
+        "intraday_checked": 0,
+
+        "intraday_available": 0,
+
+        "strong": 0,
+
+        "candidate": 0,
+
+        "watch": 0,
+
+        "score_62": 0,
+
+        "score_60": 0,
+
+        "score_76": 0,
+
+        "trend_45": 0,
+
+        "pullback_40": 0,
+
+        "rr_090": 0,
+
+        "final_candidate": 0,
+
+        "final_strong": 0,
+
+        # A / B / C
+        "trade_a": 0,
+        "trade_b": 0,
+        "trade_c": 0,
+    }
+
+    progress = st.progress(
+        0
+    )
+
+    status = st.empty()
+
+    # --------------------------------------------------------
+    # 2) DAILY POOL
+    # --------------------------------------------------------
+
+    for i, ticker in enumerate(
+        universe
+    ):
+
+        symbol = yahoo_symbol(
+            ticker
+        )
+
+        daily_df = daily_map.get(
+            symbol
+        )
+
+        if daily_df is None:
+            continue
+
+        stats[
+            "daily_data"
+        ] += 1
+
+        result, reason = analyze_daily(
+            ticker,
+            daily_df,
+            min_liquidity,
+        )
+
+        if result is None:
+            continue
+
+        stats[
+            "liquidity"
+        ] += 1
+
+        if (
+            result["Günlük Skor"]
+            >= pool_min_score
+        ):
+
+            results.append(
+                result
+            )
+
+            stats[
+                "daily_pool"
+            ] += 1
+
+        progress.progress(
+            int(
+                (
+                    i + 1
+                )
+                / max(
+                    len(universe),
+                    1,
+                )
+                * 70
+            )
+        )
+
+    status.text(
+        f"📊 Günlük havuz oluşturuldu: "
+        f"{len(results)} hisse"
+    )
+
+    if not results:
+
+        progress.empty()
+        status.empty()
+
+        st.error(
+            """
+            ❌ Günlük havuz bile oluşturulamadı.
+
+            Bu durumda sorun trade kriterleri değil;
+            günlük veri / `stocks` evreni / Yahoo sembolleridir.
+            """
+        )
+
+        st.stop()
+
+    # --------------------------------------------------------
+    # 3) GÜNLÜK SKORA GÖRE SIRALA
+    # --------------------------------------------------------
+
+    pool_df = pd.DataFrame(
+        results
+    ).sort_values(
+        "Günlük Skor",
+        ascending=False,
+    ).reset_index(
+        drop=True
+    )
+
+    # --------------------------------------------------------
+    # 4) SADECE EN İYİ ADAYLARA 15D
+    # --------------------------------------------------------
+
+    intraday_n = min(
+        MAX_INTRADAY_CHECK,
+        len(pool_df),
+    )
+
+    checked_indices = (
+        pool_df.head(
+            intraday_n
+        ).index
+    )
+
+    for count, idx in enumerate(
+        checked_indices,
+        start=1,
+    ):
+
+        ticker = pool_df.at[
+            idx,
+            "Hisse",
+        ]
+
+        status.text(
+            f"⚡ 15D teyit: {ticker} "
+            f"({count}/{intraday_n})"
+        )
+
+        updated = apply_intraday(
+            pool_df.loc[
+                idx
+            ].to_dict()
+        )
+
+        pool_df.loc[
+            idx,
+            :
+        ] = pd.Series(
+            updated
+        )
+
+        if (
+            updated["15D Skor"]
+            != 50.0
+        ):
+
+            stats[
+                "intraday_available"
+            ] += 1
+
+        stats[
+            "intraday_checked"
+        ] += 1
+
+        progress.progress(
+            70
+            + int(
+                count
+                / max(
+                    intraday_n,
+                    1,
+                )
+                * 30
+            )
+        )
+
+    progress.empty()
+    status.empty()
+
+    # --------------------------------------------------------
+    # 5) 15D ALMAYANLAR DA KALSIN
+    # --------------------------------------------------------
+
+    pool_df = pool_df.sort_values(
         "Trade Skoru",
-        ascending=False
-    ).reset_index(drop=True)
+        ascending=False,
+    ).reset_index(
+        drop=True
+    )
 
     # --------------------------------------------------------
-    # AL SİNYALLERİ
+    # 6) A / B / C SINIFLANDIRMASI
     # --------------------------------------------------------
 
-    buy_df = result_df[
-        result_df["Karar"] == "🟢 GÜNLÜK AL"
-    ].copy()
-
-    watch_df = result_df[
-        result_df["Karar"] == "🟡 İZLE"
-    ].copy()
+    pool_df[
+        "Trade Sınıfı"
+    ] = pool_df.apply(
+        lambda row:
+            classify_trade_candidate(
+                row.to_dict()
+            ),
+        axis=1,
+    )
 
     # --------------------------------------------------------
-    # ÖZET
+    # A / B / C İSTATİSTİKLERİ
     # --------------------------------------------------------
 
-    st.success(
-        f"""
-        Tarama tamamlandı.
+    stats[
+        "trade_a"
+    ] = int(
+        (
+            pool_df[
+                "Trade Sınıfı"
+            ]
+            == "🟢 A"
+        ).sum()
+    )
 
-        **BIST500:** {len(universe)}  
-        **Likidite sonrası:** {len(result_df)}  
-        **🟢 Günlük AL:** {len(buy_df)}  
-        **🟡 İzle:** {len(watch_df)}
-        """
+    stats[
+        "trade_b"
+    ] = int(
+        (
+            pool_df[
+                "Trade Sınıfı"
+            ]
+            == "🟡 B"
+        ).sum()
+    )
+
+    stats[
+        "trade_c"
+    ] = int(
+        (
+            pool_df[
+                "Trade Sınıfı"
+            ]
+            == "🔵 C"
+        ).sum()
     )
 
     # ========================================================
-    # METRİKLER
+    # KARAR İSTATİSTİKLERİ
     # ========================================================
 
-    m1, m2, m3, m4 = st.columns(4)
-
-    m1.metric(
-        "Taranan",
-        len(universe)
+    stats[
+        "strong"
+    ] = int(
+        (
+            pool_df["Karar"]
+            == "🟢 YARIN GÜÇLÜ ADAY"
+        ).sum()
     )
 
-    m2.metric(
-        "Uygun",
-        len(result_df)
+    stats[
+        "candidate"
+    ] = int(
+        (
+            pool_df["Karar"]
+            == "🟡 YARIN TRADE ADAYI"
+        ).sum()
     )
 
-    m3.metric(
-        "⚡ Günlük AL",
-        len(buy_df)
+    stats[
+        "watch"
+    ] = int(
+        (
+            pool_df["Karar"]
+            == "🔵 YARIN İZLE"
+        ).sum()
     )
-
-    if not result_df.empty:
-
-        best_score = result_df["Trade Skoru"].max()
-
-    else:
-
-        best_score = 0
-
-    m4.metric(
-        "🏆 En Yüksek Skor",
-        f"{best_score:.1f}"
-    )
-
 
     # ========================================================
-    # GÜNLÜK AL
+    # DETAYLI TRADE ADAYI TEŞHİSİ
+    # ========================================================
+
+    stats[
+        "score_62"
+    ] = int(
+        (
+            pool_df["Yarın Skoru"]
+            >= 62
+        ).sum()
+    )
+
+    stats[
+        "score_60"
+    ] = int(
+        (
+            pool_df["Trade Skoru"]
+            >= 60
+        ).sum()
+    )
+
+    stats[
+        "score_76"
+    ] = int(
+        (
+            pool_df["Yarın Skoru"]
+            >= 76
+        ).sum()
+    )
+
+    stats[
+        "trend_45"
+    ] = int(
+        (
+            pool_df["Trend"]
+            >= 45
+        ).sum()
+    )
+
+    stats[
+        "pullback_40"
+    ] = int(
+        (
+            pool_df["Pullback"]
+            >= 40
+        ).sum()
+    )
+
+    stats[
+        "rr_090"
+    ] = int(
+        (
+            pool_df["R/R"]
+            >= 0.90
+        ).sum()
+    )
+
+    stats[
+        "final_candidate"
+    ] = int(
+        (
+            (
+                pool_df[
+                    "Yarın Skoru"
+                ]
+                >= 62
+            )
+            &
+            (
+                pool_df[
+                    "Trend"
+                ]
+                >= 35
+            )
+            &
+            (
+                pool_df[
+                    "Pullback"
+                ]
+                >= 30
+            )
+        ).sum()
+    )
+
+    stats[
+        "final_strong"
+    ] = int(
+        (
+            (
+                pool_df[
+                    "Yarın Skoru"
+                ]
+                >= 76
+            )
+            &
+            (
+                pool_df[
+                    "Trend"
+                ]
+                >= 55
+            )
+            &
+            (
+                pool_df[
+                    "Pullback"
+                ]
+                >= 45
+            )
+            &
+            (
+                pool_df[
+                    "R/R"
+                ]
+                >= 0.90
+            )
+        ).sum()
+    )
+
+    # ========================================================
+    # TEŞHİS
     # ========================================================
 
     st.markdown("---")
 
-    st.subheader("🟢 Günlük Trade Fırsatları")
+    st.subheader(
+        "🔬 Tarama Teşhisi"
+    )
 
-    if buy_df.empty:
+    q1, q2, q3, q4, q5, q6, q7, q8 = (
+        st.columns(8)
+    )
+
+    q1.metric(
+        "BIST500",
+        stats["universe"],
+    )
+
+    q2.metric(
+        "Günlük Veri",
+        stats["daily_data"],
+    )
+
+    q3.metric(
+        "Likidite",
+        stats["liquidity"],
+    )
+
+    q4.metric(
+        "Trade Havuzu",
+        stats["daily_pool"],
+    )
+
+    q5.metric(
+        "15D Kontrol",
+        stats["intraday_checked"],
+    )
+
+    q6.metric(
+        "🟢 A Sınıfı",
+        stats["trade_a"],
+    )
+
+    q7.metric(
+        "🟡 B Sınıfı",
+        stats["trade_b"],
+    )
+
+    q8.metric(
+        "🔵 C Sınıfı",
+        stats["trade_c"],
+    )
+
+    st.caption(
+        f"""
+        Günlük havuz: **{stats['daily_pool']}** |
+        Gerçek 15D veri: **{stats['intraday_available']}** |
+        🟢 Güçlü: **{stats['strong']}** |
+        🟡 Trade Adayı: **{stats['candidate']}** |
+        🔵 İzle: **{stats['watch']}** |
+        🟢 A: **{stats['trade_a']}** |
+        🟡 B: **{stats['trade_b']}** |
+        🔵 C: **{stats['trade_c']}**
+        """
+    )
+
+    # ========================================================
+    # TRADE ADAYI NEDEN OLUŞTU / OLUŞMADI?
+    # ========================================================
+
+    st.markdown(
+        "### 🔎 Trade Adayı Teşhis Paneli"
+    )
+
+    diagnosis = pd.DataFrame({
+
+        "Aşama": [
+
+            "Günlük Trade Havuzu",
+
+            "Yarın Skoru ≥ 62",
+
+            "Trend ≥ 45",
+
+            "Pullback ≥ 40",
+
+            "R/R ≥ 0.90",
+
+            "Nihai Trade Adayı",
+
+            "Yarın Skoru ≥ 76",
+
+            "Nihai GÜNLÜK AL",
+
+            "🟢 A Sınıfı",
+
+            "🟡 B Sınıfı",
+
+            "🔵 C Sınıfı",
+        ],
+
+        "Hisse Sayısı": [
+
+            stats[
+                "daily_pool"
+            ],
+
+            stats[
+                "score_62"
+            ],
+
+            stats[
+                "trend_45"
+            ],
+
+            stats[
+                "pullback_40"
+            ],
+
+            stats[
+                "rr_090"
+            ],
+
+            stats[
+                "final_candidate"
+            ],
+
+            stats[
+                "score_76"
+            ],
+
+            stats[
+                "final_strong"
+            ],
+
+            stats[
+                "trade_a"
+            ],
+
+            stats[
+                "trade_b"
+            ],
+
+            stats[
+                "trade_c"
+            ],
+        ],
+    })
+
+    st.dataframe(
+        diagnosis,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    if (
+        stats["final_candidate"]
+        == 0
+    ):
+
+        st.warning(
+            "⚠️ Trade Adayı oluşmadı. "
+            "Yukarıdaki teşhis panelinde "
+            "hangi aşamada adayların "
+            "elendiğini görebilirsiniz."
+        )
+
+    elif (
+        stats["final_candidate"]
+        < 3
+    ):
 
         st.info(
-            "Şu anda tüm kriterleri aynı anda sağlayan güçlü bir günlük AL sinyali yok."
+            f"ℹ️ Şu anda "
+            f"{stats['final_candidate']} "
+            "Trade Adayı var. "
+            "Bunlar 15D teyit ve trade "
+            "skoru açısından ayrıca "
+            "değerlendirilmelidir."
         )
 
     else:
 
-        display_buy = buy_df.head(max_results).copy()
+        st.success(
+            f"🟡 "
+            f"{stats['final_candidate']} "
+            "adet Trade Adayı bulundu."
+        )
+
+    # ========================================================
+    # HAVUZ
+    # ========================================================
+
+    st.markdown("---")
+
+    st.subheader(
+        "🏊 Günlük Trade Havuzu"
+    )
+
+    st.dataframe(
+        pool_df.head(
+            max_results
+        )[
+
+            [
+                "Hisse",
+                "Fiyat",
+                "Yarın Skoru",
+                "Trade Skoru",
+                "Günlük Skor",
+                "Trend",
+                "Pullback",
+                "15D Trend",
+                "RSI",
+                "Hacim Oranı",
+                "R/R",
+                "Trade Sınıfı",
+                "Karar",
+            ]
+        ],
+
+        use_container_width=True,
+
+        hide_index=True,
+    )
+
+    # ========================================================
+    # GÜÇLÜ TRADE
+    # ========================================================
+
+    st.markdown("---")
+
+    st.subheader(
+        "🟢 Günlük Trade Fırsatları"
+    )
+
+    buy_df = pool_df[
+        pool_df["Karar"]
+        == "🟢 YARIN GÜÇLÜ ADAY"
+    ].copy()
+
+    if buy_df.empty:
+
+        st.info(
+            "Bugün güçlü AL seviyesi oluşmadı. "
+            "Aşağıdaki Trade Adayları "
+            "havuzundan teyit beklenebilir."
+        )
+
+    else:
 
         st.dataframe(
-            display_buy[
+            buy_df.head(
+                max_results
+            )[
+
                 [
                     "Hisse",
                     "Fiyat",
+                    "Yarın Skoru",
                     "Trade Skoru",
+                    "Trend",
                     "Pullback",
                     "15D Trend",
-                    "Teyit",
-                    "VWAP",
+                    "15D VWAP",
                     "RSI",
                     "Hacim Oranı",
-                    "Destek",
-                    "Direnç",
                     "Stop",
                     "Hedef",
                     "R/R",
                     "Karar",
                 ]
             ],
+
             use_container_width=True,
+
             hide_index=True,
         )
 
-
     # ========================================================
-    # EN İYİ ADAYLAR
+    # TRADE ADAYLARI
     # ========================================================
 
     st.markdown("---")
 
-    st.subheader("🏆 En Güçlü Günlük Trade Adayları")
+    st.subheader(
+        "🟡 Trade Adayları"
+    )
 
-    top_df = result_df.head(max_results).copy()
+    candidate_df = pool_df[
+        pool_df["Karar"]
+        == "🟡 YARIN TRADE ADAYI"
+    ].copy()
+
+    if candidate_df.empty:
+
+        st.info(
+            "Trade Adayı oluşmadı."
+        )
+
+    else:
+
+        st.dataframe(
+            candidate_df.head(
+                max_results
+            )[
+
+                [
+                    "Hisse",
+                    "Fiyat",
+                    "Trade Sınıfı",
+                    "Trade Skoru",
+                    "Yarın Skoru",
+                    "Günlük Skor",
+                    "Trend",
+                    "Pullback",
+                    "15D Trend",
+                    "15D VWAP",
+                    "RSI",
+                    "Hacim Oranı",
+                    "R/R",
+                    "Karar",
+                ]
+            ],
+
+            use_container_width=True,
+
+            hide_index=True,
+        )
+
+    # ========================================================
+    # A / B / C TRADE SINIFLARI
+    # ========================================================
+
+    st.markdown("---")
+
+    st.subheader(
+        "🏅 Trade A / B / C Sınıfları"
+    )
+
+    a_df = pool_df[
+        pool_df[
+            "Trade Sınıfı"
+        ]
+        == "🟢 A"
+    ].copy()
+
+    b_df = pool_df[
+        pool_df[
+            "Trade Sınıfı"
+        ]
+        == "🟡 B"
+    ].copy()
+
+    c_df = pool_df[
+        pool_df[
+            "Trade Sınıfı"
+        ]
+        == "🔵 C"
+    ].copy()
+
+    ta, tb, tc = st.tabs(
+        [
+            "🟢 A SINIFI",
+            "🟡 B SINIFI",
+            "🔵 C SINIFI",
+        ]
+    )
+
+    # --------------------------------------------------------
+    # A SINIFI
+    # --------------------------------------------------------
+
+    with ta:
+
+        st.caption(
+            """
+            **A Sınıfı:** Trade Adayları içerisindeki
+            en güçlü teknik yapı. Yüksek trade skoru,
+            güçlü günlük setup, yeterli R/R ve 15D teyit
+            aranır.
+            """
+        )
+
+        if a_df.empty:
+
+            st.info(
+                "Bugün A sınıfı Trade Adayı oluşmadı."
+            )
+
+        else:
+
+            st.dataframe(
+                a_df[
+                    [
+                        "Hisse",
+                        "Fiyat",
+                        "Trade Skoru",
+                        "Yarın Skoru",
+                        "Günlük Skor",
+                        "Trend",
+                        "Pullback",
+                        "15D Trend",
+                        "15D VWAP",
+                        "RSI",
+                        "Hacim Oranı",
+                        "R/R",
+                        "Stop",
+                        "Hedef",
+                    ]
+                ],
+
+                use_container_width=True,
+
+                hide_index=True,
+            )
+
+    # --------------------------------------------------------
+    # B SINIFI
+    # --------------------------------------------------------
+
+    with tb:
+
+        st.caption(
+            """
+            **B Sınıfı:** Güçlü Trade Adayı.
+            Teknik yapı olumlu ancak A sınıfındaki
+            tüm teyitler henüz tamamlanmamış olabilir.
+            """
+        )
+
+        if b_df.empty:
+
+            st.info(
+                "Bugün B sınıfı Trade Adayı oluşmadı."
+            )
+
+        else:
+
+            st.dataframe(
+                b_df[
+                    [
+                        "Hisse",
+                        "Fiyat",
+                        "Trade Skoru",
+                        "Yarın Skoru",
+                        "Günlük Skor",
+                        "Trend",
+                        "Pullback",
+                        "15D Trend",
+                        "15D VWAP",
+                        "RSI",
+                        "Hacim Oranı",
+                        "R/R",
+                    ]
+                ],
+
+                use_container_width=True,
+
+                hide_index=True,
+            )
+
+    # --------------------------------------------------------
+    # C SINIFI
+    # --------------------------------------------------------
+
+    with tc:
+
+        st.caption(
+            """
+            **C Sınıfı:** Trade Adayı havuzunda bulunan
+            ancak A/B seviyesinde yeterli teyide ulaşmamış
+            hisseler. İzlenir, doğrudan öncelikli trade
+            olarak değerlendirilmez.
+            """
+        )
+
+        if c_df.empty:
+
+            st.info(
+                "Bugün C sınıfı Trade Adayı oluşmadı."
+            )
+
+        else:
+
+            st.dataframe(
+                c_df[
+                    [
+                        "Hisse",
+                        "Fiyat",
+                        "Trade Skoru",
+                        "Yarın Skoru",
+                        "Günlük Skor",
+                        "Trend",
+                        "Pullback",
+                        "15D Trend",
+                        "15D VWAP",
+                        "RSI",
+                        "Hacim Oranı",
+                        "R/R",
+                    ]
+                ],
+
+                use_container_width=True,
+
+                hide_index=True,
+            )
+
+    # ========================================================
+    # EN İYİ 10
+    # ========================================================
+
+    st.markdown("---")
+
+    st.subheader(
+        "🏆 En Güçlü 10 Setup"
+    )
 
     st.dataframe(
-        top_df[
+        pool_df.head(10)[
+
             [
                 "Hisse",
                 "Fiyat",
                 "Trade Skoru",
+                "Yarın Skoru",
+                "Trend",
                 "Pullback",
                 "15D Trend",
-                "Teyit",
-                "VWAP",
                 "RSI",
                 "Hacim Oranı",
                 "R/R",
+                "Trade Sınıfı",
                 "Karar",
             ]
         ],
+
         use_container_width=True,
+
         hide_index=True,
     )
 
-
     # ========================================================
-    # DETAYLI HİSSE
+    # DETAY
     # ========================================================
 
     st.markdown("---")
 
-    st.subheader("🔍 Trade Detayı")
+    st.subheader(
+        "🔍 Trade Detayı"
+    )
 
     selected = st.selectbox(
         "Hisse seç",
-        result_df["Hisse"].tolist(),
+        pool_df[
+            "Hisse"
+        ].tolist(),
     )
 
-    selected_row = result_df[
-        result_df["Hisse"] == selected
+    selected_row = pool_df[
+        pool_df["Hisse"]
+        == selected
     ].iloc[0]
 
-    d1, d2, d3, d4 = st.columns(4)
+    d1, d2, d3, d4, d5 = (
+        st.columns(5)
+    )
 
     d1.metric(
         "Trade Skoru",
-        f"{selected_row['Trade Skoru']:.1f}"
+        f"{selected_row['Trade Skoru']:.1f}",
     )
 
     d2.metric(
-        "Pullback",
-        f"{selected_row['Pullback']:.1f}"
+        "Günlük Setup",
+        f"{selected_row['Günlük Skor']:.1f}",
     )
 
     d3.metric(
-        "15D Trend",
-        f"{selected_row['15D Trend']:.1f}"
+        "15D",
+        f"{selected_row['15D Trend']:.1f}",
     )
 
     d4.metric(
-        "Risk / Ödül",
-        f"{selected_row['R/R']:.2f}"
-    )
-
-    st.markdown("### 📌 Trade Planı")
-
-    plan1, plan2, plan3, plan4 = st.columns(4)
-
-    plan1.metric(
-        "Giriş",
-        f"{selected_row['Fiyat']:.2f} TL"
-    )
-
-    plan2.metric(
-        "Stop",
-        f"{selected_row['Stop']:.2f} TL"
-    )
-
-    plan3.metric(
-        "Hedef",
-        f"{selected_row['Hedef']:.2f} TL"
-    )
-
-    plan4.metric(
         "R/R",
-        f"{selected_row['R/R']:.2f}"
+        f"{selected_row['R/R']:.2f}",
+    )
+
+    d5.metric(
+        "Sınıf",
+        selected_row[
+            "Trade Sınıfı"
+        ],
+    )
+
+    st.markdown(
+        "### 📌 Trade Planı"
+    )
+
+    p1, p2, p3, p4 = (
+        st.columns(4)
+    )
+
+    p1.metric(
+        "Giriş",
+        f"{selected_row['Fiyat']:.2f} TL",
+    )
+
+    p2.metric(
+        "Stop",
+        f"{selected_row['Stop']:.2f} TL",
+    )
+
+    p3.metric(
+        "Hedef",
+        f"{selected_row['Hedef']:.2f} TL",
+    )
+
+    p4.metric(
+        "R/R",
+        f"{selected_row['R/R']:.2f}",
     )
 
     # ========================================================
     # KONTROL LİSTESİ
     # ========================================================
 
-    st.markdown("### ✅ Trade Kontrol Listesi")
+    st.markdown(
+        "### ✅ Trade Kontrol Listesi"
+    )
 
-    price = selected_row["Fiyat"]
-    support = selected_row["Destek"]
-    resistance = selected_row["Direnç"]
+    price = float(
+        selected_row["Fiyat"]
+    )
+
+    support = float(
+        selected_row["Destek"]
+    )
+
+    resistance = float(
+        selected_row["Direnç"]
+    )
 
     checklist = {
-        "Likidite yeterli": selected_row["Likidite"] >= min_liquidity,
-        "Pullback güçlü": selected_row["Pullback"] >= PULLBACK_THRESHOLD,
-        "15D trend pozitif": selected_row["15D Trend"] >= INTRADAY_THRESHOLD,
-        "VWAP üzerinde": selected_row["VWAP"] == "ÜSTÜNDE",
-        "RSI uygun": 45 <= selected_row["RSI"] <= 70,
-        "Hacim destekli": selected_row["Hacim Oranı"] >= 1.0,
-        "Risk / Ödül uygun": selected_row["R/R"] >= 1.5,
-        "Direnç mesafesi mevcut": resistance > price,
-        "Destek altında değil": support < price,
+
+        "Likidite yeterli": (
+            selected_row[
+                "Likidite"
+            ]
+            >= min_liquidity
+        ),
+
+        "Günlük trend kabul edilebilir": (
+            selected_row[
+                "Trend"
+            ]
+            >= 45
+        ),
+
+        "Pullback kabul edilebilir": (
+            selected_row[
+                "Pullback"
+            ]
+            >= 40
+        ),
+
+        "RSI aşırı zayıf değil": (
+            selected_row[
+                "RSI"
+            ]
+            >= 40
+        ),
+
+        "Hacim kabul edilebilir": (
+            selected_row[
+                "Hacim Oranı"
+            ]
+            >= 0.70
+        ),
+
+        "R/R kabul edilebilir": (
+            selected_row[
+                "R/R"
+            ]
+            >= 1.20
+        ),
+
+        "Direnç yukarıda": (
+            resistance > price
+        ),
+
+        "Destek fiyatın altında": (
+            support < price
+        ),
     }
 
-    for name, passed in checklist.items():
+    for name, passed in (
+        checklist.items()
+    ):
 
         if passed:
-            st.success(f"🟢 {name}")
+
+            st.success(
+                f"🟢 {name}"
+            )
 
         else:
-            st.warning(f"🟠 {name}")
 
+            st.warning(
+                f"🟠 {name}"
+            )
 
     # ========================================================
     # CSV
     # ========================================================
 
-    csv = result_df.to_csv(
+    csv = pool_df.to_csv(
         index=False,
-        encoding="utf-8-sig"
+        encoding="utf-8-sig",
     )
 
     st.download_button(
-        "📥 Tarama Sonuçlarını Excel/CSV İçin İndir",
+        "📥 Trade Havuzunu CSV Olarak İndir",
         data=csv,
         file_name=(
-            f"gunluk_trade_"
+            f"gunluk_trade_havuzu_"
             f"{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
         ),
         mime="text/csv",
@@ -1088,7 +3217,7 @@ if st.button(
 
 
 # ============================================================
-# ALT BİLGİ
+# ALT
 # ============================================================
 
 st.markdown("---")
@@ -1096,8 +3225,12 @@ st.markdown("---")
 st.caption(
     """
     ⚠️ Bu modül yatırım tavsiyesi değildir.
-    Günlük trade sinyali; teknik göstergeler, likidite,
-    momentum, intraday trend ve risk/ödül kriterlerinin
-    birlikte değerlendirilmesiyle oluşturulur.
+
+    Günlük trade skoru; günlük trend, pullback, momentum,
+    hacim, VWAP, 15 dakikalık teyit ve risk/ödül bileşenlerinden
+    oluşan bir sıralama sistemidir.
+
+    A/B/C sınıfları ise yalnızca mevcut Trade Adaylarının
+    teknik kalite seviyesini birbirinden ayırmak için kullanılır.
     """
 )

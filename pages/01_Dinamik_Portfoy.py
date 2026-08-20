@@ -1,2321 +1,5171 @@
+# ============================================================
+# BIST AI PRO
+# Dinamik_Portfoy.py
+#
+# YENİ NESİL DİNAMİK PORTFÖY MOTORU v3
+#
+# AMAÇ
+# ------------------------------------------------------------
+# BIST500
+#    ↓
+# VERİ KALİTESİ
+#    ↓
+# LİKİDİTE
+#    ↓
+# TEKNİK GÖSTERGELER
+#    ↓
+# MOMENTUM
+#    ↓
+# KAP / FİNANSAL KALİTE
+#    ↓
+# SEKTÖR GÜCÜ
+#    ↓
+# PİYASA UYUMU
+#    ↓
+# RİSK
+#    ↓
+# DİNAMİK SKOR
+#    ↓
+# ADAY HAVUZU
+#    ↓
+# SEKTÖR ÇEŞİTLENDİRME
+#    ↓
+# DİNAMİK PORTFÖY
+#
+# ÖNEMLİ
+# ------------------------------------------------------------
+# - SQLite veritabanına hiçbir değişiklik yapmaz.
+# - Tablo oluşturmaz.
+# - Veri yazmaz.
+# - technical_analysis içindeki hazır göstergeleri keşfeder.
+# - Eksik teknik gösterge varsa mevcut göstergelerle devam eder.
+# - Finansal veri eksikliği ayrıca gösterilir.
+# - Tek bir kriter yüzünden kaliteli hisse otomatik öldürülmez.
+# ============================================================
 
-import json
 import sqlite3
-from pathlib import Path
+import math
+import os
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-try:
-    from streamlit_autorefresh import st_autorefresh
-except ImportError:
-    st_autorefresh = None
-
 
 # ============================================================
-# BIST AI PRO — DİNAMİK PORTFÖY
-#
-# TASARIM PRENSİPLERİ
+# AYARLAR
+# ============================================================
+
+DB_PATH = "borsa.db"
+
+DEFAULT_POOL = "BIST500"
+DEFAULT_PORTFOLIO_SIZE = 10
+
+MIN_HISTORY = 60
+MIN_PRICE = 1.0
+
 # ------------------------------------------------------------
-# 1) Bu sayfa DIŞ KAYNAK TARAMAZ.
-# 2) Ana veri kaynağı borsa.db / technical_analysis snapshot'tır.
-# 3) Financial score varsa KAP tabanlı financial_scores kullanılır.
-# 4) Veri eksikse uygulama çökmez; nötr değer + veri güveni gösterilir.
-# 5) Hedef ağırlıklar tek hisse ve sektör tavanlarına gerçekten uyar.
-# 6) Hedef ağırlıklar toplamı %100'e tamamlanır.
-# 7) Mevcut portföyde hedef havuzunda olmayan hisseler ayrıca riskte gösterilir.
-# 8) UI yenileme veri taraması değildir.
-# ============================================================
+# ANA AĞIRLIKLAR
+# ------------------------------------------------------------
+#
+# Yeni mimari:
+#
+# Finansal      %25
+# Teknik        %25
+# Sektör        %15
+# Momentum      %15
+# Likidite      %10
+# Piyasa        %10
+#
+# TOPLAM        %100
+# ------------------------------------------------------------
 
-st.set_page_config(
-    page_title="BIST AI PRO - Dinamik Portföy",
-    page_icon="🏆",
-    layout="wide",
-)
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "borsa.db"
-
-# Tarama Merkezi ile uyumlu ana ağırlıklar
-W_TECH = 0.50
-W_FUND = 0.20
-W_MOM = 0.15
-W_MARKET = 0.15
-
-DEFAULT_SECTOR_MIN = 60.0
-DEFAULT_STOCK_MIN = 70.0
-DEFAULT_MAX_POSITIONS = 6
-DEFAULT_STOCK_CAP = 25.0
-DEFAULT_SECTOR_CAP = 40.0
+WEIGHT_FINANCIAL = 0.25
+WEIGHT_TECHNICAL = 0.25
+WEIGHT_SECTOR = 0.15
+WEIGHT_MOMENTUM = 0.15
+WEIGHT_LIQUIDITY = 0.10
+WEIGHT_MARKET = 0.10
 
 
 # ============================================================
-# GÜVENLİ YARDIMCILAR
+# ADAY FİLTRELERİ
+# ============================================================
+#
+# Bunlar artık eski sistemdeki gibi 5 ayrı sert kapı değildir.
+#
+# Ana amaç:
+# 1) Çok kötü teknik yapıyı ele
+# 2) Çok kötü finansalı ele
+# 3) Sonra toplam skora göre sırala
+#
 # ============================================================
 
-def safe_float(value, default=0.0):
-    try:
-        if value is None or pd.isna(value):
-            return float(default)
-        return float(value)
-    except (TypeError, ValueError):
-        return float(default)
+MIN_DYNAMIC_SCORE = 50
 
+MIN_TECHNICAL_SCORE = 35
+MIN_MOMENTUM_SCORE = 30
+MIN_FINANCIAL_SCORE = 25
 
-def clamp(value, low=0.0, high=100.0, default=50.0):
-    value = safe_float(value, default)
-    return max(low, min(high, value))
+# Çok kötü finansal yapı
+HARD_FINANCIAL_FLOOR = 15
 
+# Çok kötü teknik yapı
+HARD_TECHNICAL_FLOOR = 20
 
-def normalize_symbol(value):
-    value = str(value or "").upper().strip()
-    if value.endswith(".IS"):
-        value = value[:-3]
-    return value
-
-
-def money(value):
-    value = safe_float(value)
-    return (
-        f"{value:,.2f}"
-        .replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
-        + " TL"
-    )
-
-
-def pct(value):
-    return f"{safe_float(value):.1f}%"
-
-
-def decision(score):
-    score = clamp(score)
-    if score >= 85:
-        return "🟢 GÜÇLÜ AL"
-    if score >= 70:
-        return "🟢 AL"
-    if score >= 55:
-        return "🟡 TUT"
-    if score >= 40:
-        return "🟠 İZLE"
-    return "🔴 SAT"
-
-
-def sector_status(score):
-    score = clamp(score)
-    if score >= 80:
-        return "🟢 Çok Güçlü"
-    if score >= 70:
-        return "🟢 Güçlü"
-    if score >= 60:
-        return "🟡 Olumlu"
-    if score >= 50:
-        return "🟠 Nötr"
-    return "🔴 Zayıf"
-
-
-def open_db():
-    conn = sqlite3.connect(
-        DB_PATH,
-        timeout=30,
-        check_same_thread=False,
-    )
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def table_exists(conn, table):
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-        (table,),
-    ).fetchone()
-    return row is not None
-
-
-def table_columns(conn, table):
-    if not table_exists(conn, table):
-        return []
-    return [
-        row["name"]
-        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
-    ]
-
-
-def first_existing(columns, candidates):
-    return next((x for x in candidates if x in columns), None)
-
-
-def to_datetime_series(series):
-    return pd.to_datetime(series, errors="coerce")
+# Çok kötü momentum
+HARD_MOMENTUM_FLOOR = 15
 
 
 # ============================================================
-# SEKTÖR EŞLEŞTİRME
+# LİKİDİTE
 # ============================================================
 
-SECTOR_MAP = {
-    # Banka
-    "AKBNK": "Banka", "GARAN": "Banka", "ISCTR": "Banka",
-    "YKBNK": "Banka", "VAKBN": "Banka", "HALKB": "Banka",
-    "TSKB": "Banka", "SKBNK": "Banka", "ALBRK": "Banka",
-    "KLNMA": "Banka", "ICBCT": "Banka",
+MIN_AVG_VOLUME_TL = 5_000_000
 
-    # Enerji
-    "AKFYE": "Enerji", "AKSEN": "Enerji", "ENJSA": "Enerji",
-    "GWIND": "Enerji", "GESAN": "Enerji", "EUPWR": "Enerji",
-    "ODAS": "Enerji", "ZOREN": "Enerji", "AYDEM": "Enerji",
-    "ALFAS": "Enerji", "ASTOR": "Enerji", "SMRTG": "Enerji",
-    "YEOTK": "Enerji", "CWENE": "Enerji", "KONTR": "Enerji",
-    "BIOEN": "Enerji", "MAGEN": "Enerji", "NATEN": "Enerji",
-    "ESEN": "Enerji", "ENERY": "Enerji", "MOGAN": "Enerji",
 
-    # Savunma
-    "ASELS": "Savunma", "SDTTR": "Savunma", "ALTNY": "Savunma",
-    "ONRYT": "Savunma",
+# ============================================================
+# PORTFÖY ÇEŞİTLENDİRME
+# ============================================================
 
-    # Havacılık / Ulaştırma
-    "THYAO": "Havacılık", "PGSUS": "Havacılık", "TAVHL": "Havacılık",
-    "CLEBI": "Havacılık", "RYSAS": "Ulaştırma",
+MAX_SECTOR_WEIGHT = 0.30
+MAX_STOCKS_PER_SECTOR = 3
 
-    # Perakende
-    "BIMAS": "Perakende", "MGROS": "Perakende", "SOKM": "Perakende",
+SECTOR_CONCENTRATION_PENALTY = 5.0
 
-    # Gıda / İçecek
-    "CCOLA": "Gıda/İçecek", "ULKER": "Gıda/İçecek",
-    "TATGD": "Gıda/İçecek", "TUKAS": "Gıda/İçecek",
-    "PETUN": "Gıda/İçecek", "PNSUT": "Gıda/İçecek",
 
-    # Holding
-    "KCHOL": "Holding", "SAHOL": "Holding", "DOHOL": "Holding",
-    "AGHOL": "Holding",
+# ============================================================
+# RİSK CEZALARI
+# ============================================================
 
-    # Otomotiv
-    "FROTO": "Otomotiv", "TOASO": "Otomotiv",
-    "TTRAK": "Otomotiv", "OTKAR": "Otomotiv", "KARSN": "Otomotiv",
+PENALTY_EMA50 = 6
+PENALTY_EMA20 = 3
+PENALTY_RSI_HIGH = 4
+PENALTY_RSI_LOW = 2
+PENALTY_LOW_VOLUME = 4
+PENALTY_HIGH_VOLATILITY = 5
+PENALTY_MACD_NEGATIVE = 3
+PENALTY_ADX_WEAK = 2
+PENALTY_BELOW_120_HIGH = 3
 
-    # Metal
-    "EREGL": "Metal", "KRDMD": "Metal", "BRSAN": "Metal",
-    "ISDMR": "Metal",
 
-    # Madencilik
-    "KOZAL": "Madencilik", "KOZAA": "Madencilik",
+# ============================================================
+# SEKTÖR
+# ============================================================
 
-    # Petrokimya
-    "TUPRS": "Petrokimya", "PETKM": "Petrokimya",
+SECTOR_UNKNOWN = "Diğer"
 
-    # Kimya
-    "AKSA": "Kimya", "SASA": "Kimya", "HEKTS": "Kimya",
 
-    # Çimento
-    "OYAKC": "Çimento", "CIMSA": "Çimento", "BUCIM": "Çimento",
-    "AKCNS": "Çimento", "KONYA": "Çimento", "NUHCM": "Çimento",
-    "BSOKE": "Çimento", "GOLTS": "Çimento",
+CUSTOM_SECTOR_MAP = {
 
-    # İnşaat
-    "ENKAI": "İnşaat", "TKFEN": "İnşaat",
+    "ASELS": "Savunma",
+    "SDTTR": "Savunma",
+    "ALTNY": "Savunma",
 
-    # Teknoloji
-    "LOGO": "Teknoloji", "MIATK": "Teknoloji", "MOBTL": "Teknoloji",
-    "ARDYZ": "Teknoloji", "ALCTL": "Teknoloji",
+    "FORTE": "Teknoloji",
+    "MIATK": "Teknoloji",
+    "ATATP": "Teknoloji",
+    "ARDYZ": "Teknoloji",
 
-    # GYO
-    "EKGYO": "GYO", "TRGYO": "GYO", "ISGYO": "GYO",
+    "TUPRS": "Enerji",
+    "AKSEN": "Enerji",
+    "AKFYE": "Enerji",
+    "GESAN": "Enerji",
+    "EUPWR": "Enerji",
 
-    # Sigorta
-    "ANSGR": "Sigorta", "TURSG": "Sigorta", "AGESA": "Sigorta",
+    "TKFEN": "İnşaat",
+    "ENKAI": "İnşaat",
 
-    # Telekom
-    "TCELL": "Telekomünikasyon", "TTKOM": "Telekomünikasyon",
+    "RYSAS": "Lojistik",
 
-    # Turizm
-    "TURSG": "Sigorta",
+    "THYAO": "Ulaştırma",
+
+    "BIMAS": "Perakende",
+    "MGROS": "Perakende",
+
+    "CCOLA": "Gıda",
+
+    "FROTO": "Otomotiv",
+
+    "KCHOL": "Holding",
 }
 
 
-def resolve_sector(symbol, raw_sector=""):
-    symbol = normalize_symbol(symbol)
-    if symbol in SECTOR_MAP:
-        return SECTOR_MAP[symbol]
-    raw_sector = str(raw_sector or "").strip()
-    return raw_sector if raw_sector else "Diğer"
-
-
 # ============================================================
-# LATEST SNAPSHOT
+# GENEL YARDIMCI FONKSİYONLAR
 # ============================================================
 
-def latest_per_symbol(conn, table):
-    """
-    Teknik/finansal tablolarda symbol başına TEK son kayıt döndürür.
-    MAX(...) ile aynı timestamp'e sahip birden fazla satır üretme
-    problemini önlemek için ROW_NUMBER kullanılır.
-    """
-    if not table_exists(conn, table):
-        return pd.DataFrame()
-
-    columns = table_columns(conn, table)
-    if "symbol" not in columns:
-        return pd.DataFrame()
-
-    order_candidates = [
-        "analysis_date",
-        "updated_at",
-        "created_at",
-        "date",
-        "timestamp",
-    ]
-    order_cols = [x for x in order_candidates if x in columns]
-
-    if not order_cols:
-        return pd.read_sql_query(
-            f"SELECT * FROM {table}",
-            conn,
-        )
-
-    # Birden fazla tarih alanı varsa COALESCE ile en anlamlı tarih kullanılır.
-    date_expr = "COALESCE(" + ",".join(order_cols) + ")"
-
-    query = f"""
-        SELECT *
-        FROM (
-            SELECT
-                t.*,
-                ROW_NUMBER() OVER (
-                    PARTITION BY symbol
-                    ORDER BY {date_expr} DESC, rowid DESC
-                ) AS rn
-            FROM {table} t
-        )
-        WHERE rn = 1
-    """
+def clamp(value, low=0, high=100):
 
     try:
-        return pd.read_sql_query(query, conn)
+
+        if value is None or pd.isna(value):
+            return low
+
+        value = float(value)
+
+        if not np.isfinite(value):
+            return low
+
+        return max(low, min(high, value))
+
     except Exception:
-        # Eski SQLite/şema ihtimaline karşı güvenli fallback.
-        order = order_cols[0]
-        query = f"""
-            SELECT t.*
-            FROM {table} t
-            JOIN (
-                SELECT symbol, MAX({order}) AS mx
-                FROM {table}
-                GROUP BY symbol
-            ) x
-              ON x.symbol=t.symbol
-             AND x.mx=t.{order}
-        """
-        return pd.read_sql_query(query, conn)
+
+        return low
 
 
-# ============================================================
-# MARKET SNAPSHOT
-# ============================================================
-
-def load_market_snapshot(conn):
-    if not table_exists(conn, "market_snapshot"):
-        return 50.0, [], None, False
-
-    columns = table_columns(conn, "market_snapshot")
-    if "id" not in columns:
-        return 50.0, [], None, False
+def safe_float(value, default=np.nan):
 
     try:
-        row = conn.execute(
-            "SELECT * FROM market_snapshot WHERE id=1 LIMIT 1"
-        ).fetchone()
-    except Exception:
-        return 50.0, [], None, False
 
-    if not row:
-        return 50.0, [], None, False
+        if value is None:
+            return default
 
-    data = dict(row)
-    score = clamp(data.get("market_score"), default=50)
-    reasons = [
-        x.strip()
-        for x in str(data.get("reasons") or "").split("||")
-        if x.strip()
-    ]
+        if isinstance(value, str):
 
-    stamp = None
-    for key in ("snapshot_at", "updated_at", "created_at"):
-        if data.get(key):
-            stamp = pd.to_datetime(data.get(key), errors="coerce")
-            if pd.notna(stamp):
-                break
-
-    return score, reasons, stamp, True
-
-
-# ============================================================
-# UPDATE STATUS
-# ============================================================
-
-def load_update_status(conn):
-    if not table_exists(conn, "data_update_status"):
-        return {}
-
-    try:
-        row = conn.execute(
-            "SELECT * FROM data_update_status WHERE id=1 LIMIT 1"
-        ).fetchone()
-        return dict(row) if row else {}
-    except Exception:
-        return {}
-
-
-# ============================================================
-# UNIVERSE
-# ============================================================
-
-def try_load_universe(name):
-    """
-    BIST listeleri yalnızca DB snapshot'ını filtrelemek için kullanılır.
-    Burada dış kaynak çağrısı yoktur.
-    """
-    try:
-        from modules.data.bist_lists import BIST30, BIST50, BIST100, BIST500
-
-        mapping = {
-            "BIST 30": BIST30,
-            "BIST 50": BIST50,
-            "BIST 100": BIST100,
-            "BIST 500": BIST500,
-        }
-        return {
-            normalize_symbol(x)
-            for x in mapping.get(name, [])
-            if normalize_symbol(x)
-        }
-    except Exception:
-        return set()
-
-
-# ============================================================
-# SNAPSHOT OKUMA
-# ============================================================
-
-def load_dynamic_cache_rows(conn):
-    """dynamic_portfolio_cache içindeki son BIST snapshotını okur."""
-    if not table_exists(conn, "dynamic_portfolio_cache"):
-        return pd.DataFrame(), None, "cache_table_yok"
-
-    cols = table_columns(conn, "dynamic_portfolio_cache")
-    if "analysis_json" not in cols or "symbol" not in cols:
-        return pd.DataFrame(), None, "cache_schema_uyumsuz"
-
-    try:
-        select_cols = ["symbol", "analysis_json"]
-        for col in ["market_score", "analysis_time", "updated_at", "universe"]:
-            if col in cols:
-                select_cols.append(col)
-
-        df = pd.read_sql_query(
-            f"SELECT {', '.join(select_cols)} "
-            "FROM dynamic_portfolio_cache "
-            "WHERE analysis_json IS NOT NULL "
-            "AND TRIM(analysis_json) <> ''",
-            conn,
-        )
-    except Exception:
-        return pd.DataFrame(), None, "cache_okunamadi"
-
-    if df.empty:
-        return pd.DataFrame(), None, "cache_bos"
-
-    rows = []
-    for _, item in df.iterrows():
-        try:
-            data = json.loads(item["analysis_json"])
-        except Exception:
-            continue
-
-        if not isinstance(data, dict):
-            continue
-
-        data.setdefault("Hisse", normalize_symbol(item["symbol"]))
-
-        if "market_score" in df.columns:
-            data.setdefault(
-                "Piyasa",
-                safe_float(item.get("market_score"), 50.0),
+            value = (
+                value
+                .replace("%", "")
+                .replace("TL", "")
+                .replace("₺", "")
+                .replace("Mr", "")
+                .replace("Mn", "")
+                .replace(",", ".")
+                .strip()
             )
 
-        data["_cache_analysis_time"] = item.get("analysis_time")
-        data["_cache_updated_at"] = item.get("updated_at")
-        data["_cache_universe"] = item.get("universe")
-        rows.append(data)
+        value = float(value)
 
-    if not rows:
-        return pd.DataFrame(), None, "cache_json_gecersiz"
+        if not np.isfinite(value):
+            return default
 
-    out = pd.DataFrame(rows)
-    out["Hisse"] = out["Hisse"].map(normalize_symbol)
-    out = out[out["Hisse"].ne("")].drop_duplicates("Hisse")
+        return value
 
-    # Cache'teki alanları standardize et.
-    aliases = {
-        "Teknik": ["Teknik", "technical_score", "ai_score", "score"],
-        "Fundamental": ["Fundamental", "fundamental_score"],
-        "Momentum 60G": ["Momentum 60G", "momentum_60_score", "momentum_score"],
-        "Trend": ["Trend", "trend_strength", "trend_score"],
-        "Fiyat": ["Fiyat", "price", "last_price", "close"],
-        "Günlük %": ["Günlük %", "change", "change_percent"],
-        "RSI": ["RSI", "rsi"],
-        "Hacim x": ["Hacim x", "volume_ratio"],
-        "1Y Getiri %": ["1Y Getiri %", "year_return", "return_1y"],
+    except Exception:
+
+        return default
+
+
+def normalize_column_name(name):
+
+    return (
+        str(name)
+        .strip()
+        .lower()
+        .replace(" ", "_")
+        .replace("-", "_")
+        .replace("/", "_")
+        .replace("(", "")
+        .replace(")", "")
+        .replace("%", "pct")
+    )
+
+
+def find_column(df, candidates):
+
+    if df is None or df.empty:
+        return None
+
+    normalized = {
+        normalize_column_name(c): c
+        for c in df.columns
     }
 
-    for target, choices in aliases.items():
-        source = next((c for c in choices if c in out.columns), None)
-        if source is None:
-            out[target] = np.nan
-        else:
-            out[target] = pd.to_numeric(
-                out[source],
-                errors="coerce",
-            )
+    # Exact
+    for candidate in candidates:
 
-    out["Teknik"] = out["Teknik"].fillna(50).clip(0, 100)
-    out["Fundamental"] = out["Fundamental"].fillna(50).clip(0, 100)
-    out["Momentum 60G"] = out["Momentum 60G"].fillna(50).clip(0, 100)
-    out["Trend"] = out["Trend"].fillna(50).clip(0, 100)
-    out["Fiyat"] = out["Fiyat"].fillna(0)
-    out["RSI"] = out["RSI"].fillna(50).clip(0, 100)
-    out["Hacim x"] = out["Hacim x"].fillna(0)
-    out["1Y Getiri %"] = out["1Y Getiri %"].fillna(0)
+        c = normalize_column_name(candidate)
 
-    if "Piyasa" not in out.columns:
-        out["Piyasa"] = 50.0
-    out["Piyasa"] = pd.to_numeric(
-        out["Piyasa"], errors="coerce"
-    ).fillna(50).clip(0, 100)
+        if c in normalized:
+            return normalized[c]
 
-    # Cache'te eski Genel Skor varsa bile bileşenlerden yeniden üret.
-    # Böylece karar eşikleri ve Tarama Merkezi ağırlıkları tek kaynaktan gelir.
-    out["Genel Skor"] = (
-        out["Teknik"] * W_TECH
-        + out["Fundamental"] * W_FUND
-        + out["Momentum 60G"] * W_MOM
-        + out["Piyasa"] * W_MARKET
-    ).clip(0, 100).round(1)
+    # Fuzzy
+    for candidate in candidates:
 
-    out["Karar"] = out["Genel Skor"].map(decision)
+        c = normalize_column_name(candidate)
 
-    if "Sektör" not in out.columns:
-        out["Sektör"] = "Diğer"
-    out["Sektör"] = out["Sektör"].fillna("Diğer").astype(str)
-    out["Financial Veri"] = (
-        out["Fundamental"].notna()
-        & ~out["Fundamental"].eq(50.0)
+        for existing in normalized:
+
+            if c in existing or existing in c:
+                return normalized[existing]
+
+    return None
+
+
+def clean_symbol(value):
+
+    if value is None:
+        return None
+
+    s = str(value).upper().strip()
+
+    s = s.replace(".IS", "")
+
+    return s
+
+
+# ============================================================
+# DATABASE
+# ============================================================
+
+@st.cache_resource
+def get_connection():
+
+    if not os.path.exists(DB_PATH):
+        return None
+
+    return sqlite3.connect(
+        DB_PATH,
+        check_same_thread=False
     )
 
-    analysis_time = pd.to_datetime(
-        out["_cache_analysis_time"],
-        errors="coerce",
-    )
-    latest = (
-        analysis_time.max()
-        if not analysis_time.empty
-        else None
-    )
 
-    return out.reset_index(drop=True), latest, "ok"
+def get_tables():
 
+    conn = get_connection()
 
-@st.cache_data(ttl=30, show_spinner=False)
-def load_snapshot_data():
-    conn = open_db()
+    if conn is None:
+        return []
 
     try:
-        # 1) Öncelik: veri güncelleme motorunun kaydettiği cache.
-        stocks, cache_time, cache_status = load_dynamic_cache_rows(conn)
-        source = "dynamic_portfolio_cache"
 
-        # 2) Cache yoksa teknik snapshot.
-        if stocks.empty:
-            tech = latest_per_symbol(conn, "technical_analysis")
-            if tech.empty:
-                return {
-                    "stocks": pd.DataFrame(),
-                    "market_score": 50.0,
-                    "market_reasons": [],
-                    "market_at": None,
-                    "market_valid": False,
-                    "status": load_update_status(conn),
-                    "source": "YOK",
-                    "data_time": None,
-                    "error": (
-                        "dynamic_portfolio_cache ve "
-                        "technical_analysis içinde geçerli snapshot yok."
-                    ),
-                }
+        q = """
+        SELECT name
+        FROM sqlite_master
+        WHERE type='table'
+        ORDER BY name
+        """
 
-            tech["Hisse"] = tech["symbol"].map(normalize_symbol)
+        return pd.read_sql_query(
+            q,
+            conn
+        )["name"].tolist()
 
-            def num(target, candidates, default):
-                source_col = next(
-                    (c for c in candidates if c in tech.columns),
-                    None,
+    except Exception:
+
+        return []
+
+
+def read_table(table_name):
+
+    conn = get_connection()
+
+    if conn is None:
+        return pd.DataFrame()
+
+    if table_name not in get_tables():
+        return pd.DataFrame()
+
+    try:
+
+        return pd.read_sql_query(
+            f'SELECT * FROM "{table_name}"',
+            conn
+        )
+
+    except Exception:
+
+        return pd.DataFrame()
+
+
+def find_existing_table(possible_names):
+
+    tables = get_tables()
+
+    normalized_tables = {
+        normalize_column_name(t): t
+        for t in tables
+    }
+
+    for name in possible_names:
+
+        n = normalize_column_name(name)
+
+        if n in normalized_tables:
+            return normalized_tables[n]
+
+    return None
+
+
+# ============================================================
+# TABLOLARI YÜKLE
+# ============================================================
+
+def load_stocks():
+
+    table = find_existing_table([
+        "stocks",
+        "stock",
+        "bist500_universe",
+        "bist500",
+        "universe"
+    ])
+
+    if table is None:
+        return pd.DataFrame()
+
+    return read_table(table)
+
+
+def load_prices():
+
+    table = find_existing_table([
+        "stock_prices",
+        "prices",
+        "price_history"
+    ])
+
+    if table is None:
+        return pd.DataFrame()
+
+    return read_table(table)
+
+
+def load_technical():
+
+    table = find_existing_table([
+        "technical_analysis",
+        "technical",
+        "technical_data"
+    ])
+
+    if table is None:
+        return pd.DataFrame()
+
+    return read_table(table)
+
+
+def load_fundamentals():
+
+    table = find_existing_table([
+        "fundamentals",
+        "financials",
+        "financial_analysis",
+        "kap_financials",
+        "kap_data"
+    ])
+
+    if table is None:
+        return pd.DataFrame()
+
+    return read_table(table)
+
+
+# ============================================================
+# KOLON BULMA
+# ============================================================
+
+def detect_symbol_column(df):
+
+    return find_column(
+        df,
+        [
+            "symbol",
+            "ticker",
+            "code",
+            "stock_code",
+            "hisse",
+            "hisse_kodu",
+            "kod",
+            "ticker_symbol"
+        ]
+    )
+
+
+def detect_sector_column(df):
+
+    return find_column(
+        df,
+        [
+            "sector",
+            "sektor",
+            "sector_name",
+            "sektor_adi",
+            "industry"
+        ]
+    )
+
+
+# ============================================================
+# SEKTÖR
+# ============================================================
+
+def get_sector(symbol, stocks_df):
+
+    symbol = clean_symbol(symbol)
+
+    if symbol in CUSTOM_SECTOR_MAP:
+
+        return CUSTOM_SECTOR_MAP[symbol]
+
+    if not stocks_df.empty:
+
+        symbol_col = detect_symbol_column(
+            stocks_df
+        )
+
+        sector_col = detect_sector_column(
+            stocks_df
+        )
+
+        if symbol_col and sector_col:
+
+            rows = stocks_df[
+                stocks_df[symbol_col]
+                .astype(str)
+                .str.upper()
+                .str.replace(
+                    ".IS",
+                    "",
+                    regex=False
                 )
-                if source_col is None:
-                    tech[target] = default
-                else:
-                    tech[target] = pd.to_numeric(
-                        tech[source_col],
-                        errors="coerce",
-                    ).fillna(default)
-
-            num("Teknik", ["ai_score", "score", "technical_score"], 50)
-            num("Momentum 60G", ["momentum_60_score", "momentum_score", "momentum"], 50)
-            num("Trend", ["trend_strength", "trend_score"], 50)
-            num("Fiyat", ["price", "last_price", "close"], 0)
-            num("Günlük %", ["change", "change_percent"], 0)
-            num("RSI", ["rsi"], 50)
-            num("Hacim x", ["volume_ratio"], 0)
-            num("1Y Getiri %", ["year_return", "return_1y"], 0)
-
-            tech["Teknik"] = tech["Teknik"].clip(0, 100)
-            tech["Momentum 60G"] = tech["Momentum 60G"].clip(0, 100)
-            tech["Trend"] = tech["Trend"].clip(0, 100)
-            tech["RSI"] = tech["RSI"].clip(0, 100)
-
-            # stocks tablosundan sektör metadata.
-            if table_exists(conn, "stocks"):
-                sm = pd.read_sql_query(
-                    "SELECT * FROM stocks",
-                    conn,
-                )
-                if not sm.empty and "symbol" in sm.columns:
-                    sm["Hisse"] = sm["symbol"].map(normalize_symbol)
-                    keep = [
-                        x for x in
-                        ["Hisse", "sector", "company", "industry"]
-                        if x in sm.columns
-                    ]
-                    if keep:
-                        tech = tech.merge(
-                            sm[keep].drop_duplicates("Hisse"),
-                            on="Hisse",
-                            how="left",
-                        )
-
-            raw_sector = (
-                tech["sector"]
-                if "sector" in tech.columns
-                else pd.Series("", index=tech.index)
-            )
-            tech["Sektör"] = [
-                resolve_sector(s, r)
-                for s, r in zip(tech["Hisse"], raw_sector)
+                == symbol
             ]
 
-            tech["Fundamental"] = 50.0
-            tech["Financial Veri"] = False
+            if not rows.empty:
 
-            # KAP finansal skorunu ekle.
-            financial = latest_per_symbol(conn, "financial_scores")
-            if not financial.empty and "symbol" in financial.columns:
-                financial["Hisse"] = financial["symbol"].map(normalize_symbol)
-                if "total_score" in financial.columns:
-                    financial["total_score"] = pd.to_numeric(
-                        financial["total_score"],
-                        errors="coerce",
-                    )
-                    fcols = [
-                        x for x in
-                        ["Hisse", "total_score", "fiscal_year", "fiscal_period"]
-                        if x in financial.columns
-                    ]
-                    tech = tech.merge(
-                        financial[fcols].drop_duplicates("Hisse"),
-                        on="Hisse",
-                        how="left",
-                    )
-                    tech["Financial Veri"] = tech["total_score"].notna()
-                    tech["Fundamental"] = (
-                        pd.to_numeric(
-                            tech["total_score"],
-                            errors="coerce",
-                        )
-                        .fillna(50)
-                        .clip(0, 100)
-                    )
-
-            # Market snapshot aşağıda okunacak; şimdilik nötr.
-            market_score_tmp = 50.0
-            tech["Piyasa"] = market_score_tmp
-            tech["Genel Skor"] = (
-                tech["Teknik"] * W_TECH
-                + tech["Fundamental"] * W_FUND
-                + tech["Momentum 60G"] * W_MOM
-                + tech["Piyasa"] * W_MARKET
-            ).clip(0, 100).round(1)
-            tech["Karar"] = tech["Genel Skor"].map(decision)
-
-            stocks = (
-                tech[
-                    tech["Hisse"].astype(str).str.strip().ne("")
+                sector = rows.iloc[0][
+                    sector_col
                 ]
-                .drop_duplicates("Hisse")
-                .reset_index(drop=True)
-            )
-            source = "technical_analysis"
-            cache_time = None
 
-        # Sektör override'ları her kaynaktan sonra uygulanır.
-        stocks["Hisse"] = stocks["Hisse"].map(normalize_symbol)
+                if pd.notna(sector):
 
-        raw_sector = (
-            stocks["Sektör"]
-            if "Sektör" in stocks.columns
-            else pd.Series("", index=stocks.index)
-        )
-        stocks["Sektör"] = [
-            resolve_sector(s, r)
-            for s, r in zip(stocks["Hisse"], raw_sector)
-        ]
+                    return str(sector)
 
-        # Market snapshot.
-        market_score, reasons, market_at, market_valid = (
-            load_market_snapshot(conn)
-        )
-
-        # Market snapshot geçerliyse Genel Skoru tekrar üret.
-        # Cache'teki eski piyasa puanı böylece bayat kalmaz.
-        if market_valid:
-            stocks["Piyasa"] = float(market_score)
-        else:
-            if "Piyasa" in stocks.columns:
-                stocks["Piyasa"] = pd.to_numeric(
-                    stocks["Piyasa"], errors="coerce"
-                ).fillna(50).clip(0, 100)
-            else:
-                stocks["Piyasa"] = 50.0
-        stocks["Genel Skor"] = (
-            pd.to_numeric(stocks["Teknik"], errors="coerce").fillna(50)
-            * W_TECH
-            + pd.to_numeric(stocks["Fundamental"], errors="coerce").fillna(50)
-            * W_FUND
-            + pd.to_numeric(stocks["Momentum 60G"], errors="coerce").fillna(50)
-            * W_MOM
-            + stocks["Piyasa"] * W_MARKET
-        ).clip(0, 100).round(1)
-        stocks["Karar"] = stocks["Genel Skor"].map(decision)
-
-        # Cache'ten gelmeyen kayıtlarda finansal veri güveni.
-        if "Financial Veri" not in stocks.columns:
-            stocks["Financial Veri"] = False
-
-        # Snapshot zamanı.
-        data_time = cache_time
-        if data_time is None:
-            for col in [
-                "analysis_date",
-                "updated_at",
-                "created_at",
-                "date",
-                "timestamp",
-            ]:
-                if col in stocks.columns:
-                    x = pd.to_datetime(
-                        stocks[col],
-                        errors="coerce",
-                    ).max()
-                    if pd.notna(x):
-                        data_time = x
-                        break
-
-        stocks["_snapshot_time"] = data_time
-
-        return {
-            "stocks": stocks.reset_index(drop=True),
-            "market_score": clamp(market_score),
-            "market_reasons": reasons,
-            "market_at": market_at,
-            "market_valid": market_valid,
-            "status": load_update_status(conn),
-            "source": source,
-            "data_time": data_time,
-            "error": "",
-        }
-
-    except Exception as exc:
-        return {
-            "stocks": pd.DataFrame(),
-            "market_score": 50.0,
-            "market_reasons": [f"DB okuma hatası: {exc}"],
-            "market_at": None,
-            "market_valid": False,
-            "status": {},
-            "source": "HATA",
-            "data_time": None,
-            "error": str(exc),
-        }
-    finally:
-        conn.close()
+    return SECTOR_UNKNOWN
 
 
 # ============================================================
-# MEVCUT PORTFÖY
+# BIST EVRENİ
 # ============================================================
 
-@st.cache_data(ttl=15, show_spinner=False)
-def load_current_portfolio():
-    """
-    Önce portfolio tablosunu okur.
-    portfolio yok/boşsa transactions üzerinden net lot hesaplar.
-    Böylece ASTOR vb. lot senkronizasyon sorunlarında ekran boş kalmaz.
-    """
-    conn = open_db()
-    try:
-        def read_position_table():
-            if not table_exists(conn, "portfolio"):
-                return {}
+def detect_index_columns(df):
 
-            columns = table_columns(conn, "portfolio")
-            symbol_col = first_existing(
-                columns,
-                ["symbol", "ticker", "stock", "hisse", "hisse_kodu"],
-            )
-            qty_col = first_existing(
-                columns,
-                ["quantity", "shares", "lot", "adet", "kalan_adet"],
-            )
-            if not symbol_col or not qty_col:
-                return {}
-
-            df = pd.read_sql_query(
-                f"SELECT {symbol_col} AS symbol, "
-                f"{qty_col} AS quantity FROM portfolio",
-                conn,
-            )
-
-            result = {}
-            for _, row in df.iterrows():
-                symbol = normalize_symbol(row["symbol"])
-                qty = safe_float(row["quantity"])
-                if symbol and qty > 0:
-                    result[symbol] = result.get(symbol, 0.0) + qty
-            return result
-
-        result = read_position_table()
-        if result:
-            return result
-
-        if not table_exists(conn, "transactions"):
-            return {}
-
-        cols = table_columns(conn, "transactions")
-        symbol_col = first_existing(
-            cols,
-            ["symbol", "ticker", "stock", "hisse", "hisse_kodu"],
+    return [
+        c for c in df.columns
+        if any(
+            x in normalize_column_name(c)
+            for x in [
+                "index",
+                "endeks",
+                "bist"
+            ]
         )
-        qty_col = first_existing(
-            cols,
-            ["quantity", "shares", "lot", "adet"],
-        )
-        side_col = first_existing(
-            cols,
-            ["type", "transaction_type", "side", "islem", "işlem",
-             "action", "transaction"],
-        )
-
-        if not symbol_col or not qty_col:
-            return {}
-
-        select_cols = (
-            f"{symbol_col} AS symbol, "
-            f"{qty_col} AS quantity"
-        )
-        if side_col:
-            select_cols += f", {side_col} AS side"
-
-        df = pd.read_sql_query(
-            f"SELECT {select_cols} FROM transactions",
-            conn,
-        )
-
-        result = {}
-        for _, row in df.iterrows():
-            symbol = normalize_symbol(row["symbol"])
-            qty = safe_float(row["quantity"])
-            if not symbol or qty == 0:
-                continue
-
-            side = str(row.get("side", "")).upper()
-            if any(x in side for x in ["SELL", "SAT", "SALE", "ÇIKIŞ", "CIKIS"]):
-                qty = -abs(qty)
-            elif any(x in side for x in ["BUY", "AL", "PURCHASE", "GİRİŞ", "GIRIS"]):
-                qty = abs(qty)
-
-            result[symbol] = result.get(symbol, 0.0) + qty
-
-        return {
-            symbol: qty
-            for symbol, qty in result.items()
-            if qty > 0
-        }
-
-    except Exception:
-        return {}
-    finally:
-        conn.close()
+    ]
 
 
-# ============================================================
-# SEKTÖR GÜCÜ
-# ============================================================
+def build_universe(
+    stocks_df,
+    selected_pool
+):
 
-def calculate_sector_scores(stock_df):
-    """
-    Sektör güç modeli
+    if stocks_df.empty:
+        return []
 
-    %35 Hisse Gücü
-    %25 Momentum
-    %20 Trend
-    %10 Genişlik
-    %10 Relatif Güç
+    symbol_col = detect_symbol_column(
+        stocks_df
+    )
 
-    Sektör hesabı hisse minimum skor filtresinden ÖNCE
-    tüm geçerli snapshot üzerinden yapılır.
-    """
+    if symbol_col is None:
+        return []
 
-    if stock_df is None or stock_df.empty:
-        return pd.DataFrame()
+    df = stocks_df.copy()
 
-    work = stock_df.copy()
-
-    # --------------------------------------------------------
-    # Gerekli kolonları güvenli oluştur
-    # --------------------------------------------------------
-
-    numeric_defaults = {
-        "Genel Skor": 50.0,
-        "Momentum 60G": 50.0,
-        "Trend": 50.0,
-        "1Y Getiri %": 0.0,
-    }
-
-    for col, default in numeric_defaults.items():
-        if col not in work.columns:
-            work[col] = default
-
-        work[col] = pd.to_numeric(
-            work[col],
-            errors="coerce",
-        ).fillna(default)
-
-    if "Karar" not in work.columns:
-        work["Karar"] = work["Genel Skor"].map(decision)
-
-    if "Sektör" not in work.columns:
-        work["Sektör"] = "Diğer"
-
-    work["Sektör"] = (
-        work["Sektör"]
-        .fillna("Diğer")
+    df["__symbol"] = (
+        df[symbol_col]
         .astype(str)
+        .str.upper()
+        .str.replace(
+            ".IS",
+            "",
+            regex=False
+        )
         .str.strip()
     )
 
-    work.loc[
-        work["Sektör"].eq(""),
-        "Sektör"
-    ] = "Diğer"
+    df = df[
+        df["__symbol"].notna()
+        & (df["__symbol"] != "")
+    ]
 
-    # --------------------------------------------------------
-    # Evren ortalama 1Y getirisi
-    # --------------------------------------------------------
-
-    universe_return = safe_float(
-        work["1Y Getiri %"].mean(),
-        0.0,
+    index_cols = detect_index_columns(
+        df
     )
 
-    rows = []
+    target_patterns = {
 
-    # --------------------------------------------------------
-    # Sektör bazında hesap
-    # --------------------------------------------------------
+        "BIST500": "BIST500|BIST 500|XU500",
 
-    for sector, group in work.groupby(
-        "Sektör",
-        dropna=False,
-    ):
+        "BIST100": "BIST100|BIST 100|XU100",
 
-        sector = str(sector or "Diğer").strip()
+        "BIST50": "BIST50|BIST 50|XU050",
 
-        if not sector:
-            sector = "Diğer"
+        "BIST30": "BIST30|BIST 30|XU030"
+    }
 
-        # Hisse gücü
-        average_general_score = clamp(
-            group["Genel Skor"].mean(),
-            default=50.0,
-        )
+    pattern = target_patterns.get(
+        selected_pool.upper()
+    )
 
-        # Momentum
-        momentum = clamp(
-            group["Momentum 60G"].mean(),
-            default=50.0,
-        )
+    if pattern:
 
-        # Trend
-        trend = clamp(
-            group["Trend"].mean(),
-            default=50.0,
-        )
+        for col in index_cols:
 
-        # ----------------------------------------------------
-        # Genişlik
-        #
-        # AL + GÜÇLÜ AL hisselerinin sektördeki oranı
-        # ----------------------------------------------------
+            mask = (
+                df[col]
+                .astype(str)
+                .str.upper()
+                .str.contains(
+                    pattern,
+                    regex=True
+                )
+            )
 
-        buy_mask = group["Karar"].isin(
-            [
-                "🟢 AL",
-                "🟢 GÜÇLÜ AL",
-            ]
-        )
+            if mask.any():
 
-        breadth = (
-            float(buy_mask.mean() * 100.0)
-            if len(group) > 0
-            else 0.0
-        )
+                df = df[mask]
 
-        breadth = clamp(
-            breadth,
-            default=0.0,
-        )
-
-        # ----------------------------------------------------
-        # Sektör 1Y relatif güç
-        # ----------------------------------------------------
-
-        sector_return = safe_float(
-            group["1Y Getiri %"].mean(),
-            universe_return,
-        )
-
-        relative_strength = clamp(
-            50.0
-            + (
-                sector_return
-                - universe_return
-            ) * 2.0,
-            default=50.0,
-        )
-
-        # ----------------------------------------------------
-        # Nihai sektör skoru
-        # ----------------------------------------------------
-
-        sector_score = clamp(
-            average_general_score * 0.35
-            + momentum * 0.25
-            + trend * 0.20
-            + breadth * 0.10
-            + relative_strength * 0.10,
-            default=50.0,
-        )
-
-        # ----------------------------------------------------
-        # Ayrıntılı sektör kaydı
-        #
-        # Burada ESKİ isimleri de tutuyoruz.
-        # Böylece mevcut UI ve ilerideki kodlar kırılmaz.
-        # ----------------------------------------------------
-
-        rows.append(
-            {
-                "Sektör": sector,
-
-                # Ana skor
-                "Sektör Skoru": round(
-                    sector_score,
-                    1,
-                ),
-
-                # Eski / açıklayıcı isim
-                "Hisse Gücü": round(
-                    average_general_score,
-                    1,
-                ),
-
-                # UI uyumluluğu
-                "Ortalama Genel Skor": round(
-                    average_general_score,
-                    1,
-                ),
-
-                "Momentum": round(
-                    momentum,
-                    1,
-                ),
-
-                "Trend": round(
-                    trend,
-                    1,
-                ),
-
-                "Genişlik %": round(
-                    breadth,
-                    1,
-                ),
-
-                # UI uyumluluğu
-                "AL Genişliği %": round(
-                    breadth,
-                    1,
-                ),
-
-                "Relatif Güç": round(
-                    relative_strength,
-                    1,
-                ),
-
-                "Sektör 1Y %": round(
-                    sector_return,
-                    1,
-                ),
-
-                "AL": int(
-                    (
-                        group["Karar"]
-                        == "🟢 AL"
-                    ).sum()
-                ),
-
-                "Güçlü AL": int(
-                    (
-                        group["Karar"]
-                        == "🟢 GÜÇLÜ AL"
-                    ).sum()
-                ),
-
-                "Toplam Hisse": int(
-                    len(group)
-                ),
-
-                "Durum": sector_status(
-                    sector_score
-                ),
-            }
-        )
-
-    if not rows:
-        return pd.DataFrame(
-            columns=[
-                "Sektör",
-                "Sektör Skoru",
-                "Hisse Gücü",
-                "Ortalama Genel Skor",
-                "Momentum",
-                "Trend",
-                "Genişlik %",
-                "AL Genişliği %",
-                "Relatif Güç",
-                "Sektör 1Y %",
-                "AL",
-                "Güçlü AL",
-                "Toplam Hisse",
-                "Durum",
-            ]
-        )
-
-    result = pd.DataFrame(rows)
+                break
 
     return (
-        result
-        .sort_values(
-            [
-                "Sektör Skoru",
-                "Toplam Hisse",
-            ],
-            ascending=[
-                False,
-                False,
-            ],
-        )
-        .reset_index(drop=True)
+        df["__symbol"]
+        .drop_duplicates()
+        .tolist()
     )
 
+
 # ============================================================
-# ADAY HAVUZU
+# FİYAT VERİSİ
 # ============================================================
 
-def build_candidates(stock_df, sector_df, sector_min, stock_min):
-    if stock_df.empty or sector_df.empty:
+def get_price_data(
+    prices_df,
+    symbol
+):
+
+    if prices_df.empty:
         return pd.DataFrame()
 
-    eligible_sectors = set(
-        sector_df.loc[
-            sector_df["Sektör Skoru"] >= sector_min,
-            "Sektör",
+    symbol_col = detect_symbol_column(
+        prices_df
+    )
+
+    if symbol_col is None:
+        return pd.DataFrame()
+
+    symbol = clean_symbol(symbol)
+
+    df = prices_df[
+        prices_df[symbol_col]
+        .astype(str)
+        .str.upper()
+        .str.replace(
+            ".IS",
+            "",
+            regex=False
+        )
+        .str.strip()
+        == symbol
+    ].copy()
+
+    if df.empty:
+        return pd.DataFrame()
+
+    date_col = find_column(
+        df,
+        [
+            "date",
+            "datetime",
+            "timestamp",
+            "tarih",
+            "time"
         ]
     )
 
-    candidates = stock_df[
-        (stock_df["Sektör"].isin(eligible_sectors))
-        & (stock_df["Genel Skor"] >= stock_min)
-        & (stock_df["Karar"].isin(["🟢 AL", "🟢 GÜÇLÜ AL"]))
-    ].copy()
-
-    if candidates.empty:
-        return candidates
-
-    sector_lookup = dict(
-        zip(
-            sector_df["Sektör"],
-            sector_df["Sektör Skoru"],
-        )
+    close_col = find_column(
+        df,
+        [
+            "close",
+            "adj_close",
+            "kapanis",
+            "fiyat"
+        ]
     )
 
-    candidates["Sektör Skoru"] = (
-        candidates["Sektör"].map(sector_lookup).fillna(50.0)
+    volume_col = find_column(
+        df,
+        [
+            "volume",
+            "hacim",
+            "volume_tl"
+        ]
     )
 
-    # Portföy skoru:
-    # Genel %65 + sektör %25 + momentum %10
-    candidates["Portföy Skoru"] = (
-        candidates["Genel Skor"] * 0.65
-        + candidates["Sektör Skoru"] * 0.25
-        + candidates["Momentum 60G"] * 0.10
-    ).clip(0, 100).round(1)
+    if close_col is None:
+        return pd.DataFrame()
 
-    candidates["Aday Gücü"] = np.where(
-        candidates["Karar"].eq("🟢 GÜÇLÜ AL"),
-        "⭐⭐⭐⭐⭐",
-        "⭐⭐⭐⭐",
+    df["close"] = pd.to_numeric(
+        df[close_col],
+        errors="coerce"
     )
 
-    candidates["Veri Güveni"] = np.where(
-        candidates["Financial Veri"],
-        "🟢 Teknik + KAP",
-        "🟡 Teknik + nötr finansal",
-    )
+    if volume_col:
 
-    return candidates.sort_values(
-        ["Portföy Skoru", "Genel Skor", "Momentum 60G"],
-        ascending=False,
-    ).reset_index(drop=True)
-
-
-# ============================================================
-# KISITLI AĞIRLIK MOTORU
-# ============================================================
-
-def allocate_capped_weights(candidates, max_positions, stock_cap, sector_cap):
-    """
-    Gerçek kısıtlı ağırlık dağıtımı.
-
-    Önce skor bazlı ağırlık oluşturur.
-    Sonra:
-      - tek hisse tavanını,
-      - tek sektör tavanını
-    uygular.
-    Kalan ağırlığı, kapasitesi olan hisselere tekrar dağıtır.
-
-    Böylece eski kodda görülen:
-        cap -> normalize -> cap ihlali
-    problemi oluşmaz.
-    """
-    if candidates.empty or max_positions <= 0:
-        return candidates.copy()
-
-    df = candidates.head(int(max_positions)).copy().reset_index(drop=True)
-
-    stock_cap = max(0.0, min(100.0, safe_float(stock_cap, 25.0)))
-    sector_cap = max(0.0, min(100.0, safe_float(sector_cap, 40.0)))
-
-    if df.empty:
-        return df
-
-    scores = df["Portföy Skoru"].clip(lower=0.01).astype(float)
-    raw = scores / scores.sum() * 100.0
-
-    # Başlangıç
-    weights = pd.Series(0.0, index=df.index)
-
-    # Aktif sektörler ve hisse kapasiteleri
-    active = set(df.index)
-
-    # Adım adım dağıtım.
-    # Her turda kalan ağırlığı skor oranına göre dağıt,
-    # limitlere takılanları sabitle ve kalanları tekrar dağıt.
-    for _ in range(50):
-        if not active:
-            break
-
-        remaining = 100.0 - float(weights.sum())
-        if remaining <= 1e-9:
-            break
-
-        active_idx = sorted(active)
-        active_scores = scores.loc[active_idx]
-
-        if active_scores.sum() <= 0:
-            shares = pd.Series(
-                1.0 / len(active_idx),
-                index=active_idx,
-            )
-        else:
-            shares = active_scores / active_scores.sum()
-
-        proposed = shares * remaining
-        capped_any = False
-
-        # Önce hisse kapasitesi
-        for idx in active_idx:
-            stock_room = max(0.0, stock_cap - weights.loc[idx])
-            if proposed.loc[idx] > stock_room + 1e-9:
-                weights.loc[idx] += stock_room
-                active.remove(idx)
-                capped_any = True
-
-        # Sektör kapasitesi:
-        # mevcut + önerilenler üzerinden sektör toplamını sınırla.
-        for sector in df.loc[active_idx, "Sektör"].unique():
-            sector_idx = [
-                i for i in active_idx
-                if i in active and df.loc[i, "Sektör"] == sector
-            ]
-            if not sector_idx:
-                continue
-
-            current_sector = float(
-                weights.loc[
-                    df.index[df["Sektör"] == sector]
-                ].sum()
-            )
-            room = max(0.0, sector_cap - current_sector)
-
-            proposed_sector = float(proposed.loc[sector_idx].sum())
-
-            if proposed_sector > room + 1e-9:
-                # Oransal biçimde sektör içine dağıt.
-                if proposed_sector <= 0:
-                    continue
-
-                for idx in sector_idx:
-                    add = proposed.loc[idx] / proposed_sector * room
-                    weights.loc[idx] += add
-
-                # Sektör doldu; bu hisseleri aktiften çıkar.
-                for idx in sector_idx:
-                    active.remove(idx)
-
-                capped_any = True
-
-        if not capped_any:
-            for idx in active_idx:
-                if idx in active:
-                    weights.loc[idx] += proposed.loc[idx]
-            break
-
-    # Yuvarlama sonrası küçük farkları güvenli biçimde dağıt.
-    weights = weights.clip(lower=0.0)
-
-    total = float(weights.sum())
-    if total > 0 and abs(total - 100.0) > 1e-7:
-        weights = weights / total * 100.0
-
-    # Son doğrulama: floating point yüzünden cap aşımı oluşursa düzelt.
-    weights = weights.clip(upper=stock_cap)
-
-    # Sektör tavanı kesin kontrol.
-    for sector in df["Sektör"].unique():
-        idx = df.index[df["Sektör"] == sector]
-        total_sector = float(weights.loc[idx].sum())
-        if total_sector > sector_cap + 1e-7:
-            weights.loc[idx] *= sector_cap / total_sector
-
-    # Cap düzeltmesinden sonra toplam %100 olmayabilir.
-    # Bu durumda kapasitesi olanlara tekrar dağıt.
-    for _ in range(100):
-        total = float(weights.sum())
-        remainder = 100.0 - total
-
-        if remainder <= 1e-8:
-            break
-
-        capacities = {}
-        for idx in df.index:
-            stock_room = max(0.0, stock_cap - weights.loc[idx])
-
-            sector = df.loc[idx, "Sektör"]
-            sector_idx = df.index[df["Sektör"] == sector]
-            sector_room = max(
-                0.0,
-                sector_cap - float(weights.loc[sector_idx].sum()),
-            )
-
-            capacities[idx] = min(stock_room, sector_room)
-
-        total_capacity = sum(capacities.values())
-        if total_capacity <= 1e-8:
-            break
-
-        # Skor bazlı kapasite önceliği
-        priority = scores * pd.Series(
-            capacities,
-            index=df.index,
-        )
-        if priority.sum() <= 0:
-            priority = pd.Series(capacities, index=df.index)
-
-        for idx in df.index:
-            add = (
-                remainder * priority.loc[idx] / priority.sum()
-                if priority.sum() > 0
-                else 0
-            )
-            weights.loc[idx] += min(
-                add,
-                capacities[idx],
-            )
-
-    # Nihai güvenlik kontrolü
-    weights = weights.clip(0.0, stock_cap)
-
-    for sector in df["Sektör"].unique():
-        idx = df.index[df["Sektör"] == sector]
-        total_sector = float(weights.loc[idx].sum())
-        if total_sector > sector_cap + 1e-7:
-            weights.loc[idx] *= sector_cap / total_sector
-
-    df["Hedef Oran %"] = weights.round(2)
-
-    # Portföyde sıfır ağırlıklı aday kalmasın.
-    df = df[df["Hedef Oran %"] > 0].copy()
-
-    return df.reset_index(drop=True)
-
-
-# ============================================================
-# MEVCUT / HEDEF KARŞILAŞTIRMA
-# ============================================================
-
-def compare_portfolio(target_df, current, capital):
-    if target_df.empty:
-        return target_df.copy()
-
-    df = target_df.copy()
-    capital = max(0.0, safe_float(capital))
-
-    df["Mevcut Lot"] = 0.0
-    df["Mevcut Değer"] = 0.0
-    df["Mevcut Oran %"] = 0.0
-
-    for idx, row in df.iterrows():
-        symbol = row["Hisse"]
-        qty = safe_float(current.get(symbol))
-        price = safe_float(row["Fiyat"])
-        value = qty * price
-
-        df.at[idx, "Mevcut Lot"] = qty
-        df.at[idx, "Mevcut Değer"] = value
-        df.at[idx, "Mevcut Oran %"] = (
-            value / capital * 100.0
-            if capital > 0
-            else 0.0
+        df["volume"] = pd.to_numeric(
+            df[volume_col],
+            errors="coerce"
         )
 
-    df["Oran Farkı %"] = (
-        df["Hedef Oran %"] - df["Mevcut Oran %"]
-    ).round(2)
+    else:
 
-    actions = []
+        df["volume"] = np.nan
 
-    for _, row in df.iterrows():
-        current_weight = safe_float(row["Mevcut Oran %"])
-        target_weight = safe_float(row["Hedef Oran %"])
-        diff = target_weight - current_weight
+    if date_col:
 
-        if current_weight <= 0.001:
-            action = "🟢 YENİ POZİSYON"
-        elif diff >= 3:
-            action = "🟢 AĞIRLIK ARTIR"
-        elif diff <= -5:
-            action = "🟠 AĞIRLIK AZALT"
-        else:
-            action = "🟡 KORU"
+        df["date"] = pd.to_datetime(
+            df[date_col],
+            errors="coerce"
+        )
 
-        actions.append(action)
+        df = df.sort_values(
+            "date"
+        )
 
-    df["Aksiyon"] = actions
-
-    df["Hedef Tutar"] = (
-        df["Hedef Oran %"] / 100.0 * capital
+    df = df.dropna(
+        subset=["close"]
     )
-    df["Al/Sat Tutarı"] = (
-        df["Hedef Tutar"] - df["Mevcut Değer"]
-    )
-
-    safe_price = df["Fiyat"].replace(0, np.nan)
-    df["Hedef Lot"] = (
-        df["Hedef Tutar"] / safe_price
-    ).fillna(0.0)
-
-    df["Hedef Lot"] = np.floor(df["Hedef Lot"]).astype(float)
-
-    df["Lot Farkı"] = (
-        df["Hedef Lot"] - df["Mevcut Lot"]
-    ).round(0)
 
     return df
 
 
 # ============================================================
-# MEVCUT PORTFÖY RİSKİ
+# TEKNİK ANALİZ TABLOSU İÇİN SATIR BULMA
 # ============================================================
 
-def build_risk_table(stock_df, sector_df, current, sector_min, stock_min):
-    if not current:
-        return pd.DataFrame()
+def find_technical_row(
+    technical_df,
+    symbol
+):
 
-    sector_lookup = dict(
-        zip(
-            sector_df["Sektör"],
-            sector_df["Sektör Skoru"],
+    if technical_df.empty:
+        return pd.Series(
+            dtype=object
         )
-    ) if not sector_df.empty else {}
 
-    rows = []
+    symbol_col = detect_symbol_column(
+        technical_df
+    )
 
-    for symbol, qty in current.items():
-        match = stock_df[
-            stock_df["Hisse"] == symbol
+    if symbol_col is None:
+        return pd.Series(
+            dtype=object
+        )
+
+    symbol = clean_symbol(symbol)
+
+    rows = technical_df[
+        technical_df[symbol_col]
+        .astype(str)
+        .str.upper()
+        .str.replace(
+            ".IS",
+            "",
+            regex=False
+        )
+        .str.strip()
+        == symbol
+    ]
+
+    if rows.empty:
+        return pd.Series(
+            dtype=object
+        )
+
+    # Eğer tarih varsa son satır
+    date_col = find_column(
+        rows,
+        [
+            "date",
+            "datetime",
+            "tarih",
+            "timestamp"
         ]
+    )
 
-        if match.empty:
-            rows.append({
-                "Hisse": symbol,
-                "Lot": qty,
-                "Durum": "🟠 VERİ YOK",
-                "Neden": "Son DB snapshotında analiz bulunamadı.",
-            })
-            continue
+    if date_col:
 
-        row = match.iloc[0]
-        sector_score = safe_float(
-            sector_lookup.get(row["Sektör"], 50.0),
-            50.0,
+        temp = rows.copy()
+
+        temp["__date"] = pd.to_datetime(
+            temp[date_col],
+            errors="coerce"
         )
 
-        if row["Karar"] == "🔴 SAT":
-            status = "🔴 ÇIKIŞ RİSKİ"
-            reason = "Genel skor satış bölgesinde."
+        temp = temp.sort_values(
+            "__date"
+        )
 
-        elif row["Karar"] in ["🟡 TUT", "🟠 İZLE"]:
-            status = "🟠 İZLE / AZALT"
-            reason = "Hisse aday havuzunun altında."
+        return temp.iloc[-1]
 
-        elif sector_score < sector_min:
-            status = "🟠 SEKTÖR RİSKİ"
-            reason = (
-                f"Sektör skoru {sector_score:.1f}; "
-                f"eşik {sector_min:.1f}."
+    return rows.iloc[-1]
+
+
+# ============================================================
+# TEKNİK KOLON KEŞFİ
+# ============================================================
+
+TECH_COLUMNS = {
+
+    "macd": [
+        "macd",
+        "macd_line",
+        "macd_degeri"
+    ],
+
+    "adx": [
+        "adx",
+        "adx_14"
+    ],
+
+    "atr_pct": [
+        "atr_pct",
+        "atr_percent",
+        "atr_yuzde",
+        "atr%"
+    ],
+
+    "bollinger_position": [
+        "bollinger_position",
+        "bollinger_pozisyon",
+        "bb_position",
+        "bollinger_pos"
+    ],
+
+    "bollinger_width": [
+        "bollinger_width",
+        "bollinger_genisligi",
+        "bb_width"
+    ],
+
+    "stochastic": [
+        "stochastic",
+        "stoch",
+        "stochastic_k",
+        "stoch_k"
+    ],
+
+    "momentum20": [
+        "20g_momentum",
+        "momentum_20",
+        "momentum20",
+        "20d_momentum"
+    ],
+
+    "momentum60": [
+        "60g_momentum",
+        "momentum_60",
+        "momentum60",
+        "60d_momentum"
+    ],
+
+    "momentum120": [
+        "120g_momentum",
+        "momentum_120",
+        "momentum120",
+        "120d_momentum"
+    ],
+
+    "high20": [
+        "20g_zirve_uzakligi",
+        "20g_zirve",
+        "distance_from_20d_high",
+        "20d_high_distance"
+    ],
+
+    "high60": [
+        "60g_zirve_uzakligi",
+        "60g_zirve",
+        "distance_from_60d_high",
+        "60d_high_distance"
+    ],
+
+    "high120": [
+        "120g_zirve_uzakligi",
+        "120g_zirve",
+        "distance_from_120d_high",
+        "120d_high_distance"
+    ],
+
+    "ema9_distance": [
+        "ema9_mesafesi",
+        "ema9_distance",
+        "distance_ema9"
+    ],
+
+    "ema20_distance": [
+        "ema20_mesafesi",
+        "ema20_distance",
+        "distance_ema20"
+    ],
+
+    "ema50_distance": [
+        "ema50_mesafesi",
+        "ema50_distance",
+        "distance_ema50"
+    ],
+
+    "ema20_50": [
+        "ema20_50",
+        "ema20_50_spread",
+        "ema20_50_fark"
+    ],
+
+    "ema50_100": [
+        "ema50_100",
+        "ema50_100_spread",
+        "ema50_100_fark"
+    ],
+
+    "volume20": [
+        "20g_hacim_orani",
+        "hacim_orani_20",
+        "volume_ratio_20",
+        "20d_volume_ratio"
+    ],
+
+    "volume60": [
+        "60g_hacim_orani",
+        "hacim_orani_60",
+        "volume_ratio_60",
+        "60d_volume_ratio"
+    ],
+
+    "volume_trend": [
+        "hacim_trendi",
+        "volume_trend",
+        "volume_trend_score"
+    ],
+
+    "obv_trend": [
+        "obv_trendi",
+        "obv_trend",
+        "obv_trend_score"
+    ]
+}
+
+
+def get_technical_value(
+    row,
+    indicator_name
+):
+
+    if row is None or len(row) == 0:
+        return np.nan
+
+    candidates = TECH_COLUMNS.get(
+        indicator_name,
+        []
+    )
+
+    return value_from_row(
+        row,
+        candidates
+    )
+
+
+# ============================================================
+# SATIR DEĞERİ
+# ============================================================
+
+def value_from_row(
+    row,
+    candidates
+):
+
+    if row is None or len(row) == 0:
+        return np.nan
+
+    normalized = {
+        normalize_column_name(c): c
+        for c in row.index
+    }
+
+    for candidate in candidates:
+
+        c = normalize_column_name(
+            candidate
+        )
+
+        if c in normalized:
+
+            return safe_float(
+                row[normalized[c]]
             )
 
-        elif row["Genel Skor"] < stock_min:
-            status = "🟠 HİSSE SKORU ZAYIF"
-            reason = (
-                f"Genel skor {row['Genel Skor']:.1f}; "
-                f"seçilen eşik {stock_min:.0f}."
+    for candidate in candidates:
+
+        c = normalize_column_name(
+            candidate
+        )
+
+        for existing in normalized:
+
+            if c in existing:
+
+                return safe_float(
+                    row[normalized[existing]]
+                )
+
+    return np.nan
+
+
+# ============================================================
+# 0-100 NORMALİZASYON
+# ============================================================
+
+def score_positive(
+    value,
+    weak,
+    good,
+    excellent
+):
+
+    if pd.isna(value):
+        return np.nan
+
+    value = float(value)
+
+    if value <= weak:
+        return 20.0
+
+    if value >= excellent:
+        return 100.0
+
+    if value >= good:
+
+        return (
+            60
+            + (
+                (value - good)
+                / (excellent - good)
             )
+            * 40
+        )
+
+    return (
+        20
+        + (
+            (value - weak)
+            / (good - weak)
+        )
+        * 40
+    )
+
+
+def score_negative(
+    value,
+    excellent,
+    good,
+    bad
+):
+
+    if pd.isna(value):
+        return np.nan
+
+    value = float(value)
+
+    if value <= excellent:
+        return 100.0
+
+    if value >= bad:
+        return 20.0
+
+    if value <= good:
+
+        return (
+            60
+            + (
+                (good - value)
+                / (good - excellent)
+            )
+            * 40
+        )
+
+    return (
+        20
+        + (
+            (bad - value)
+            / (bad - good)
+        )
+        * 40
+    )
+
+
+# ============================================================
+# TEKNİK SKOR
+# ============================================================
+
+def calculate_advanced_technical_score(
+    technical_row,
+    price
+):
+
+    result = {
+
+        "technical": 50.0,
+
+        "trend": 50.0,
+
+        "technical_data_count": 0,
+
+        "technical_available_count": 0,
+
+        "technical_reasons": [],
+
+        "technical_warnings": [],
+
+        "adx": np.nan,
+
+        "macd": np.nan,
+
+        "atr_pct": np.nan,
+
+        "bollinger_position": np.nan,
+
+        "bollinger_width": np.nan,
+
+        "stochastic": np.nan,
+
+        "ema20_50": np.nan,
+
+        "ema50_100": np.nan,
+
+        "volume_trend": np.nan,
+
+        "obv_trend": np.nan
+    }
+
+    if technical_row is None or len(
+        technical_row
+    ) == 0:
+
+        return result
+
+    scores = []
+
+    # --------------------------------------------------------
+    # EMA / TREND
+    # --------------------------------------------------------
+
+    ema_scores = []
+
+    for key in [
+        "ema9_distance",
+        "ema20_distance",
+        "ema50_distance",
+        "ema20_50",
+        "ema50_100"
+    ]:
+
+        value = get_technical_value(
+            technical_row,
+            key
+        )
+
+        if pd.notna(value):
+
+            result[
+                key
+            ] = value
+
+            result[
+                "technical_data_count"
+            ] += 1
+
+            # Mesafe göstergelerinde pozitif olması iyidir
+            if "distance" in key:
+
+                score = score_positive(
+                    value,
+                    -10,
+                    0,
+                    10
+                )
+
+            else:
+
+                score = score_positive(
+                    value,
+                    -10,
+                    0,
+                    10
+                )
+
+            if pd.notna(score):
+
+                ema_scores.append(
+                    score
+                )
+
+    if ema_scores:
+
+        trend_ema = np.mean(
+            ema_scores
+        )
+
+    else:
+
+        trend_ema = 50
+
+    # --------------------------------------------------------
+    # ADX
+    # --------------------------------------------------------
+
+    adx = get_technical_value(
+        technical_row,
+        "adx"
+    )
+
+    result["adx"] = adx
+
+    if pd.notna(adx):
+
+        result[
+            "technical_data_count"
+        ] += 1
+
+        result[
+            "technical_available_count"
+        ] += 1
+
+        if adx >= 30:
+
+            adx_score = 100
+
+            result[
+                "technical_reasons"
+            ].append(
+                "ADX güçlü trend"
+            )
+
+        elif adx >= 20:
+
+            adx_score = 75
+
+            result[
+                "technical_reasons"
+            ].append(
+                "ADX yeterli"
+            )
+
+        elif adx >= 15:
+
+            adx_score = 50
 
         else:
-            status = "🟢 UYGUN"
-            reason = "Mevcut kriterleri karşılıyor."
 
-        rows.append({
-            "Hisse": symbol,
-            "Lot": qty,
-            "Sektör": row["Sektör"],
-            "Sektör Skoru": sector_score,
-            "Genel Skor": row["Genel Skor"],
-            "Karar": row["Karar"],
-            "Durum": status,
-            "Neden": reason,
-        })
+            adx_score = 30
 
-    return pd.DataFrame(rows)
+            result[
+                "technical_warnings"
+            ].append(
+                "ADX zayıf"
+            )
 
-
-# ============================================================
-# VERİ DURUMU
-# ============================================================
-
-def format_timestamp(value):
-    value = pd.to_datetime(value, errors="coerce")
-    if pd.isna(value):
-        return "Bilinmiyor"
-    return value.strftime("%d.%m.%Y %H:%M:%S")
-
-
-def age_minutes(value):
-    value = pd.to_datetime(value, errors="coerce")
-    if pd.isna(value):
-        return None
-
-    now = pd.Timestamp.now(tz=None)
-
-    # timezone farklılığı varsa güvenli hale getir.
-    try:
-        if value.tzinfo is not None:
-            value = value.tz_localize(None)
-    except Exception:
-        pass
-
-    try:
-        return max(
-            0.0,
-            (now - value).total_seconds() / 60.0,
-        )
-    except Exception:
-        return None
-
-
-# ============================================================
-# SIDEBAR
-# ============================================================
-
-with st.sidebar:
-    st.header("⚙️ Dinamik Portföy")
-
-    universe_name = st.selectbox(
-        "Veri evreni",
-        ["DB Snapshot", "BIST 500", "BIST 100", "BIST 50", "BIST 30"],
-        index=0,
-        help="DB Snapshot tüm technical_analysis snapshot'ını kullanır. "
-             "BIST seçenekleri yalnızca DB içindeki hisseleri filtreler.",
-    )
-
-    sector_min = st.slider(
-        "Minimum sektör skoru",
-        40.0,
-        80.0,
-        DEFAULT_SECTOR_MIN,
-        1.0,
-    )
-
-    stock_min = st.slider(
-        "Minimum hisse Genel Skoru",
-        60.0,
-        90.0,
-        DEFAULT_STOCK_MIN,
-        1.0,
-    )
-
-    max_positions = st.slider(
-        "Maksimum hedef hisse",
-        3,
-        15,
-        DEFAULT_MAX_POSITIONS,
-        1,
-    )
-
-    max_stock_weight = st.slider(
-        "Tek hisse maksimum %",
-        10.0,
-        40.0,
-        DEFAULT_STOCK_CAP,
-        1.0,
-    )
-
-    max_sector_weight = st.slider(
-        "Tek sektör maksimum %",
-        20.0,
-        60.0,
-        DEFAULT_SECTOR_CAP,
-        1.0,
-    )
-
-    capital = st.number_input(
-        "Model portföy sermayesi (TL)",
-        min_value=0.0,
-        value=100000.0,
-        step=5000.0,
-    )
-
-    ui_refresh = st.selectbox(
-        "Arayüz yenileme",
-        [0, 5, 10, 15, 30],
-        index=0,
-        format_func=lambda x:
-            "Kapalı" if x == 0 else f"{x} dakika",
-        help="Sadece ekranı yeniler. Yeni veri taraması yapmaz.",
-    )
-
-    refresh_button = st.button(
-        "🔄 ŞİMDİ YENİLE",
-        use_container_width=True,
-    )
-
-    st.divider()
-    st.caption("Veri kaynağı: SQLite / borsa.db")
-    st.caption("Dış kaynak taraması: KAPALI")
-    st.caption("Emir gönderimi: KAPALI")
-
-
-if refresh_button:
-    st.cache_data.clear()
-    st.rerun()
-
-if ui_refresh > 0 and st_autorefresh is not None:
-    st_autorefresh(
-        interval=ui_refresh * 60 * 1000,
-        key="dynamic_portfolio_ui_refresh",
-    )
-
-
-# ============================================================
-# ANA VERİ
-# ============================================================
-
-payload = load_snapshot_data()
-
-stocks = payload["stocks"].copy()
-market_score = payload["market_score"]
-market_reasons = payload["market_reasons"]
-market_at = payload["market_at"]
-market_valid = payload["market_valid"]
-update_status = payload["status"]
-load_error = payload["error"]
-
-st.title("🏆 DİNAMİK AI PORTFÖY")
-st.caption(
-    "SQLite snapshot → sektör gücü → hisse skoru → "
-    "hedef ağırlık → mevcut portföy → rebalance"
-)
-
-if load_error and stocks.empty:
-    st.error(load_error)
-    st.info(
-        "Bu sayfa dış kaynağa gitmez. Önce veri güncelleme motorunun "
-        "technical_analysis snapshot üretmesi gerekir."
-    )
-    st.stop()
-
-
-# ============================================================
-# VERİ DURUMU
-# ============================================================
-
-last_success = pd.to_datetime(
-    update_status.get("last_success_at"),
-    errors="coerce",
-)
-
-snapshot_time = (
-    stocks["_snapshot_time"].iloc[0]
-    if not stocks.empty and "_snapshot_time" in stocks.columns
-    else None
-)
-
-if pd.isna(last_success):
-    status_time_text = "Henüz başarılı veri güncellemesi yok"
-    status_age_text = "Bilinmiyor"
-else:
-    status_time_text = format_timestamp(last_success)
-    age = age_minutes(last_success)
-    status_age_text = (
-        f"{age:.0f} dk" if age is not None else "Bilinmiyor"
-    )
-
-source_text = "SQLite önbellek / snapshot"
-
-st.info(
-    f"🟢 Son başarılı veri: **{status_time_text}** | "
-    f"Veri yaşı: **{status_age_text}** | "
-    f"Kaynak: **{source_text}**"
-)
-
-if str(update_status.get("status", "")).upper() in {
-    "ERROR", "FAILED"
-}:
-    st.warning(
-        "Son veri güncellemesi başarısız. "
-        "Mevcut geçerli DB snapshotı kullanılmaya devam ediyor."
-    )
-
-
-# ============================================================
-# EVREN FİLTRESİ
-# ============================================================
-
-if universe_name == "DB Snapshot":
-    universe_symbols = set(stocks["Hisse"].astype(str))
-    universe_label = "DB Snapshot"
-else:
-    requested = try_load_universe(universe_name)
-
-    if requested:
-        universe_symbols = (
-            set(stocks["Hisse"].astype(str))
-            & requested
-        )
-        universe_label = (
-            f"{universe_name} / DB'de bulunanlar"
-        )
     else:
-        # Liste modülü yoksa sayfa yine çalışır:
-        universe_symbols = set(stocks["Hisse"].astype(str))
-        universe_label = (
-            f"{universe_name} / liste bulunamadı → DB Snapshot"
-        )
 
-stocks = stocks[
-    stocks["Hisse"].isin(universe_symbols)
-].copy()
+        adx_score = 50
 
-if stocks.empty:
-    st.error(
-        "Seçilen evrende DB snapshotında geçerli hisse bulunamadı."
-    )
-    st.stop()
+    # --------------------------------------------------------
+    # MACD
+    # --------------------------------------------------------
 
-
-# ============================================================
-# SEKTÖR / ADAY / HEDEF
-# ============================================================
-
-# Sektör skoru TÜM geçerli snapshot üzerinden hesaplanır.
-# Önce hisse filtresi uygulamak sektörleri yapay biçimde güçlendiriyordu.
-all_snapshot_count = len(stocks)
-
-sector_df = calculate_sector_scores(stocks)
-
-strong_sector_df = sector_df[
-    sector_df["Sektör Skoru"] >= sector_min
-].copy()
-
-# Hisse minimumu yalnızca aday seçiminde kullanılır.
-eligible_stock_df = stocks[
-    stocks["Genel Skor"] >= stock_min
-].copy()
-
-candidate_df = build_candidates(
-    stocks,
-    sector_df,
-    sector_min,
-    stock_min,
-)
-
-target_df = allocate_capped_weights(
-    candidate_df,
-    max_positions,
-    max_stock_weight,
-    max_sector_weight,
-)
-
-current_portfolio = load_current_portfolio()
-
-target_df = compare_portfolio(
-    target_df,
-    current_portfolio,
-    capital,
-)
-
-if eligible_stock_df.empty:
-    st.warning(
-        f"Genel Skor ≥ {stock_min:.0f} olan hisse bulunamadı. "
-        "Aday havuzu bu nedenle boş."
+    macd = get_technical_value(
+        technical_row,
+        "macd"
     )
 
-# ============================================================
-# ÜST ÖZET
-# ============================================================
+    result["macd"] = macd
 
-st.divider()
-st.subheader("🧠 DİNAMİK PORTFÖY ÖZETİ")
+    if pd.notna(macd):
 
-c1, c2, c3, c4, c5, c6 = st.columns(6)
+        result[
+            "technical_data_count"
+        ] += 1
 
-c1.metric(
-    "DB Hisse",
-    all_snapshot_count,
-)
+        result[
+            "technical_available_count"
+        ] += 1
 
-c2.metric(
-    "Skor Uygun",
-    len(eligible_stock_df),
-)
+        if macd > 0:
 
-c3.metric(
-    "Güçlü Sektör",
-    len(strong_sector_df),
-)
+            macd_score = 80
 
-c4.metric(
-    "AL / GÜÇLÜ AL",
-    len(candidate_df),
-)
+            result[
+                "technical_reasons"
+            ].append(
+                "MACD pozitif"
+            )
 
-c5.metric(
-    "Hedef Hisse",
-    len(target_df),
-)
+        elif macd == 0:
 
-c6.metric(
-    "Piyasa",
-    f"{market_score:.1f}",
-)
+            macd_score = 50
 
+        else:
 
-# ============================================================
-# SEKTÖR GÜÇ HARİTASI
-# ============================================================
+            macd_score = 25
 
-st.divider()
-st.subheader("🏭 SEKTÖR GÜÇ HARİTASI")
-st.caption(
-    "Sektör skoru = %35 Hisse Gücü + %25 Momentum + "
-    "%20 Trend + %10 Genişlik + %10 BIST relatif güç."
-)
+            result[
+                "technical_warnings"
+            ].append(
+                "MACD negatif"
+            )
 
-if sector_df.empty:
-    st.info("Sektör verisi bulunamadı.")
-else:
-    sector_show = sector_df.copy()
+    else:
 
-    for col in [
-        "Sektör Skoru",
-        "Ortalama Genel Skor",
-        "AL Genişliği %",
-    ]:
-        sector_show[col] = sector_show[col].round(1)
+        macd_score = 50
 
-    st.dataframe(
-        sector_show,
-        use_container_width=True,
-        hide_index=True,
+    # --------------------------------------------------------
+    # Bollinger Pozisyon
+    # --------------------------------------------------------
+
+    bb_pos = get_technical_value(
+        technical_row,
+        "bollinger_position"
     )
 
-    st.bar_chart(
-        sector_df.head(15).set_index("Sektör")["Sektör Skoru"],
-        use_container_width=True,
+    result[
+        "bollinger_position"
+    ] = bb_pos
+
+    if pd.notna(bb_pos):
+
+        result[
+            "technical_data_count"
+        ] += 1
+
+        result[
+            "technical_available_count"
+        ] += 1
+
+        # 0.35 - 0.80 arası sağlıklı
+        if 0.35 <= bb_pos <= 0.80:
+
+            bb_score = 85
+
+        elif 0.20 <= bb_pos <= 0.90:
+
+            bb_score = 70
+
+        elif bb_pos < 0.10:
+
+            bb_score = 30
+
+        elif bb_pos > 0.95:
+
+            bb_score = 45
+
+        else:
+
+            bb_score = 55
+
+    else:
+
+        bb_score = 50
+
+    # --------------------------------------------------------
+    # Stochastic
+    # --------------------------------------------------------
+
+    stochastic = get_technical_value(
+        technical_row,
+        "stochastic"
     )
 
+    result["stochastic"] = stochastic
 
-# ============================================================
-# HEDEF PORTFÖY
-# ============================================================
+    if pd.notna(stochastic):
 
-st.divider()
-st.subheader("🏆 ÖNERİLEN DİNAMİK PORTFÖY")
+        result[
+            "technical_data_count"
+        ] += 1
 
-if target_df.empty:
-    st.warning(
-        f"Sektör skoru ≥ {sector_min:.0f} ve "
-        f"Genel Skor ≥ {stock_min:.0f} şartlarını sağlayan "
-        "AL/GÜÇLÜ AL adayı yok."
+        result[
+            "technical_available_count"
+        ] += 1
+
+        if 40 <= stochastic <= 80:
+
+            stoch_score = 85
+
+        elif 20 <= stochastic <= 90:
+
+            stoch_score = 70
+
+        elif stochastic > 90:
+
+            stoch_score = 40
+
+        else:
+
+            stoch_score = 35
+
+    else:
+
+        stoch_score = 50
+
+    # --------------------------------------------------------
+    # ATR
+    # --------------------------------------------------------
+
+    atr = get_technical_value(
+        technical_row,
+        "atr_pct"
     )
-else:
-    first = target_df.iloc[0]
 
-    st.success(
-        f"🏆 Ana aday: **{first['Hisse']}** — "
-        f"{first['Karar']} — "
-        f"Portföy Skoru **{first['Portföy Skoru']:.1f}**"
+    result["atr_pct"] = atr
+
+    if pd.notna(atr):
+
+        result[
+            "technical_data_count"
+        ] += 1
+
+        result[
+            "technical_available_count"
+        ] += 1
+
+        if atr <= 3:
+
+            atr_score = 90
+
+        elif atr <= 5:
+
+            atr_score = 75
+
+        elif atr <= 8:
+
+            atr_score = 55
+
+        elif atr <= 12:
+
+            atr_score = 40
+
+        else:
+
+            atr_score = 25
+
+    else:
+
+        atr_score = 60
+
+    # --------------------------------------------------------
+    # Bollinger Width
+    # --------------------------------------------------------
+
+    bb_width = get_technical_value(
+        technical_row,
+        "bollinger_width"
     )
 
-    show = target_df.copy()
+    result[
+        "bollinger_width"
+    ] = bb_width
 
-    for col in [
-        "Hedef Oran %",
-        "Mevcut Oran %",
-        "Oran Farkı %",
-        "Sektör Skoru",
-        "Genel Skor",
-        "Portföy Skoru",
-        "Fiyat",
-        "Mevcut Lot",
-        "Hedef Lot",
-        "Lot Farkı",
-    ]:
-        if col in show.columns:
-            show[col] = show[col].round(2)
+    if pd.notna(bb_width):
 
-    for col in [
-        "Hedef Tutar",
-        "Mevcut Değer",
-        "Al/Sat Tutarı",
-    ]:
-        if col in show.columns:
-            show[col] = show[col].map(money)
+        result[
+            "technical_data_count"
+        ] += 1
 
-    display_cols = [
-        "Hisse",
-        "Sektör",
-        "Karar",
-        "Portföy Skoru",
-        "Sektör Skoru",
-        "Genel Skor",
-        "Fiyat",
-        "Mevcut Lot",
-        "Hedef Lot",
-        "Lot Farkı",
-        "Mevcut Oran %",
-        "Hedef Oran %",
-        "Oran Farkı %",
-        "Aksiyon",
-        "Hedef Tutar",
-        "Al/Sat Tutarı",
+        result[
+            "technical_available_count"
+        ] += 1
+
+        if bb_width < 5:
+
+            bb_width_score = 80
+
+        elif bb_width < 10:
+
+            bb_width_score = 70
+
+        elif bb_width < 20:
+
+            bb_width_score = 55
+
+        else:
+
+            bb_width_score = 40
+
+    else:
+
+        bb_width_score = 60
+
+    # --------------------------------------------------------
+    # Teknik ağırlık
+    # --------------------------------------------------------
+
+    components = [
+
+        (trend_ema, 0.35),
+
+        (adx_score, 0.15),
+
+        (macd_score, 0.15),
+
+        (bb_score, 0.10),
+
+        (stoch_score, 0.10),
+
+        (atr_score, 0.05),
+
+        (bb_width_score, 0.10)
     ]
 
-    display_cols = [
-        x for x in display_cols
-        if x in show.columns
+    technical_score = sum(
+        score * weight
+        for score, weight
+        in components
+    )
+
+    result[
+        "technical"
+    ] = clamp(
+        technical_score
+    )
+
+    result[
+        "trend"
+    ] = clamp(
+        trend_ema * 0.75
+        + adx_score * 0.25
+    )
+
+    return result
+
+
+# ============================================================
+# MOMENTUM SKORU
+# ============================================================
+
+def calculate_momentum_score(
+    technical_row
+):
+
+    result = {
+
+        "momentum": 50.0,
+
+        "momentum20": np.nan,
+
+        "momentum60": np.nan,
+
+        "momentum120": np.nan,
+
+        "volume20": np.nan,
+
+        "volume60": np.nan,
+
+        "volume_trend": np.nan,
+
+        "obv_trend": np.nan,
+
+        "momentum_data_count": 0,
+
+        "momentum_reasons": [],
+
+        "momentum_warnings": []
+    }
+
+    if technical_row is None or len(
+        technical_row
+    ) == 0:
+
+        return result
+
+    scores = []
+
+    # --------------------------------------------------------
+    # 20G
+    # --------------------------------------------------------
+
+    m20 = get_technical_value(
+        technical_row,
+        "momentum20"
+    )
+
+    result["momentum20"] = m20
+
+    if pd.notna(m20):
+
+        result[
+            "momentum_data_count"
+        ] += 1
+
+        # yüzde ise
+        if m20 > 15:
+            s20 = 100
+
+        elif m20 > 8:
+            s20 = 85
+
+        elif m20 > 3:
+            s20 = 70
+
+        elif m20 > 0:
+            s20 = 60
+
+        elif m20 > -5:
+            s20 = 45
+
+        elif m20 > -10:
+            s20 = 30
+
+        else:
+            s20 = 15
+
+        scores.append(
+            (s20, 0.25)
+        )
+
+        if m20 > 5:
+
+            result[
+                "momentum_reasons"
+            ].append(
+                "20G momentum pozitif"
+            )
+
+        elif m20 < -5:
+
+            result[
+                "momentum_warnings"
+            ].append(
+                "20G momentum zayıf"
+            )
+
+    # --------------------------------------------------------
+    # 60G
+    # --------------------------------------------------------
+
+    m60 = get_technical_value(
+        technical_row,
+        "momentum60"
+    )
+
+    result["momentum60"] = m60
+
+    if pd.notna(m60):
+
+        result[
+            "momentum_data_count"
+        ] += 1
+
+        if m60 > 30:
+            s60 = 100
+
+        elif m60 > 15:
+            s60 = 90
+
+        elif m60 > 5:
+            s60 = 75
+
+        elif m60 > 0:
+            s60 = 60
+
+        elif m60 > -10:
+            s60 = 45
+
+        elif m60 > -20:
+            s60 = 30
+
+        else:
+            s60 = 15
+
+        scores.append(
+            (s60, 0.30)
+        )
+
+        if m60 > 10:
+
+            result[
+                "momentum_reasons"
+            ].append(
+                "60G momentum güçlü"
+            )
+
+        elif m60 < -10:
+
+            result[
+                "momentum_warnings"
+            ].append(
+                "60G momentum zayıf"
+            )
+
+    # --------------------------------------------------------
+    # 120G
+    # --------------------------------------------------------
+
+    m120 = get_technical_value(
+        technical_row,
+        "momentum120"
+    )
+
+    result["momentum120"] = m120
+
+    if pd.notna(m120):
+
+        result[
+            "momentum_data_count"
+        ] += 1
+
+        if m120 > 50:
+            s120 = 100
+
+        elif m120 > 25:
+            s120 = 90
+
+        elif m120 > 10:
+            s120 = 75
+
+        elif m120 > 0:
+            s120 = 60
+
+        elif m120 > -15:
+            s120 = 45
+
+        elif m120 > -30:
+            s120 = 30
+
+        else:
+            s120 = 15
+
+        scores.append(
+            (s120, 0.20)
+        )
+
+        if m120 > 10:
+
+            result[
+                "momentum_reasons"
+            ].append(
+                "120G trend pozitif"
+            )
+
+    # --------------------------------------------------------
+    # Hacim
+    # --------------------------------------------------------
+
+    v20 = get_technical_value(
+        technical_row,
+        "volume20"
+    )
+
+    result["volume20"] = v20
+
+    if pd.notna(v20):
+
+        result[
+            "momentum_data_count"
+        ] += 1
+
+        if v20 >= 1.50:
+
+            s = 100
+
+        elif v20 >= 1.20:
+
+            s = 90
+
+        elif v20 >= 1.00:
+
+            s = 75
+
+        elif v20 >= 0.80:
+
+            s = 55
+
+        else:
+
+            s = 35
+
+        scores.append(
+            (s, 0.08)
+        )
+
+    v60 = get_technical_value(
+        technical_row,
+        "volume60"
+    )
+
+    result["volume60"] = v60
+
+    if pd.notna(v60):
+
+        result[
+            "momentum_data_count"
+        ] += 1
+
+        if v60 >= 1.30:
+
+            s = 95
+
+        elif v60 >= 1.00:
+
+            s = 75
+
+        elif v60 >= 0.80:
+
+            s = 55
+
+        else:
+
+            s = 35
+
+        scores.append(
+            (s, 0.05)
+        )
+
+    # --------------------------------------------------------
+    # Hacim trendi
+    # --------------------------------------------------------
+
+    vt = get_technical_value(
+        technical_row,
+        "volume_trend"
+    )
+
+    result["volume_trend"] = vt
+
+    if pd.notna(vt):
+
+        result[
+            "momentum_data_count"
+        ] += 1
+
+        if vt > 0:
+
+            volume_trend_score = 80
+
+        elif vt == 0:
+
+            volume_trend_score = 50
+
+        else:
+
+            volume_trend_score = 30
+
+        scores.append(
+            (
+                volume_trend_score,
+                0.04
+            )
+        )
+
+    # --------------------------------------------------------
+    # OBV
+    # --------------------------------------------------------
+
+    obv = get_technical_value(
+        technical_row,
+        "obv_trend"
+    )
+
+    result["obv_trend"] = obv
+
+    if pd.notna(obv):
+
+        result[
+            "momentum_data_count"
+        ] += 1
+
+        if obv > 0:
+
+            obv_score = 85
+
+            result[
+                "momentum_reasons"
+            ].append(
+                "OBV pozitif"
+            )
+
+        elif obv == 0:
+
+            obv_score = 50
+
+        else:
+
+            obv_score = 30
+
+            result[
+                "momentum_warnings"
+            ].append(
+                "OBV negatif"
+            )
+
+        scores.append(
+            (
+                obv_score,
+                0.03
+            )
+        )
+
+    # --------------------------------------------------------
+    # Normalize ağırlık
+    # --------------------------------------------------------
+
+    if scores:
+
+        weight_sum = sum(
+            weight
+            for _, weight
+            in scores
+        )
+
+        momentum = (
+            sum(
+                score * weight
+                for score, weight
+                in scores
+            )
+            / weight_sum
+        )
+
+    else:
+
+        momentum = 50
+
+    result[
+        "momentum"
+    ] = clamp(
+        momentum
+    )
+
+    return result
+
+
+# ============================================================
+# FİNANSAL / KAP
+# ============================================================
+
+def find_financial_row(
+    fund_df,
+    symbol
+):
+
+    if fund_df.empty:
+
+        return pd.Series(
+            dtype=object
+        )
+
+    symbol_col = detect_symbol_column(
+        fund_df
+    )
+
+    if symbol_col is None:
+
+        return pd.Series(
+            dtype=object
+        )
+
+    symbol = clean_symbol(symbol)
+
+    rows = fund_df[
+        fund_df[symbol_col]
+        .astype(str)
+        .str.upper()
+        .str.replace(
+            ".IS",
+            "",
+            regex=False
+        )
+        .str.strip()
+        == symbol
     ]
 
-    st.dataframe(
-        show[display_cols],
-        use_container_width=True,
-        hide_index=True,
-    )
+    if rows.empty:
 
-    # Ağırlık kontrolü
-    total_target = float(
-        target_df["Hedef Oran %"].sum()
-    )
-
-    max_stock_real = float(
-        target_df["Hedef Oran %"].max()
-    )
-
-    sector_real = (
-        target_df.groupby("Sektör")["Hedef Oran %"]
-        .sum()
-        if not target_df.empty
-        else pd.Series(dtype=float)
-    )
-
-    max_sector_real = (
-        float(sector_real.max())
-        if not sector_real.empty
-        else 0.0
-    )
-
-    cc1, cc2, cc3 = st.columns(3)
-    cc1.metric(
-        "Hedef toplam",
-        f"{total_target:.2f}%",
-    )
-    cc2.metric(
-        "En yüksek hisse",
-        f"{max_stock_real:.2f}%",
-    )
-    cc3.metric(
-        "En yüksek sektör",
-        f"{max_sector_real:.2f}%",
-    )
-
-    # Beklenen kontrol
-    if (
-        abs(total_target - 100.0) <= 0.15
-        and max_stock_real <= max_stock_weight + 0.15
-        and max_sector_real <= max_sector_weight + 0.15
-    ):
-        st.success(
-            "✅ Ağırlık motoru doğrulandı: "
-            "toplam %100 ve hisse/sektör tavanları korunuyor."
+        return pd.Series(
+            dtype=object
         )
+
+    date_col = find_column(
+        rows,
+        [
+            "date",
+            "tarih",
+            "period",
+            "donem",
+            "report_date"
+        ]
+    )
+
+    if date_col:
+
+        temp = rows.copy()
+
+        temp["__date"] = pd.to_datetime(
+            temp[date_col],
+            errors="coerce"
+        )
+
+        temp = temp.sort_values(
+            "__date"
+        )
+
+        return temp.iloc[-1]
+
+    return rows.iloc[-1]
+
+
+# ============================================================
+# FİNANSAL SKOR
+#
+# ÖNEMLİ DÜZELTME:
+#
+# Eski sistem:
+#
+# score += 25
+# score += 20
+# ...
+#
+# fakat data_count ile normalize edilmiyordu.
+#
+# Yeni sistemde her metrik kendi içinde 0-100.
+# Sonra ağırlıklı ortalama.
+# ============================================================
+
+def calculate_financial_score(row):
+
+    result = {
+
+        "financial": 50.0,
+
+        "profitability": 50.0,
+
+        "growth_score": 50.0,
+
+        "leverage": 50.0,
+
+        "liquidity": 50.0,
+
+        "financial_data_count": 0,
+
+        "financial_data_quality": 0,
+
+        "reasons": [],
+
+        "warnings": []
+    }
+
+    if row is None or len(row) == 0:
+
+        result[
+            "financial"
+        ] = 40.0
+
+        result[
+            "financial_data_quality"
+        ] = 0
+
+        return result
+
+    components = []
+
+    # --------------------------------------------------------
+    # ROE
+    # --------------------------------------------------------
+
+    roe = value_from_row(
+        row,
+        [
+            "roe",
+            "return_on_equity",
+            "ozsermaye_karliligi"
+        ]
+    )
+
+    if pd.notna(roe):
+
+        result[
+            "financial_data_count"
+        ] += 1
+
+        roe_score = score_positive(
+            roe,
+            0,
+            12,
+            20
+        )
+
+        result[
+            "profitability"
+        ] = roe_score
+
+        components.append(
+            (roe_score, 0.25)
+        )
+
+        if roe >= 20:
+
+            result[
+                "reasons"
+            ].append(
+                "ROE güçlü"
+            )
+
+        elif roe < 5:
+
+            result[
+                "warnings"
+            ].append(
+                "ROE düşük"
+            )
+
+    # --------------------------------------------------------
+    # Net Margin
+    # --------------------------------------------------------
+
+    margin = value_from_row(
+        row,
+        [
+            "net_margin",
+            "profit_margin",
+            "net_profit_margin",
+            "net_kar_marji"
+        ]
+    )
+
+    if pd.notna(margin):
+
+        result[
+            "financial_data_count"
+        ] += 1
+
+        margin_score = score_positive(
+            margin,
+            0,
+            8,
+            15
+        )
+
+        components.append(
+            (margin_score, 0.20)
+        )
+
+        if margin >= 15:
+
+            result[
+                "reasons"
+            ].append(
+                "Net kâr marjı güçlü"
+            )
+
+        elif margin < 0:
+
+            result[
+                "warnings"
+            ].append(
+                "Net kâr marjı negatif"
+            )
+
+    # --------------------------------------------------------
+    # Growth
+    # --------------------------------------------------------
+
+    growth = value_from_row(
+        row,
+        [
+            "revenue_growth",
+            "sales_growth",
+            "growth",
+            "revenue_growth_yoy",
+            "ciro_buyume"
+        ]
+    )
+
+    if pd.notna(growth):
+
+        result[
+            "financial_data_count"
+        ] += 1
+
+        growth_score = score_positive(
+            growth,
+            -10,
+            10,
+            30
+        )
+
+        result[
+            "growth_score"
+        ] = growth_score
+
+        components.append(
+            (growth_score, 0.20)
+        )
+
+        if growth >= 30:
+
+            result[
+                "reasons"
+            ].append(
+                "Ciro büyümesi güçlü"
+            )
+
+        elif growth < 0:
+
+            result[
+                "warnings"
+            ].append(
+                "Ciro büyümesi negatif"
+            )
+
+    # --------------------------------------------------------
+    # Debt / Equity
+    # --------------------------------------------------------
+
+    debt_equity = value_from_row(
+        row,
+        [
+            "debt_to_equity",
+            "debt_equity",
+            "borc_ozsermaye",
+            "net_debt_to_equity"
+        ]
+    )
+
+    if pd.notna(debt_equity):
+
+        result[
+            "financial_data_count"
+        ] += 1
+
+        debt_score = score_negative(
+            debt_equity,
+            0.30,
+            1.00,
+            2.00
+        )
+
+        result[
+            "leverage"
+        ] = debt_score
+
+        components.append(
+            (debt_score, 0.20)
+        )
+
+        if debt_equity < 0.50:
+
+            result[
+                "reasons"
+            ].append(
+                "Borçluluk düşük"
+            )
+
+        elif debt_equity > 2:
+
+            result[
+                "warnings"
+            ].append(
+                "Borçluluk yüksek"
+            )
+
+    # --------------------------------------------------------
+    # Current Ratio
+    # --------------------------------------------------------
+
+    current_ratio = value_from_row(
+        row,
+        [
+            "current_ratio",
+            "cari_oran"
+        ]
+    )
+
+    if pd.notna(current_ratio):
+
+        result[
+            "financial_data_count"
+        ] += 1
+
+        if current_ratio >= 2:
+
+            current_score = 100
+
+        elif current_ratio >= 1.50:
+
+            current_score = 90
+
+        elif current_ratio >= 1.00:
+
+            current_score = 70
+
+        elif current_ratio >= 0.70:
+
+            current_score = 45
+
+        else:
+
+            current_score = 20
+
+        result[
+            "liquidity"
+        ] = current_score
+
+        components.append(
+            (
+                current_score,
+                0.15
+            )
+        )
+
+        if current_ratio >= 1.50:
+
+            result[
+                "reasons"
+            ].append(
+                "Cari oran güçlü"
+            )
+
+        elif current_ratio < 1:
+
+            result[
+                "warnings"
+            ].append(
+                "Cari oran zayıf"
+            )
+
+    # --------------------------------------------------------
+    # Sonuç
+    # --------------------------------------------------------
+
+    if components:
+
+        weight_sum = sum(
+            weight
+            for _, weight
+            in components
+        )
+
+        financial = (
+            sum(
+                score * weight
+                for score, weight
+                in components
+            )
+            / weight_sum
+        )
+
     else:
-        st.warning(
-            "⚠️ Ağırlıklar tavanlara göre sınırlı kaldı. "
-            "Bu durum aşırı sıkı risk limitlerinde normaldir."
-        )
 
+        # Finansal veri yoksa 0 yerine nötr.
+        # Ancak veri kalitesi ayrıca 0 olarak gösterilecek.
+        financial = 40
 
-# ============================================================
-# SEKTÖR AĞIRLIKLARI
-# ============================================================
-
-if not target_df.empty:
-    st.divider()
-    st.subheader("⚖️ HEDEF SEKTÖR AĞIRLIKLARI")
-
-    sector_weights = (
-        target_df.groupby("Sektör")["Hedef Oran %"]
-        .sum()
-        .sort_values(ascending=False)
+    result[
+        "financial"
+    ] = clamp(
+        financial
     )
 
-    st.dataframe(
-        sector_weights.reset_index(
-            name="Hedef Ağırlık %"
-        ).round(2),
-        use_container_width=True,
-        hide_index=True,
+    result[
+        "financial_data_quality"
+    ] = clamp(
+        result["financial_data_count"]
+        / 5
+        * 100
     )
 
-    st.bar_chart(
-        sector_weights,
-        use_container_width=True,
-    )
+    return result
 
 
 # ============================================================
-# REBALANCE
+# LİKİDİTE
 # ============================================================
 
-if not target_df.empty:
-    st.divider()
-    st.subheader("🔄 REBALANCE SİNYALLERİ")
+def calculate_liquidity_score(
+    price_df,
+    technical_row=None
+):
 
-    actions = target_df[
-        target_df["Aksiyon"] != "🟡 KORU"
-    ].copy()
+    if price_df.empty:
 
-    if actions.empty:
-        st.success(
-            "🟢 Mevcut portföy ile hedef portföy arasında "
-            "önemli ağırlık farkı yok."
-        )
+        return 0, np.nan
+
+    close = pd.to_numeric(
+        price_df["close"],
+        errors="coerce"
+    )
+
+    volume = pd.to_numeric(
+        price_df.get("volume"),
+        errors="coerce"
+    )
+
+    if volume is None or volume.isna().all():
+
+        return 40, np.nan
+
+    value = (
+        close * volume
+    )
+
+    avg20 = value.tail(20).mean()
+
+    if pd.isna(avg20):
+
+        return 0, np.nan
+
+    if avg20 >= 100_000_000:
+
+        score = 100
+
+    elif avg20 >= 50_000_000:
+
+        score = 90
+
+    elif avg20 >= 25_000_000:
+
+        score = 80
+
+    elif avg20 >= 10_000_000:
+
+        score = 70
+
+    elif avg20 >= 5_000_000:
+
+        score = 60
+
+    elif avg20 >= 2_000_000:
+
+        score = 45
+
     else:
-        action_show = actions.copy()
-        action_show["Al/Sat Tutarı"] = (
-            action_show["Al/Sat Tutarı"].map(money)
-        )
 
-        st.dataframe(
-            action_show[
-                [
-                    "Hisse",
-                    "Sektör",
-                    "Karar",
-                    "Mevcut Oran %",
-                    "Hedef Oran %",
-                    "Oran Farkı %",
-                    "Aksiyon",
-                    "Al/Sat Tutarı",
-                    "Lot Farkı",
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
+        score = 25
 
-
-# ============================================================
-# ADAY HAVUZU
-# ============================================================
-
-st.divider()
-st.subheader("🎯 GÜÇLÜ SEKTÖRLERDE AL / GÜÇLÜ AL HAVUZU")
-
-if candidate_df.empty:
-    st.warning("Uygun aday bulunamadı.")
-else:
-    candidate_show = candidate_df.copy()
-
-    for col in [
-        "Portföy Skoru",
-        "Sektör Skoru",
-        "Genel Skor",
-        "Teknik",
-        "Fundamental",
-        "Momentum 60G",
-        "Trend",
-        "Piyasa",
-        "RSI",
-        "Hacim x",
-        "1Y Getiri %",
-    ]:
-        if col in candidate_show.columns:
-            candidate_show[col] = candidate_show[col].round(2)
-
-    cols = [
-        "Hisse",
-        "Sektör",
-        "Aday Gücü",
-        "Karar",
-        "Portföy Skoru",
-        "Sektör Skoru",
-        "Genel Skor",
-        "Teknik",
-        "Fundamental",
-        "Momentum 60G",
-        "Trend",
-        "Piyasa",
-        "RSI",
-        "Hacim x",
-        "1Y Getiri %",
-        "Veri Güveni",
-    ]
-
-    cols = [x for x in cols if x in candidate_show.columns]
-
-    st.dataframe(
-        candidate_show[cols],
-        use_container_width=True,
-        hide_index=True,
-    )
-
-
-# ============================================================
-# MEVCUT PORTFÖY RİSK KONTROLÜ
-# ============================================================
-
-st.divider()
-st.subheader("🚨 MEVCUT PORTFÖY RİSK KONTROLÜ")
-
-risk_df = build_risk_table(
-    stocks,
-    sector_df,
-    current_portfolio,
-    sector_min,
-    stock_min,
-)
-
-if risk_df.empty:
-    st.info(
-        "portfolio tablosunda mevcut pozisyon bulunamadı."
-    )
-else:
-    st.dataframe(
-        risk_df,
-        use_container_width=True,
-        hide_index=True,
-    )
+    return score, avg20
 
 
 # ============================================================
 # PİYASA
 # ============================================================
 
-st.divider()
-st.subheader("🌍 PİYASA DURUMU")
+def calculate_market_score():
 
-m1, m2 = st.columns(2)
+    for key in [
+        "market_score",
+        "genel_piyasa_skoru",
+        "piyasa_skoru"
+    ]:
 
-m1.metric(
-    "BIST Piyasa Skoru",
-    f"{market_score:.1f}/100",
-)
+        if key in st.session_state:
 
-m2.metric(
-    "Piyasa Snapshot",
-    "Geçerli" if market_valid else "Nötr varsayım",
-)
+            value = safe_float(
+                st.session_state[key]
+            )
 
-if market_at is not None:
-    st.caption(
-        f"Piyasa snapshot zamanı: {format_timestamp(market_at)}"
+            if pd.notna(value):
+
+                return clamp(
+                    value
+                )
+
+    return 50.0
+
+
+# ============================================================
+# RİSK
+# ============================================================
+
+def calculate_risk_penalty(
+    row
+):
+
+    penalty = 0
+    reasons = []
+
+    price = safe_float(
+        row.get("price")
     )
 
-if market_reasons:
-    for reason in market_reasons:
-        st.write(f"• {reason}")
+    ema20 = safe_float(
+        row.get("ema20")
+    )
+
+    ema50 = safe_float(
+        row.get("ema50")
+    )
+
+    rsi = safe_float(
+        row.get("rsi")
+    )
+
+    volume_ratio = safe_float(
+        row.get("volume_ratio")
+    )
+
+    volatility = safe_float(
+        row.get("volatility")
+    )
+
+    macd = safe_float(
+        row.get("macd")
+    )
+
+    adx = safe_float(
+        row.get("adx")
+    )
+
+    # --------------------------------------------------------
+    # EMA50
+    # --------------------------------------------------------
+
+    if (
+        pd.notna(price)
+        and pd.notna(ema50)
+        and price < ema50
+    ):
+
+        penalty += PENALTY_EMA50
+
+        reasons.append(
+            "Fiyat EMA50 altında"
+        )
+
+    elif (
+        pd.notna(price)
+        and pd.notna(ema20)
+        and price < ema20
+    ):
+
+        penalty += PENALTY_EMA20
+
+        reasons.append(
+            "Fiyat EMA20 altında"
+        )
+
+    # --------------------------------------------------------
+    # RSI
+    # --------------------------------------------------------
+
+    if pd.notna(rsi):
+
+        if rsi > 78:
+
+            penalty += PENALTY_RSI_HIGH
+
+            reasons.append(
+                "RSI aşırı yüksek"
+            )
+
+        elif rsi < 25:
+
+            penalty += PENALTY_RSI_LOW
+
+            reasons.append(
+                "RSI aşırı düşük"
+            )
+
+    # --------------------------------------------------------
+    # Hacim
+    # --------------------------------------------------------
+
+    if (
+        pd.notna(volume_ratio)
+        and volume_ratio < 0.50
+    ):
+
+        penalty += PENALTY_LOW_VOLUME
+
+        reasons.append(
+            "Hacim zayıf"
+        )
+
+    # --------------------------------------------------------
+    # Volatilite
+    # --------------------------------------------------------
+
+    if (
+        pd.notna(volatility)
+        and volatility > 80
+    ):
+
+        penalty += PENALTY_HIGH_VOLATILITY
+
+        reasons.append(
+            "Volatilite yüksek"
+        )
+
+    # --------------------------------------------------------
+    # MACD
+    # --------------------------------------------------------
+
+    if pd.notna(macd):
+
+        if macd < 0:
+
+            penalty += PENALTY_MACD_NEGATIVE
+
+            reasons.append(
+                "MACD negatif"
+            )
+
+    # --------------------------------------------------------
+    # ADX
+    # --------------------------------------------------------
+
+    if pd.notna(adx):
+
+        if adx < 15:
+
+            penalty += PENALTY_ADX_WEAK
+
+            reasons.append(
+                "ADX çok zayıf"
+            )
+
+    return penalty, reasons
+
+
+# ============================================================
+# TEK HİSSE ANALİZİ
+# ============================================================
+
+def analyze_stock(
+    symbol,
+    stocks_df,
+    prices_df,
+    technical_df,
+    fundamentals_df
+):
+
+    symbol = clean_symbol(
+        symbol
+    )
+
+    price_df = get_price_data(
+        prices_df,
+        symbol
+    )
+
+    if price_df.empty:
+
+        return None
+
+    if len(price_df) < MIN_HISTORY:
+
+        return None
+
+    last_price = safe_float(
+        price_df["close"].iloc[-1]
+    )
+
+    if pd.isna(last_price):
+
+        return None
+
+    if last_price < MIN_PRICE:
+
+        return None
+
+    # --------------------------------------------------------
+    # Teknik tablodan son snapshot
+    # --------------------------------------------------------
+
+    technical_row = find_technical_row(
+        technical_df,
+        symbol
+    )
+
+    # --------------------------------------------------------
+    # Teknik
+    # --------------------------------------------------------
+
+    technical = (
+        calculate_advanced_technical_score(
+            technical_row,
+            last_price
+        )
+    )
+
+    # --------------------------------------------------------
+    # Momentum
+    # --------------------------------------------------------
+
+    momentum = (
+        calculate_momentum_score(
+            technical_row
+        )
+    )
+
+    # --------------------------------------------------------
+    # Fiyat bazlı teknik değerler
+    # --------------------------------------------------------
+
+    close = price_df[
+        "close"
+    ].astype(float)
+
+    ema9 = close.ewm(
+        span=9,
+        adjust=False
+    ).mean().iloc[-1]
+
+    ema20 = close.ewm(
+        span=20,
+        adjust=False
+    ).mean().iloc[-1]
+
+    ema50 = close.ewm(
+        span=50,
+        adjust=False
+    ).mean().iloc[-1]
+
+    ema100 = close.ewm(
+        span=100,
+        adjust=False
+    ).mean().iloc[-1]
+
+    # RSI
+    delta = close.diff()
+
+    gain = delta.clip(
+        lower=0
+    )
+
+    loss = -delta.clip(
+        upper=0
+    )
+
+    avg_gain = gain.rolling(
+        14
+    ).mean()
+
+    avg_loss = loss.rolling(
+        14
+    ).mean()
+
+    rs = (
+        avg_gain
+        / avg_loss.replace(
+            0,
+            np.nan
+        )
+    )
+
+    rsi_series = (
+        100
+        - (
+            100
+            / (1 + rs)
+        )
+    )
+
+    rsi = (
+        float(rsi_series.iloc[-1])
+        if pd.notna(
+            rsi_series.iloc[-1]
+        )
+        else 50
+    )
+
+    # Volume ratio
+    volume_ratio = np.nan
+
+    if "volume" in price_df.columns:
+
+        volume = pd.to_numeric(
+            price_df["volume"],
+            errors="coerce"
+        )
+
+        if volume.notna().sum() >= 20:
+
+            avg20 = volume.rolling(
+                20
+            ).mean().iloc[-1]
+
+            current = volume.iloc[-1]
+
+            if (
+                pd.notna(current)
+                and pd.notna(avg20)
+                and avg20 > 0
+            ):
+
+                volume_ratio = (
+                    current / avg20
+                )
+
+    # Volatilite
+    returns = close.pct_change()
+
+    volatility = (
+        returns
+        .rolling(20)
+        .std()
+        .iloc[-1]
+        * math.sqrt(252)
+        * 100
+    )
+
+    # --------------------------------------------------------
+    # Finansal
+    # --------------------------------------------------------
+
+    financial_row = find_financial_row(
+        fundamentals_df,
+        symbol
+    )
+
+    financial = (
+        calculate_financial_score(
+            financial_row
+        )
+    )
+
+    # --------------------------------------------------------
+    # Likidite
+    # --------------------------------------------------------
+
+    liquidity_score, avg_volume_tl = (
+        calculate_liquidity_score(
+            price_df,
+            technical_row
+        )
+    )
+
+    # --------------------------------------------------------
+    # Sektör
+    # --------------------------------------------------------
+
+    sector = get_sector(
+        symbol,
+        stocks_df
+    )
+
+    return {
+
+        "symbol": symbol,
+
+        "sector": sector,
+
+        "price": last_price,
+
+        "technical_score":
+            technical["technical"],
+
+        "trend_score":
+            technical["trend"],
+
+        "momentum_score":
+            momentum["momentum"],
+
+        "financial_score":
+            financial["financial"],
+
+        "financial_data_count":
+            financial[
+                "financial_data_count"
+            ],
+
+        "financial_data_quality":
+            financial[
+                "financial_data_quality"
+            ],
+
+        "liquidity_score":
+            liquidity_score,
+
+        "avg_volume_tl":
+            avg_volume_tl,
+
+        "rsi":
+            rsi,
+
+        "ema9":
+            ema9,
+
+        "ema20":
+            ema20,
+
+        "ema50":
+            ema50,
+
+        "ema100":
+            ema100,
+
+        "volume_ratio":
+            volume_ratio,
+
+        "volatility":
+            volatility,
+
+        # Advanced technical
+        "macd":
+            technical["macd"],
+
+        "adx":
+            technical["adx"],
+
+        "atr_pct":
+            technical["atr_pct"],
+
+        "bollinger_position":
+            technical[
+                "bollinger_position"
+            ],
+
+        "bollinger_width":
+            technical[
+                "bollinger_width"
+            ],
+
+        "stochastic":
+            technical[
+                "stochastic"
+            ],
+
+        "ema20_50":
+            technical[
+                "ema20_50"
+            ],
+
+        "ema50_100":
+            technical[
+                "ema50_100"
+            ],
+
+        # Momentum
+        "momentum20":
+            momentum["momentum20"],
+
+        "momentum60":
+            momentum["momentum60"],
+
+        "momentum120":
+            momentum["momentum120"],
+
+        "volume20":
+            momentum["volume20"],
+
+        "volume60":
+            momentum["volume60"],
+
+        "volume_trend":
+            momentum["volume_trend"],
+
+        "obv_trend":
+            momentum["obv_trend"],
+
+        "technical_data_count":
+            technical[
+                "technical_data_count"
+            ],
+
+        "technical_reasons":
+            technical[
+                "technical_reasons"
+            ],
+
+        "technical_warnings":
+            technical[
+                "technical_warnings"
+            ],
+
+        "momentum_reasons":
+            momentum[
+                "momentum_reasons"
+            ],
+
+        "momentum_warnings":
+            momentum[
+                "momentum_warnings"
+            ],
+
+        "financial_reasons":
+            financial[
+                "reasons"
+            ],
+
+        "financial_warnings":
+            financial[
+                "warnings"
+            ]
+    }
+
+
+# ============================================================
+# SEKTÖR SKORU
+#
+# Sektör artık sadece finansal skordan oluşmuyor.
+#
+# %40 Teknik
+# %30 Momentum
+# %20 Finansal
+# %10 Likidite
+# ============================================================
+
+def calculate_sector_scores(
+    all_rows
+):
+
+    if all_rows.empty:
+
+        return {}
+
+    scores = {}
+
+    for sector, group in all_rows.groupby(
+        "sector"
+    ):
+
+        if sector == SECTOR_UNKNOWN:
+
+            continue
+
+        components = []
+
+        for col, weight in [
+
+            ("technical_score", 0.40),
+
+            ("momentum_score", 0.30),
+
+            ("financial_score", 0.20),
+
+            ("liquidity_score", 0.10)
+        ]:
+
+            if col not in group.columns:
+
+                continue
+
+            values = pd.to_numeric(
+                group[col],
+                errors="coerce"
+            ).dropna()
+
+            if not values.empty:
+
+                components.append(
+                    (
+                        values.median(),
+                        weight
+                    )
+                )
+
+        if components:
+
+            weight_sum = sum(
+                w
+                for _, w
+                in components
+            )
+
+            scores[sector] = clamp(
+                sum(
+                    score * weight
+                    for score, weight
+                    in components
+                )
+                / weight_sum
+            )
+
+    return scores
+
+
+def attach_sector_scores(df):
+
+    if df.empty:
+
+        return df
+
+    sector_scores = (
+        calculate_sector_scores(
+            df
+        )
+    )
+
+    df = df.copy()
+
+    df[
+        "sector_score"
+    ] = df[
+        "sector"
+    ].map(
+        sector_scores
+    )
+
+    # Sektör bulunamıyorsa nötr.
+    df[
+        "sector_score"
+    ] = df[
+        "sector_score"
+    ].fillna(50)
+
+    return df
+
+
+# ============================================================
+# DİNAMİK SKOR
+# ============================================================
+
+def calculate_dynamic_scores(
+    df
+):
+
+    if df.empty:
+
+        return df
+
+    df = df.copy()
+
+    market_score = (
+        calculate_market_score()
+    )
+
+    df[
+        "market_score"
+    ] = market_score
+
+    # --------------------------------------------------------
+    # HAM SKOR
+    # --------------------------------------------------------
+
+    df[
+        "dynamic_raw"
+    ] = (
+
+        df[
+            "financial_score"
+        ]
+        * WEIGHT_FINANCIAL
+
+        +
+
+        df[
+            "technical_score"
+        ]
+        * WEIGHT_TECHNICAL
+
+        +
+
+        df[
+            "sector_score"
+        ]
+        * WEIGHT_SECTOR
+
+        +
+
+        df[
+            "momentum_score"
+        ]
+        * WEIGHT_MOMENTUM
+
+        +
+
+        df[
+            "liquidity_score"
+        ]
+        * WEIGHT_LIQUIDITY
+
+        +
+
+        df[
+            "market_score"
+        ]
+        * WEIGHT_MARKET
+    )
+
+    # --------------------------------------------------------
+    # Risk
+    # --------------------------------------------------------
+
+    penalties = []
+
+    risk_reasons = []
+
+    for _, row in df.iterrows():
+
+        penalty, reasons = (
+            calculate_risk_penalty(
+                row.to_dict()
+            )
+        )
+
+        penalties.append(
+            penalty
+        )
+
+        risk_reasons.append(
+            reasons
+        )
+
+    df[
+        "risk_penalty"
+    ] = penalties
+
+    df[
+        "risk_reasons"
+    ] = risk_reasons
+
+    df[
+        "dynamic_score"
+    ] = (
+        df[
+            "dynamic_raw"
+        ]
+        - df[
+            "risk_penalty"
+        ]
+    ).clip(
+        0,
+        100
+    )
+
+    return df
+
+
+# ============================================================
+# ADAY SINIFLANDIRMA
+# ============================================================
+
+def classify_candidate(
+    row
+):
+
+    score = row[
+        "dynamic_score"
+    ]
+
+    financial = row[
+        "financial_score"
+    ]
+
+    sector = row[
+        "sector_score"
+    ]
+
+    technical = row[
+        "technical_score"
+    ]
+
+    momentum = row[
+        "momentum_score"
+    ]
+
+    if (
+        score >= 75
+        and financial >= 55
+        and technical >= 60
+        and momentum >= 55
+    ):
+
+        return "🟢 GÜÇLÜ PORTFÖY ADAYI"
+
+    if (
+        score >= 65
+        and financial >= 45
+        and technical >= 50
+        and momentum >= 45
+    ):
+
+        return "🟢 PORTFÖY ADAYI"
+
+    if (
+        score >= 58
+        and (
+            technical >= 45
+            or momentum >= 45
+        )
+    ):
+
+        return "🟡 GELİŞEN ADAY"
+
+    if score >= 50:
+
+        return "🟠 İZLE"
+
+    return "🔴 ZAYIF"
+
+
+# ============================================================
+# ADAY FİLTRESİ
+#
+# Burada artık 5 ayrı sert kapı yok.
+# ============================================================
+
+def apply_basic_filters(
+    df
+):
+
+    if df.empty:
+
+        return df
+
+    result = df.copy()
+
+    # --------------------------------------------------------
+    # 1. Dinamik skor
+    # --------------------------------------------------------
+
+    result = result[
+        result[
+            "dynamic_score"
+        ] >= MIN_DYNAMIC_SCORE
+    ]
+
+    if result.empty:
+        return result
+
+    # --------------------------------------------------------
+    # 2. Çok kötü teknik yapı
+    # --------------------------------------------------------
+
+    result = result[
+        result[
+            "technical_score"
+        ] >= HARD_TECHNICAL_FLOOR
+    ]
+
+    if result.empty:
+        return result
+
+    # --------------------------------------------------------
+    # 3. Çok kötü momentum
+    # --------------------------------------------------------
+
+    result = result[
+        result[
+            "momentum_score"
+        ] >= HARD_MOMENTUM_FLOOR
+    ]
+
+    if result.empty:
+        return result
+
+    # --------------------------------------------------------
+    # 4. Çok kötü finansal yapı
+    #
+    # Finansal veri yoksa 40 nötr veriliyor.
+    # Böylece veri eksikliği otomatik ölüm değil.
+    # --------------------------------------------------------
+
+    result = result[
+        result[
+            "financial_score"
+        ] >= HARD_FINANCIAL_FLOOR
+    ]
+
+    return result.reset_index(
+        drop=True
+    )
+
+
+# ============================================================
+# PORTFÖY SEÇİMİ
+# ============================================================
+
+def select_balanced_portfolio(
+    df,
+    portfolio_size=10,
+    max_sector_weight=0.30,
+    max_per_sector=3
+):
+
+    if df.empty:
+
+        return pd.DataFrame()
+
+    working = df.copy()
+
+    working = working.sort_values(
+        [
+            "dynamic_score",
+            "technical_score",
+            "momentum_score"
+        ],
+        ascending=False
+    ).reset_index(
+        drop=True
+    )
+
+    selected = []
+
+    sector_counts = {}
+
+    sector_count_limit = max(
+        1,
+        math.ceil(
+            portfolio_size
+            * max_sector_weight
+        )
+    )
+
+    # --------------------------------------------------------
+    # İlk tur
+    # Her sektörden mümkün olduğunca birer güçlü aday.
+    # --------------------------------------------------------
+
+    for _, row in working.iterrows():
+
+        if len(selected) >= portfolio_size:
+
+            break
+
+        sector = row[
+            "sector"
+        ]
+
+        count = sector_counts.get(
+            sector,
+            0
+        )
+
+        if (
+            sector != SECTOR_UNKNOWN
+            and count >= max_per_sector
+        ):
+
+            continue
+
+        if (
+            sector != SECTOR_UNKNOWN
+            and count >= sector_count_limit
+        ):
+
+            continue
+
+        base_score = row[
+            "dynamic_score"
+        ]
+
+        concentration_penalty = (
+            count
+            * SECTOR_CONCENTRATION_PENALTY
+        )
+
+        portfolio_score = (
+            base_score
+            - concentration_penalty
+        )
+
+        selected_row = row.copy()
+
+        selected_row[
+            "portfolio_score"
+        ] = portfolio_score
+
+        selected_row[
+            "sector_selection_count"
+        ] = count + 1
+
+        selected.append(
+            selected_row
+        )
+
+        sector_counts[
+            sector
+        ] = count + 1
+
+    if not selected:
+
+        return pd.DataFrame()
+
+    result = pd.DataFrame(
+        selected
+    )
+
+    result = result.sort_values(
+        "portfolio_score",
+        ascending=False
+    ).reset_index(
+        drop=True
+    )
+
+    # --------------------------------------------------------
+    # Ağırlık
+    # --------------------------------------------------------
+
+    result[
+        "portfolio_weight"
+    ] = (
+        result[
+            "portfolio_score"
+        ]
+        .clip(
+            lower=1
+        )
+    )
+
+    total = result[
+        "portfolio_weight"
+    ].sum()
+
+    if total > 0:
+
+        result[
+            "portfolio_weight_pct"
+        ] = (
+            result[
+                "portfolio_weight"
+            ]
+            / total
+            * 100
+        )
+
+    return result
+
+
+# ============================================================
+# SEÇİM GEREKÇESİ
+# ============================================================
+
+def build_reason_text(
+    row
+):
+
+    reasons = []
+
+    # --------------------------------------------------------
+    # Finansal
+    # --------------------------------------------------------
+
+    if row[
+        "financial_score"
+    ] >= 70:
+
+        reasons.append(
+            "Finansal kalite güçlü"
+        )
+
+    elif row[
+        "financial_score"
+    ] >= 50:
+
+        reasons.append(
+            "Finansal kalite yeterli"
+        )
+
+    # --------------------------------------------------------
+    # Teknik
+    # --------------------------------------------------------
+
+    if row[
+        "technical_score"
+    ] >= 75:
+
+        reasons.append(
+            "Teknik yapı güçlü"
+        )
+
+    elif row[
+        "technical_score"
+    ] >= 55:
+
+        reasons.append(
+            "Teknik yapı pozitif"
+        )
+
+    # --------------------------------------------------------
+    # Momentum
+    # --------------------------------------------------------
+
+    if row[
+        "momentum_score"
+    ] >= 75:
+
+        reasons.append(
+            "Momentum güçlü"
+        )
+
+    elif row[
+        "momentum_score"
+    ] >= 55:
+
+        reasons.append(
+            "Momentum pozitif"
+        )
+
+    # --------------------------------------------------------
+    # Sektör
+    # --------------------------------------------------------
+
+    if row[
+        "sector_score"
+    ] >= 70:
+
+        reasons.append(
+            "Sektör güçlü"
+        )
+
+    elif row[
+        "sector_score"
+    ] >= 55:
+
+        reasons.append(
+            "Sektör olumlu"
+        )
+
+    # --------------------------------------------------------
+    # Hacim
+    # --------------------------------------------------------
+
+    if row[
+        "liquidity_score"
+    ] >= 70:
+
+        reasons.append(
+            "Likidite güçlü"
+        )
+
+    # --------------------------------------------------------
+    # ADX
+    # --------------------------------------------------------
+
+    adx = row.get(
+        "adx"
+    )
+
+    if (
+        pd.notna(adx)
+        and adx >= 25
+    ):
+
+        reasons.append(
+            "Trend gücü yüksek"
+        )
+
+    # --------------------------------------------------------
+    # MACD
+    # --------------------------------------------------------
+
+    macd = row.get(
+        "macd"
+    )
+
+    if (
+        pd.notna(macd)
+        and macd > 0
+    ):
+
+        reasons.append(
+            "MACD pozitif"
+        )
+
+    # --------------------------------------------------------
+    # OBV
+    # --------------------------------------------------------
+
+    obv = row.get(
+        "obv_trend"
+    )
+
+    if (
+        pd.notna(obv)
+        and obv > 0
+    ):
+
+        reasons.append(
+            "OBV pozitif"
+        )
+
+    # --------------------------------------------------------
+    # Risk
+    # --------------------------------------------------------
+
+    if row[
+        "risk_penalty"
+    ] > 0:
+
+        reasons.append(
+            "Risk düzeltmesi uygulandı"
+        )
+
+    return (
+        " • ".join(
+            reasons
+        )
+        if reasons
+        else "Genel skor sıralaması"
+    )
+
+
+# ============================================================
+# FORMAT
+# ============================================================
+
+def format_score(value):
+
+    if pd.isna(value):
+
+        return "-"
+
+    return (
+        f"{float(value):.1f}"
+    )
+
+
+def format_money(value):
+
+    if pd.isna(value):
+
+        return "-"
+
+    value = float(value)
+
+    if value >= 1_000_000_000:
+
+        return (
+            f"{value / 1_000_000_000:.2f} Mr TL"
+        )
+
+    if value >= 1_000_000:
+
+        return (
+            f"{value / 1_000_000:.2f} Mn TL"
+        )
+
+    return (
+        f"{value:,.0f} TL"
+    )
+
+
+# ============================================================
+# TEŞHİS PANELİ
+# ============================================================
+
+def build_diagnostic_counts(
+    analysis_df,
+    candidate_df,
+    portfolio_df
+):
+
+    if analysis_df.empty:
+
+        return {}
+
+    counts = {}
+
+    counts[
+        "Analiz"
+    ] = len(
+        analysis_df
+    )
+
+    counts[
+        "Dinamik ≥ 50"
+    ] = int(
+        (
+            analysis_df[
+                "dynamic_score"
+            ] >= MIN_DYNAMIC_SCORE
+        ).sum()
+    )
+
+    counts[
+        "Teknik ≥ 20"
+    ] = int(
+        (
+            analysis_df[
+                "technical_score"
+            ] >= HARD_TECHNICAL_FLOOR
+        ).sum()
+    )
+
+    counts[
+        "Momentum ≥ 15"
+    ] = int(
+        (
+            analysis_df[
+                "momentum_score"
+            ] >= HARD_MOMENTUM_FLOOR
+        ).sum()
+    )
+
+    counts[
+        "Finansal ≥ 15"
+    ] = int(
+        (
+            analysis_df[
+                "financial_score"
+            ] >= HARD_FINANCIAL_FLOOR
+        ).sum()
+    )
+
+    counts[
+        "Aday Havuzu"
+    ] = len(
+        candidate_df
+    )
+
+    counts[
+        "Portföy"
+    ] = len(
+        portfolio_df
+    )
+
+    return counts
+
+
+# ============================================================
+# STREAMLIT
+# ============================================================
+
+st.set_page_config(
+    page_title=(
+        "BIST AI PRO - Dinamik Portföy"
+    ),
+    page_icon="📊",
+    layout="wide"
+)
+
+st.title(
+    "📊 BIST AI PRO - Dinamik Portföy"
+)
+
+st.caption(
+    "v3 • KAP + Teknik + Momentum + Sektör + Likidite + Piyasa + Risk"
+)
+
+
+# ============================================================
+# DB
+# ============================================================
+
+if not os.path.exists(DB_PATH):
+
+    st.error(
+        f"❌ {DB_PATH} bulunamadı."
+    )
+
+    st.stop()
+
+
+tables = get_tables()
+
+with st.expander(
+    "🗄️ Veritabanı Kontrolü",
+    expanded=False
+):
+
+    st.write(
+        "Bulunan tablolar:"
+    )
+
+    st.write(
+        tables
+    )
+
+
+# ============================================================
+# VERİLER
+# ============================================================
+
+stocks_df = load_stocks()
+
+prices_df = load_prices()
+
+technical_df = load_technical()
+
+fundamentals_df = load_fundamentals()
+
+
+# ============================================================
+# VERİ DURUMU
+# ============================================================
+
+c1, c2, c3, c4 = st.columns(4)
+
+with c1:
+
+    st.metric(
+        "Stocks",
+        len(stocks_df)
+    )
+
+with c2:
+
+    st.metric(
+        "Fiyat Satırı",
+        len(prices_df)
+    )
+
+with c3:
+
+    st.metric(
+        "Teknik Satır",
+        len(technical_df)
+    )
+
+with c4:
+
+    st.metric(
+        "Finansal Satır",
+        len(fundamentals_df)
+    )
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+st.sidebar.header(
+    "⚙️ Dinamik Portföy Ayarları"
+)
+
+pool = st.sidebar.selectbox(
+    "Hisse Evreni",
+    [
+        "BIST500",
+        "BIST100",
+        "BIST50",
+        "BIST30"
+    ],
+    index=0
+)
+
+portfolio_size = st.sidebar.slider(
+    "Portföy Hisse Sayısı",
+    5,
+    15,
+    10
+)
+
+max_sector_weight = st.sidebar.slider(
+    "Maksimum Sektör Payı",
+    0.20,
+    0.50,
+    0.30,
+    0.05
+)
+
+max_per_sector = st.sidebar.slider(
+    "Sektör Başına Maksimum Hisse",
+    1,
+    5,
+    3
+)
+
+run_scan = st.sidebar.button(
+    "🚀 DİNAMİK PORTFÖYÜ OLUŞTUR",
+    use_container_width=True,
+    type="primary"
+)
+
+
+# ============================================================
+# GÖSTERGE DURUMU
+# ============================================================
+
+with st.expander(
+    "🔬 Teknik Gösterge Veri Durumu",
+    expanded=False
+):
+
+    if technical_df.empty:
+
+        st.warning(
+            "technical_analysis tablosu bulunamadı."
+        )
+
+    else:
+
+        indicator_rows = []
+
+        total_symbols = len(
+            technical_df
+        )
+
+        for indicator, candidates in (
+            TECH_COLUMNS.items()
+        ):
+
+            col = find_column(
+                technical_df,
+                candidates
+            )
+
+            if col:
+
+                values = pd.to_numeric(
+                    technical_df[col],
+                    errors="coerce"
+                )
+
+                valid = int(
+                    values.notna().sum()
+                )
+
+                missing = (
+                    total_symbols
+                    - valid
+                )
+
+                coverage = (
+                    valid
+                    / total_symbols
+                    * 100
+                    if total_symbols
+                    else 0
+                )
+
+            else:
+
+                valid = 0
+                missing = total_symbols
+                coverage = 0
+
+            indicator_rows.append({
+
+                "Gösterge":
+                    indicator,
+
+                "Kolon":
+                    col
+                    if col
+                    else "BULUNAMADI",
+
+                "Veri":
+                    valid,
+
+                "Eksik":
+                    missing,
+
+                "Kapsama %":
+                    coverage
+            })
+
+        indicator_df = pd.DataFrame(
+            indicator_rows
+        )
+
+        st.dataframe(
+            indicator_df.style.format(
+                {
+                    "Kapsama %":
+                        "{:.1f}"
+                }
+            ),
+            use_container_width=True,
+            hide_index=True
+        )
+
+
+# ============================================================
+# TARAMA
+# ============================================================
+
+if (
+    "dynamic_portfolio_result"
+    not in st.session_state
+    or run_scan
+):
+
+    with st.spinner(
+        "BIST evreni gelişmiş motor ile analiz ediliyor..."
+    ):
+
+        universe = build_universe(
+            stocks_df,
+            pool
+        )
+
+        if not universe:
+
+            st.error(
+                "❌ Hisse evreni oluşturulamadı."
+            )
+
+            st.stop()
+
+        analysis_rows = []
+
+        progress = st.progress(
+            0
+        )
+
+        total = len(
+            universe
+        )
+
+        for i, symbol in enumerate(
+            universe
+        ):
+
+            try:
+
+                row = analyze_stock(
+                    symbol,
+                    stocks_df,
+                    prices_df,
+                    technical_df,
+                    fundamentals_df
+                )
+
+                if row is not None:
+
+                    analysis_rows.append(
+                        row
+                    )
+
+            except Exception as exc:
+
+                # Tek hisse hatası tüm taramayı bozmaz.
+                pass
+
+            progress.progress(
+                min(
+                    (i + 1)
+                    / total,
+                    1.0
+                )
+            )
+
+        progress.empty()
+
+        analysis_df = pd.DataFrame(
+            analysis_rows
+        )
+
+        if analysis_df.empty:
+
+            st.error(
+                "❌ Analiz edilebilecek yeterli hisse bulunamadı."
+            )
+
+            st.stop()
+
+        # ----------------------------------------------------
+        # Sektör
+        # ----------------------------------------------------
+
+        analysis_df = (
+            attach_sector_scores(
+                analysis_df
+            )
+        )
+
+        # ----------------------------------------------------
+        # Dinamik
+        # ----------------------------------------------------
+
+        analysis_df = (
+            calculate_dynamic_scores(
+                analysis_df
+            )
+        )
+
+        # ----------------------------------------------------
+        # Sınıflandırma
+        # ----------------------------------------------------
+
+        analysis_df[
+            "classification"
+        ] = analysis_df.apply(
+            classify_candidate,
+            axis=1
+        )
+
+        # ----------------------------------------------------
+        # Filtre
+        # ----------------------------------------------------
+
+        candidate_df = (
+            apply_basic_filters(
+                analysis_df
+            )
+        )
+
+        # ----------------------------------------------------
+        # Portföy
+        # ----------------------------------------------------
+
+        portfolio_df = (
+            select_balanced_portfolio(
+                candidate_df,
+                portfolio_size,
+                max_sector_weight,
+                max_per_sector
+            )
+        )
+
+        # ----------------------------------------------------
+        # Gerekçe
+        # ----------------------------------------------------
+
+        if not portfolio_df.empty:
+
+            portfolio_df[
+                "selection_reason"
+            ] = portfolio_df.apply(
+                build_reason_text,
+                axis=1
+            )
+
+        # ----------------------------------------------------
+        # Session
+        # ----------------------------------------------------
+
+        st.session_state[
+            "dynamic_portfolio_result"
+        ] = analysis_df
+
+        st.session_state[
+            "dynamic_portfolio_candidates"
+        ] = candidate_df
+
+        st.session_state[
+            "dynamic_portfolio_selected"
+        ] = portfolio_df
+
+
+# ============================================================
+# SONUÇLAR
+# ============================================================
+
+analysis_df = st.session_state.get(
+    "dynamic_portfolio_result",
+    pd.DataFrame()
+)
+
+candidate_df = st.session_state.get(
+    "dynamic_portfolio_candidates",
+    pd.DataFrame()
+)
+
+portfolio_df = st.session_state.get(
+    "dynamic_portfolio_selected",
+    pd.DataFrame()
+)
+
+
+if analysis_df.empty:
+
+    st.warning(
+        "Henüz analiz sonucu yok."
+    )
+
+    st.stop()
+
+
+# ============================================================
+# TEŞHİS
+# ============================================================
+
+st.divider()
+
+st.subheader(
+    "🔬 Seçim Motoru Teşhis Paneli"
+)
+
+diag = build_diagnostic_counts(
+    analysis_df,
+    candidate_df,
+    portfolio_df
+)
+
+diag_cols = st.columns(
+    len(diag)
+)
+
+for col, (
+    label,
+    value
+) in zip(
+    diag_cols,
+    diag.items()
+):
+
+    with col:
+
+        st.metric(
+            label,
+            value
+        )
+
+st.caption(
+    "Bu panel hangi aşamada kaç hissenin kaldığını gösterir."
+)
+
+
+# ============================================================
+# SKOR İSTATİSTİKLERİ
+# ============================================================
+
+st.subheader(
+    "📊 Skor Dağılımı"
+)
+
+score_cols = st.columns(6)
+
+metrics = [
+
+    (
+        "Ort. Dinamik",
+        analysis_df[
+            "dynamic_score"
+        ].mean()
+    ),
+
+    (
+        "Ort. Finansal",
+        analysis_df[
+            "financial_score"
+        ].mean()
+    ),
+
+    (
+        "Ort. Teknik",
+        analysis_df[
+            "technical_score"
+        ].mean()
+    ),
+
+    (
+        "Ort. Momentum",
+        analysis_df[
+            "momentum_score"
+        ].mean()
+    ),
+
+    (
+        "Ort. Sektör",
+        analysis_df[
+            "sector_score"
+        ].mean()
+    ),
+
+    (
+        "En Yüksek",
+        analysis_df[
+            "dynamic_score"
+        ].max()
+    )
+]
+
+for col, (
+    label,
+    value
+) in zip(
+    score_cols,
+    metrics
+):
+
+    with col:
+
+        st.metric(
+            label,
+            f"{value:.1f}"
+        )
+
+
+# ============================================================
+# PORTFÖY ÖZET
+# ============================================================
+
+st.divider()
+
+st.subheader(
+    "🎯 Dinamik Portföy Özeti"
+)
+
+s1, s2, s3, s4, s5 = st.columns(5)
+
+with s1:
+
+    st.metric(
+        "Taranan",
+        len(analysis_df)
+    )
+
+with s2:
+
+    st.metric(
+        "Aday Havuzu",
+        len(candidate_df)
+    )
+
+with s3:
+
+    st.metric(
+        "Seçilen",
+        len(portfolio_df)
+    )
+
+with s4:
+
+    st.metric(
+        "En Yüksek Skor",
+        f"{analysis_df['dynamic_score'].max():.1f}"
+    )
+
+with s5:
+
+    if not portfolio_df.empty:
+
+        st.metric(
+            "Portföy Ort. Skor",
+            f"{portfolio_df['portfolio_score'].mean():.1f}"
+        )
+
+    else:
+
+        st.metric(
+            "Portföy Ort. Skor",
+            "-"
+        )
+
+
+# ============================================================
+# PORTFÖY
+# ============================================================
+
+st.divider()
+
+st.subheader(
+    "🏆 Önerilen Dinamik Portföy"
+)
+
+if portfolio_df.empty:
+
+    st.warning(
+        "Bu taramada minimum kalite seviyesini geçen dengeli portföy oluşturulamadı."
+    )
+
+    st.info(
+        "Aşağıdaki 'En İyi Alternatifler' tablosu "
+        "sistemin neden aday üretemediğini gösterir."
+    )
+
 else:
-    st.caption(
-        "Piyasa snapshot gerekçesi bulunamadı."
+
+    display = portfolio_df[
+        [
+            "symbol",
+            "sector",
+            "portfolio_score",
+            "dynamic_score",
+            "financial_score",
+            "sector_score",
+            "technical_score",
+            "momentum_score",
+            "market_score",
+            "liquidity_score",
+            "risk_penalty",
+            "portfolio_weight_pct"
+        ]
+    ].copy()
+
+    display.columns = [
+
+        "Hisse",
+        "Sektör",
+        "Portföy Skoru",
+        "Dinamik",
+        "Finansal",
+        "Sektör Skoru",
+        "Teknik",
+        "Momentum",
+        "Piyasa",
+        "Likidite",
+        "Risk",
+        "Önerilen %"
+    ]
+
+    _fmt_cols = [
+        "Portföy Skoru", "Dinamik", "Finansal", "Sektör Skoru",
+        "Teknik", "Momentum", "Piyasa", "Likidite", "Risk",
+        "Önerilen %"
+    ]
+    for _c in _fmt_cols:
+        if _c in display.columns:
+            display[_c] = pd.to_numeric(display[_c], errors="coerce")
+
+    st.dataframe(
+        display.style.format(
+            {
+                "Portföy Skoru":
+                    "{:.1f}",
+
+                "Dinamik":
+                    "{:.1f}",
+
+                "Finansal":
+                    "{:.1f}",
+
+                "Sektör Skoru":
+                    "{:.1f}",
+
+                "Teknik":
+                    "{:.1f}",
+
+                "Momentum":
+                    "{:.1f}",
+
+                "Piyasa":
+                    "{:.1f}",
+
+                "Likidite":
+                    "{:.1f}",
+
+                "Risk":
+                    "{:.1f}",
+
+                "Önerilen %":
+                    "{:.1f}"
+            }
+        ),
+        use_container_width=True,
+        hide_index=True
     )
 
 
 # ============================================================
-# VERİ KALİTESİ
+# EN İYİ ALTERNATİFLER
 # ============================================================
 
 st.divider()
-st.subheader("🛡️ VERİ KALİTESİ")
 
-financial_coverage = (
-    float(stocks["Financial Veri"].mean() * 100)
-    if not stocks.empty
-    else 0.0
+st.subheader(
+    "🥈 En İyi Alternatifler"
 )
 
-q1, q2, q3, q4 = st.columns(4)
-
-q1.metric(
-    "Snapshot Hisse",
-    len(stocks),
+alternatives = (
+    analysis_df
+    .sort_values(
+        [
+            "dynamic_score",
+            "technical_score",
+            "momentum_score"
+        ],
+        ascending=False
+    )
+    .head(20)
+    .copy()
 )
 
-q2.metric(
-    "Filtrelenen",
-    len(eligible_stock_df),
-)
+alt_display = alternatives[
+    [
+        "symbol",
+        "sector",
+        "classification",
+        "dynamic_score",
+        "financial_score",
+        "sector_score",
+        "technical_score",
+        "momentum_score",
+        "liquidity_score",
+        "risk_penalty"
+    ]
+].copy()
 
-q3.metric(
-    "KAP Finansal Veri",
-    f"{financial_coverage:.1f}%",
-)
+alt_display.columns = [
 
-q4.metric(
-    "Dış Kaynak Taraması",
-    "KAPALI",
+    "Hisse",
+    "Sektör",
+    "Durum",
+    "Dinamik",
+    "Finansal",
+    "Sektör Skoru",
+    "Teknik",
+    "Momentum",
+    "Likidite",
+    "Risk"
+]
+
+_fmt_cols = ["Dinamik", "Finansal", "Sektör Skoru", "Teknik", "Momentum", "Likidite", "Risk"]
+for _c in _fmt_cols:
+    if _c in alt_display.columns:
+        alt_display[_c] = pd.to_numeric(alt_display[_c], errors="coerce")
+
+st.dataframe(
+    alt_display.style.format(
+        {
+            "Dinamik": "{:.1f}",
+            "Finansal": "{:.1f}",
+            "Sektör Skoru": "{:.1f}",
+            "Teknik": "{:.1f}",
+            "Momentum": "{:.1f}",
+            "Likidite": "{:.1f}",
+            "Risk": "{:.1f}"
+        }
+    ),
+    use_container_width=True,
+    hide_index=True
 )
 
 
 # ============================================================
-# NASIL ÇALIŞIR?
+# DETAYLI PORTFÖY GEREKÇESİ
 # ============================================================
 
-with st.expander("📖 Dinamik Portföy nasıl çalışıyor?"):
+if not portfolio_df.empty:
+
+    st.divider()
+
+    st.subheader(
+        "🔎 Portföy Seçim Gerekçeleri"
+    )
+
+    for _, row in portfolio_df.iterrows():
+
+        with st.expander(
+            f"{row['symbol']} — "
+            f"{row['sector']} — "
+            f"Skor {row['portfolio_score']:.1f}"
+        ):
+
+            a1, a2, a3, a4, a5 = st.columns(5)
+
+            with a1:
+
+                st.metric(
+                    "Dinamik",
+                    f"{row['dynamic_score']:.1f}"
+                )
+
+            with a2:
+
+                st.metric(
+                    "Finansal",
+                    f"{row['financial_score']:.1f}"
+                )
+
+            with a3:
+
+                st.metric(
+                    "Teknik",
+                    f"{row['technical_score']:.1f}"
+                )
+
+            with a4:
+
+                st.metric(
+                    "Momentum",
+                    f"{row['momentum_score']:.1f}"
+                )
+
+            with a5:
+
+                st.metric(
+                    "Sektör",
+                    f"{row['sector_score']:.1f}"
+                )
+
+            st.write(
+                "### Neden seçildi?"
+            )
+
+            reason_text = (
+                row.get(
+                    "selection_reason",
+                    ""
+                )
+            )
+
+            if reason_text:
+
+                for reason in (
+                    reason_text.split(
+                        " • "
+                    )
+                ):
+
+                    st.write(
+                        f"✅ {reason}"
+                    )
+
+            if row.get(
+                "technical_reasons"
+            ):
+
+                st.write(
+                    "**Teknik:**"
+                )
+
+                for reason in row[
+                    "technical_reasons"
+                ]:
+
+                    st.write(
+                        f"• {reason}"
+                    )
+
+            if row.get(
+                "momentum_reasons"
+            ):
+
+                st.write(
+                    "**Momentum:**"
+                )
+
+                for reason in row[
+                    "momentum_reasons"
+                ]:
+
+                    st.write(
+                        f"• {reason}"
+                    )
+
+            if row.get(
+                "financial_reasons"
+            ):
+
+                st.write(
+                    "**KAP / Finansal:**"
+                )
+
+                for reason in row[
+                    "financial_reasons"
+                ]:
+
+                    st.write(
+                        f"• {reason}"
+                    )
+
+            if row.get(
+                "risk_reasons"
+            ):
+
+                st.write(
+                    "**Risk:**"
+                )
+
+                for reason in row[
+                    "risk_reasons"
+                ]:
+
+                    st.write(
+                        f"⚠️ {reason}"
+                    )
+
+            st.write(
+                f"**Fiyat:** "
+                f"{row['price']:.2f} TL"
+            )
+
+            st.write(
+                f"**RSI:** "
+                f"{format_score(row['rsi'])}"
+            )
+
+            st.write(
+                f"**ADX:** "
+                f"{format_score(row['adx'])}"
+            )
+
+            st.write(
+                f"**MACD:** "
+                f"{format_score(row['macd'])}"
+            )
+
+            st.write(
+                f"**20G Momentum:** "
+                f"{format_score(row['momentum20'])}"
+            )
+
+            st.write(
+                f"**60G Momentum:** "
+                f"{format_score(row['momentum60'])}"
+            )
+
+            st.write(
+                f"**120G Momentum:** "
+                f"{format_score(row['momentum120'])}"
+            )
+
+            st.write(
+                f"**20G Hacim Oranı:** "
+                f"{format_score(row['volume20'])}"
+            )
+
+            st.write(
+                f"**OBV Trendi:** "
+                f"{format_score(row['obv_trend'])}"
+            )
+
+            st.write(
+                f"**Finansal Veri Kalitesi:** "
+                f"{row['financial_data_quality']:.0f}%"
+            )
+
+
+# ============================================================
+# TÜM ADAYLAR
+# ============================================================
+
+st.divider()
+
+with st.expander(
+    "📋 Tüm Aday Havuzunu Gör",
+    expanded=False
+):
+
+    if candidate_df.empty:
+
+        st.warning(
+            "Aday havuzu boş."
+        )
+
+    else:
+
+        candidates_display = (
+            candidate_df
+            .sort_values(
+                "dynamic_score",
+                ascending=False
+            )
+            [
+                [
+                    "symbol",
+                    "sector",
+                    "classification",
+                    "dynamic_score",
+                    "financial_score",
+                    "financial_data_quality",
+                    "sector_score",
+                    "technical_score",
+                    "momentum_score",
+                    "market_score",
+                    "liquidity_score",
+                    "risk_penalty"
+                ]
+            ]
+            .copy()
+        )
+
+        candidates_display.columns = [
+
+            "Hisse",
+            "Sektör",
+            "Durum",
+            "Dinamik",
+            "Finansal",
+            "Finansal Veri %",
+            "Sektör Skoru",
+            "Teknik",
+            "Momentum",
+            "Piyasa",
+            "Likidite",
+            "Risk"
+        ]
+
+        _fmt_cols = ["Dinamik", "Finansal", "Finansal Veri %", "Sektör Skoru", "Teknik", "Momentum", "Piyasa", "Likidite", "Risk"]
+        for _c in _fmt_cols:
+            if _c in candidates_display.columns:
+                candidates_display[_c] = pd.to_numeric(candidates_display[_c], errors="coerce")
+
+        st.dataframe(
+            candidates_display.style.format(
+                {
+                    "Dinamik":
+                        "{:.1f}",
+
+                    "Finansal":
+                        "{:.1f}",
+
+                    "Finansal Veri %":
+                        "{:.0f}",
+
+                    "Sektör Skoru":
+                        "{:.1f}",
+
+                    "Teknik":
+                        "{:.1f}",
+
+                    "Momentum":
+                        "{:.1f}",
+
+                    "Piyasa":
+                        "{:.1f}",
+
+                    "Likidite":
+                        "{:.1f}",
+
+                    "Risk":
+                        "{:.1f}"
+                }
+            ),
+            use_container_width=True,
+            hide_index=True
+        )
+
+
+# ============================================================
+# ELENENLERİN NEDENLERİ
+# ============================================================
+
+with st.expander(
+    "🔍 Elenen / Zayıf Hisselerin Nedenleri",
+    expanded=False
+):
+
+    diagnostic_df = analysis_df.copy()
+
+    def elimination_reason(
+        row
+    ):
+
+        reasons = []
+
+        if (
+            row["technical_score"]
+            < HARD_TECHNICAL_FLOOR
+        ):
+
+            reasons.append(
+                "Teknik kalite çok düşük"
+            )
+
+        if (
+            row["momentum_score"]
+            < HARD_MOMENTUM_FLOOR
+        ):
+
+            reasons.append(
+                "Momentum çok düşük"
+            )
+
+        if (
+            row["financial_score"]
+            < HARD_FINANCIAL_FLOOR
+        ):
+
+            reasons.append(
+                "Finansal kalite çok düşük"
+            )
+
+        if (
+            row["dynamic_score"]
+            < MIN_DYNAMIC_SCORE
+        ):
+
+            reasons.append(
+                "Dinamik skor < 50"
+            )
+
+        if not reasons:
+
+            return "Aday havuzunda / portföy seçiminde elendi"
+
+        return " • ".join(
+            reasons
+        )
+
+    diagnostic_df[
+        "elimination_reason"
+    ] = diagnostic_df.apply(
+        elimination_reason,
+        axis=1
+    )
+
+    diagnostic_display = (
+        diagnostic_df
+        .sort_values(
+            "dynamic_score",
+            ascending=False
+        )
+        [
+            [
+                "symbol",
+                "sector",
+                "dynamic_score",
+                "financial_score",
+                "technical_score",
+                "momentum_score",
+                "sector_score",
+                "elimination_reason"
+            ]
+        ]
+        .head(100)
+        .copy()
+    )
+
+    diagnostic_display.columns = [
+
+        "Hisse",
+        "Sektör",
+        "Dinamik",
+        "Finansal",
+        "Teknik",
+        "Momentum",
+        "Sektör Skoru",
+        "Sonuç / Neden"
+    ]
+
+    _fmt_cols = ["Dinamik", "Finansal", "Teknik", "Momentum", "Sektör Skoru"]
+    for _c in _fmt_cols:
+        if _c in diagnostic_display.columns:
+            diagnostic_display[_c] = pd.to_numeric(diagnostic_display[_c], errors="coerce")
+
+    st.dataframe(
+        diagnostic_display.style.format(
+            {
+                "Dinamik": "{:.1f}",
+                "Finansal": "{:.1f}",
+                "Teknik": "{:.1f}",
+                "Momentum": "{:.1f}",
+                "Sektör Skoru": "{:.1f}"
+            }
+        ),
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+# ============================================================
+# SEKTÖR DAĞILIMI
+# ============================================================
+
+if not portfolio_df.empty:
+
+    st.divider()
+
+    st.subheader(
+        "🏭 Portföy Sektör Dağılımı"
+    )
+
+    sector_distribution = (
+        portfolio_df
+        .groupby("sector")
+        .agg(
+            Hisse_Sayısı=(
+                "symbol",
+                "count"
+            ),
+
+            Ortalama_Skor=(
+                "dynamic_score",
+                "mean"
+            ),
+
+            Agirlik=(
+                "portfolio_weight_pct",
+                "sum"
+            )
+        )
+        .reset_index()
+        .sort_values(
+            "Agirlik",
+            ascending=False
+        )
+    )
+
+    sector_distribution.columns = [
+
+        "Sektör",
+        "Hisse Sayısı",
+        "Ortalama Skor",
+        "Ağırlık %"
+    ]
+
+    st.dataframe(
+        sector_distribution.style.format(
+            {
+                "Ortalama Skor":
+                    "{:.1f}",
+
+                "Ağırlık %":
+                    "{:.1f}"
+            }
+        ),
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+# ============================================================
+# SKOR SİSTEMİ
+# ============================================================
+
+with st.expander(
+    "🧠 Yeni Dinamik Portföy Skor Sistemi",
+    expanded=False
+):
+
     st.markdown(
-        f"""
-### 1. Veri kaynağı
-Sayfa dış kaynağa gidip hisse taramaz. `technical_analysis`
-snapshotını SQLite'tan okur.
+        """
+### Ana Skor
 
-### 2. Genel skor
-Tarama Merkezi ile uyumlu ağırlıklar:
+| Faktör | Ağırlık |
+|---|---:|
+| 💰 KAP / Finansal Kalite | **%25** |
+| 📈 Teknik Kalite | **%25** |
+| 🏭 Sektör Gücü | **%15** |
+| 🚀 Momentum | **%15** |
+| 💧 Likidite | **%10** |
+| 🌍 Piyasa Uyumu | **%10** |
+| **TOPLAM** | **%100** |
 
-- Teknik: **%50**
-- KAP/Finansal: **%20**
-- 60G Momentum: **%15**
-- Piyasa: **%15**
+### Teknik kalite içinde kullanılan göstergeler
 
-### 3. Sektör gücü
-Sektör skoru:
+- MACD
+- ADX
+- ATR %
+- Bollinger Pozisyonu
+- Bollinger Genişliği
+- Stochastic
+- EMA9 Mesafesi
+- EMA20 Mesafesi
+- EMA50 Mesafesi
+- EMA20-50
+- EMA50-100
 
-**%35 Hisse Gücü + %25 Momentum + %20 Trend + %10 Genişlik + %10 BIST relatif güç**
+### Momentum içinde
 
-Sektör skoru, hisse minimum filtresinden **önce** tüm geçerli
-snapshot üzerinden hesaplanır.
+- 20G Momentum
+- 60G Momentum
+- 120G Momentum
+- 20G Hacim Oranı
+- 60G Hacim Oranı
+- Hacim Trendi
+- OBV Trendi
 
-### 4. Aday seçimi
-Sadece:
+### Sektör skoru
 
-- Sektör skoru ≥ **{sector_min:.0f}**
-- Genel skor ≥ **{stock_min:.0f}**
-- Karar = **AL / GÜÇLÜ AL**
+Sektör skoru artık sadece bilanço ile belirlenmez.
 
-olan hisseler aday olur.
+- %40 Teknik
+- %30 Momentum
+- %20 Finansal
+- %10 Likidite
 
-### 5. Portföy skoru
-**Genel Skor %65 + Sektör %25 + 60G Momentum %10**
+### Önemli
 
-### 6. Risk kontrolü
-Tek hisse maksimum **%{max_stock_weight:.0f}**,
-tek sektör maksimum **%{max_sector_weight:.0f}**.
+Finansal veri eksikliği tek başına hisseyi otomatik olarak sıfırlamaz.
 
-Ağırlık motoru tavanları uyguladıktan sonra kalan ağırlığı
-kapasitesi olan hisselere tekrar dağıtır; böylece normalizasyon
-sonrasında tavanların aşılması engellenir.
+Finansal veri kalitesi ayrıca gösterilir.
 
-### 7. Mevcut portföy
-`portfolio` tablosundaki gerçek lotlar hedef portföyle karşılaştırılır.
+Ama gerçekten kötü finansal skor yine aşağı çekilir.
 
-### 8. Önemli
-Bu sayfa emir göndermez. Yalnızca hedef portföy,
-risk ve rebalance önerisi üretir.
+### Portföy mantığı
 
-Arka plandaki veri güncelleme motoru ayrı çalışır; burada
-**30 dakikalık yenileme yalnızca arayüzü yeniler.**
+Amaç:
+
+> **En yüksek 10 skoru körü körüne almak değil; kalite + trend + momentum + sektör + likidite + risk açısından dengeli portföy oluşturmaktır.**
 """
     )
 
+
+# ============================================================
+# SON
+# ============================================================
+
 st.caption(
-    "BIST AI PRO bir karar destek sistemidir; otomatik emir sistemi değildir."
+    "Son çalışma: "
+    + datetime.now().strftime(
+        "%d.%m.%Y %H:%M:%S"
+    )
+)
+
+st.caption(
+    "BIST AI PRO — Dinamik Portföy Motoru v3"
 )
