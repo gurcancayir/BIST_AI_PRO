@@ -73,56 +73,37 @@ bloomberg_haberleri = st.Page(
     title="Bloomberg HT",
     icon="📰",
 )
-
 # ==================================================
 # CRYPTO AI PRO SAYFALARI
 # ==================================================
+
 crypto_piyasa = st.Page(
     "pages_cr/01_Kripto_Piyasa.py",
     title="Kripto Piyasa",
     icon="🌐",
 )
+
 crypto_trade = st.Page(
     "pages_cr/02_Kripto_Trade.py",
     title="Kripto Trade",
     icon="⚡",
 )
+
 crypto_trade_pro = st.Page(
-    "pages_cr/03_Kripto_Trade_Pro.py",
-    title="Kripto Trade Pro",
+    "pages_cr/03_Kripto_Trade_pro.py",
+    title="Kripto Trade PRO",
     icon="🚀",
 )
-crypto_gunluk_trade = st.Page(
-    "pages_cr/08_Crypto_Gunluk_Trade.py",
-    title="Günlük Trade",
-    icon="⚡",
-)
 
-crypto_kisa_vade = st.Page(
-    "pages_cr/09_Crypto_Kisa_Vade.py",
-    title="Kısa Vade",
-    icon="📈",
-)
-
-crypto_orta_vade = st.Page(
-    "pages_cr/10_Crypto_Orta_Vade.py",
-    title="Orta Vade",
-    icon="📊",
-)
-
-crypto_uzun_vade = st.Page(
-    "pages_cr/11_Crypto_Uzun_Vade.py",
-    title="Uzun Vade",
-    icon="🏆",
-)
 crypto_portfoy = st.Page(
-    "pages_cr/12_Crypto_Portfoy_Yonetimi.py",
+    "pages_cr/11_Crypto_Portfoy_Yonetimi.py",
     title="Kripto Portföy",
     icon="💼",
 )
+
 crypto_portfoy_pro = st.Page(
-    "pages_cr/13_Crypto_Portfoy_Pro.py",
-    title="Portföy PRO",
+    "pages_cr/12_Crypto_Portfoy_Pro.py",
+    title="Kripto Portföy PRO",
     icon="💼",
 )
 
@@ -136,12 +117,8 @@ bist500_test = st.Page(
 # ==================================================
 # SOL MENÜ
 # ==================================================
-
 pg = st.navigation(
     {
-        # --------------------------------------------------
-        # BIST AI PRO
-        # --------------------------------------------------
         "BIST AI PRO": [
             anasayfa,
             veri_guncelleme,
@@ -158,17 +135,10 @@ pg = st.navigation(
             bist500_test,
         ],
 
-        # --------------------------------------------------
-        # CRYPTO AI PRO
-        # --------------------------------------------------
         "🪙 CRYPTO AI PRO": [
             crypto_piyasa,
             crypto_trade,
             crypto_trade_pro,
-            crypto_gunluk_trade,
-            crypto_kisa_vade,
-            crypto_orta_vade,
-            crypto_uzun_vade,
             crypto_portfoy,
             crypto_portfoy_pro,
         ],
@@ -176,6 +146,7 @@ pg = st.navigation(
     position="sidebar",
 )
 
+pg.run()
 
 # ==================================================
 # SAYFAYI ÇALIŞTIR
