@@ -46,6 +46,11 @@ dinamik_portfoy = st.Page(
     title="Dinamik Portföy",
     icon="📊",
 )
+portfoy_yonetim = st.Page(
+    "pages/09_Portfoy_Pro.py",
+    title="Portföy Yönetim PRO",
+    icon="💼",
+)
 firsat_merkezi = st.Page(
     "pages/08_Hisse_Firsat_Merkezi.py",
     title="Fırsat Merkezi",
@@ -72,7 +77,21 @@ bloomberg_haberleri = st.Page(
 # ==================================================
 # CRYPTO AI PRO SAYFALARI
 # ==================================================
-
+crypto_piyasa = st.Page(
+    "pages_cr/01_Kripto_Piyasa.py",
+    title="Kripto Piyasa",
+    icon="🌐",
+)
+crypto_trade = st.Page(
+    "pages_cr/02_Kripto_Trade.py",
+    title="Kripto Trade",
+    icon="⚡",
+)
+crypto_trade_pro = st.Page(
+    "pages_cr/03_Kripto_Trade_Pro.py",
+    title="Kripto Trade Pro",
+    icon="🚀",
+)
 crypto_gunluk_trade = st.Page(
     "pages/08_Crypto_Gunluk_Trade.py",
     title="Günlük Trade",
@@ -96,6 +115,16 @@ crypto_uzun_vade = st.Page(
     title="Uzun Vade",
     icon="🏆",
 )
+crypto_portfoy = st.Page(
+    "pages_cr/11_Crypto_Portfoy_Yonetimi.py",
+    title="Kripto Portföy",
+    icon="💼",
+)
+crypto_portfoy_pro = st.Page(
+    "pages_cr/12_Crypto_Portfoy_Pro.py",
+    title="Portföy PRO",
+    icon="💼",
+)
 
 bist500_test = st.Page(
     "pages/99_BIST500_Test.py",
@@ -117,6 +146,7 @@ pg = st.navigation(
             anasayfa,
             veri_guncelleme,
             portfoy,
+            portfoy_yonetim,
             gunluk_trade,
             hisse_analiz,
             tarama,
@@ -132,10 +162,15 @@ pg = st.navigation(
         # CRYPTO AI PRO
         # --------------------------------------------------
         "🪙 CRYPTO AI PRO": [
+            crypto_piyasa,
+            crypto_trade,
+            crypto_trade_pro,
             crypto_gunluk_trade,
             crypto_kisa_vade,
             crypto_orta_vade,
             crypto_uzun_vade,
+            crypto_portfoy,
+            crypto_portfoy_pro,
         ],
     },
     position="sidebar",

@@ -1,0 +1,22 @@
+[
+    {
+        "coin": "PUMP",
+        "quantity": 4742.0,
+        "cost": 0.2058
+    },
+    {
+        "coin": "ENA",
+        "quantity": 109.0,
+        "cost": 7.32
+    },
+    {
+        "coin": "ACE",
+        "quantity": 53.0,
+        "cost": 12.22
+    },
+    {
+        "coin": "SANTOS",
+        "quantity": 16.0,
+        "cost": 26.27
+    }
+]
