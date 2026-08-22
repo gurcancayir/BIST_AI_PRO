@@ -73,7 +73,11 @@ bloomberg_haberleri = st.Page(
     title="Bloomberg HT",
     icon="📰",
 )
-
+bist500_test = st.Page(
+    "pages/99_BIST500_Test.py",
+    title="Deneme",
+    icon="🧪",
+)
 # ==================================================
 # CRYPTO AI PRO SAYFALARI
 # ==================================================
@@ -126,11 +130,7 @@ crypto_portfoy_pro = st.Page(
     icon="💼",
 )
 
-bist500_test = st.Page(
-    "pages/99_BIST500_Test.py",
-    title="Deneme",
-    icon="🧪",
-)
+
 
 
 # ==================================================
