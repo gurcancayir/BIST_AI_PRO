@@ -93,35 +93,35 @@ crypto_trade_pro = st.Page(
     icon="🚀",
 )
 crypto_gunluk_trade = st.Page(
-    "pages/08_Crypto_Gunluk_Trade.py",
+    "pages_cr/08_Crypto_Gunluk_Trade.py",
     title="Günlük Trade",
     icon="⚡",
 )
 
 crypto_kisa_vade = st.Page(
-    "pages/09_Crypto_Kisa_Vade.py",
+    "pages_cr/09_Crypto_Kisa_Vade.py",
     title="Kısa Vade",
     icon="📈",
 )
 
 crypto_orta_vade = st.Page(
-    "pages/10_Crypto_Orta_Vade.py",
+    "pages_cr/10_Crypto_Orta_Vade.py",
     title="Orta Vade",
     icon="📊",
 )
 
 crypto_uzun_vade = st.Page(
-    "pages/11_Crypto_Uzun_Vade.py",
+    "pages_cr/11_Crypto_Uzun_Vade.py",
     title="Uzun Vade",
     icon="🏆",
 )
 crypto_portfoy = st.Page(
-    "pages_cr/11_Crypto_Portfoy_Yonetimi.py",
+    "pages_cr/12_Crypto_Portfoy_Yonetimi.py",
     title="Kripto Portföy",
     icon="💼",
 )
 crypto_portfoy_pro = st.Page(
-    "pages_cr/12_Crypto_Portfoy_Pro.py",
+    "pages_cr/13_Crypto_Portfoy_Pro.py",
     title="Portföy PRO",
     icon="💼",
 )
