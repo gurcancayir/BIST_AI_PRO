@@ -1,66 +1,47 @@
 # ============================================================
 # CRYPTO AI PRO
-# 08_Crypto_Gunluk_Trade.py
+# 02_Kripto_Trade.py
 #
-# PROFESYONEL GÜNLÜK TRADE KARAR MOTORU
+# GELİŞMİŞ CRYPTO TRADE RADAR - ORTAK TRY EVRENİ SÜRÜMÜ
 #
-# ANA PRENSİP
+# YENİ SİSTEM
 # ------------------------------------------------------------
-# GÜÇLÜ COİN ≠ OTOMATİK AL
-#
-# Sistem:
-#
-# Ortak TRY Evreni
-#       ↓
-# Likidite
-#       ↓
-# Momentum
-#       ↓
-# Trend
-#       ↓
-# RSI
-#       ↓
-# Hacim
-#       ↓
-# Giriş Kalitesi
-#       ↓
-# Breakout
-#       ↓
-# Kovalama Riski
-#       ↓
-# Risk / Ödül
-#       ↓
-# Fırsat Havuzu
-#       ↓
-# Final Karar
+# 1) 24S momentum
+# 2) 15D trend
+# 3) 1S trend
+# 4) EMA 9 / 20 / 50
+# 5) RSI
+# 6) VWAP
+# 7) Hacim oranı
+# 8) Likidite
+# 9) Destek / direnç
+# 10) Geri çekilme
+# 11) Kırılım
+# 12) Kovalama
+# 13) Risk / ödül
 #
 # KARARLAR
 # ------------------------------------------------------------
-# 🟢 GÜNLÜK AL
-# 🟢 BREAKOUT AL
-# 🟡 GİRİŞ BEKLE
-# 🟡 BREAKOUT TEYİDİ BEKLE
+# 🟢 AL
+# 🟢 GERİ ÇEKİLMEDE AL
+# 🔵 KIRILIM BEKLE
 # 🟡 TEYİT BEKLE
+# 🟠 İZLE
 # 🔴 KOVALAMA
-# 🔴 İŞLEM YOK
+# 🔴 DÜŞÜŞ BICAĞI
+# 🔴 LİKİDİTE YETERSİZ
 #
-# ÖNEMLİ
-# ------------------------------------------------------------
-# Coin evreni crypto_engine.get_all_try_universe()
-# üzerinden gelir.
-#
-# Böylece Günlük Trade ile Kripto Piyasa aynı coin
-# evrenini kullanır.
-#
+# NOT:
+# Emir göndermez.
+# Sadece analiz ve trade planı üretir.
 # ============================================================
 
-import streamlit as st
+import math
+import requests
 import pandas as pd
 import numpy as np
-import requests
+import streamlit as st
 import importlib
-from datetime import datetime
-
 import crypto_engine
 
 
@@ -69,36 +50,9 @@ import crypto_engine
 # ============================================================
 
 st.set_page_config(
-    page_title="Kripto Günlük Trade PRO",
+    page_title="Kripto Trade",
     page_icon="⚡",
     layout="wide",
-)
-
-
-# ============================================================
-# ENGINE YENİLE
-# ============================================================
-
-crypto_engine = importlib.reload(
-    crypto_engine
-)
-
-
-# ============================================================
-# BAŞLIK
-# ============================================================
-
-st.title("⚡ Kripto Günlük Trade PRO")
-
-st.caption(
-    "CRYPTO AI PRO | Ortak TRY Evreni | "
-    "Profesyonel Günlük Trade Karar Motoru"
-)
-
-st.write(
-    "Amaç sadece en güçlü coinleri bulmak değil; "
-    "aynı zamanda işlem yapılabilir giriş bölgesindeki "
-    "coinleri tespit etmektir."
 )
 
 
@@ -106,51 +60,51 @@ st.write(
 # AYARLAR
 # ============================================================
 
-MIN_VOLUME_TRY = 100_000_000
+TIMEOUT = 8
 
-MAX_ANALYSIS = 50
+# Minimum 24S TRY hacmi
+MIN_VOLUME_TRY = 50_000_000
 
-KLINE_INTERVAL = "15m"
-KLINE_LIMIT = 100
+# Ana trade filtresi
+MIN_TRADE_SCORE = 68
 
-FINAL_BUY_SCORE = 80
-BREAKOUT_BUY_SCORE = 78
+# Güç filtresi
+MIN_STRENGTH = 60
 
-OPPORTUNITY_SCORE = 65
-WATCH_SCORE = 55
+# Kovalama
+CHASE_WARNING = 7.0
+CHASE_DANGER = 12.0
+CHASE_EXTREME = 18.0
 
-MIN_VOLUME_RATIO = 1.15
-MIN_BREAKOUT_VOLUME_RATIO = 1.25
+# Minimum RR
+MIN_RR = 2.0
 
-MAX_CHASE_FOR_BUY = 55
+# Tüm TRY coinleri evrene alınır.
+# Likiditesi yeterli coinlerde 15D + 1S mum analizi yapılır.
+# Böylece hacim sıralamasında ilk 60 dışında kalan coinler kaybolmaz.
+ANALYZE_ALL_TRY_PAIRS = True
 
-MAX_DAILY_CHANGE_FOR_NORMAL_ENTRY = 18
+# Mum sayısı
+CANDLE_LIMIT = 120
 
-KLINE_URL = (
-    "https://api.binance.me/api/v3/klines"
-)
+# Cache
+CACHE_TTL = 60
 
 
 # ============================================================
-# CACHE TEMİZLEME
+# API ENDPOINTLERİ
 # ============================================================
 
-with st.sidebar:
+TICKER_ENDPOINTS = [
+    "https://api.binance.me/api/v3/ticker/24hr",
+    "https://www.binance.tr/api/v3/ticker/24hr",
+    "https://www.binance.tr/open/v1/market/ticker",
+]
 
-    st.subheader("⚙️ Trade Ayarları")
-
-    st.caption(
-        "Motor ortak TRY evreni üzerinden çalışır."
-    )
-
-    if st.button(
-        "🔄 Veriyi Yenile",
-        use_container_width=True
-    ):
-
-        st.cache_data.clear()
-
-        st.rerun()
+KLINE_BASES = [
+    "https://api.binance.me/api/v3/klines",
+    "https://www.binance.tr/api/v3/klines",
+]
 
 
 # ============================================================
@@ -164,31 +118,32 @@ def safe_float(value, default=0.0):
         if value is None:
             return default
 
-        value = float(value)
+        if isinstance(value, str):
+            value = (
+                value
+                .replace(",", "")
+                .replace("%", "")
+                .strip()
+            )
 
-        if np.isnan(value):
+        result = float(value)
+
+        if not np.isfinite(result):
             return default
 
-        return value
+        return result
 
     except Exception:
 
         return default
 
 
-def clamp(
-    value,
-    low=0,
-    high=100
-):
+def clamp(value, low=0.0, high=100.0):
 
-    return max(
-        low,
-        min(
-            high,
-            safe_float(value)
-        )
-    )
+    try:
+        return max(low, min(high, float(value)))
+    except Exception:
+        return low
 
 
 def fmt_price(price):
@@ -196,492 +151,154 @@ def fmt_price(price):
     price = safe_float(price)
 
     if price >= 1000:
-
         return f"{price:,.2f}"
 
     if price >= 100:
-
         return f"{price:,.3f}"
 
     if price >= 1:
-
         return f"{price:,.4f}"
 
     if price >= 0.01:
+        return f"{price:,.5f}"
 
-        return f"{price:.5f}"
+    if price >= 0.0001:
+        return f"{price:,.8f}"
 
-    return f"{price:.8f}"
+    return f"{price:,.10f}"
 
 
-def fmt_money(value):
+def fmt_try(value):
 
     value = safe_float(value)
 
     if value >= 1_000_000_000:
-
-        return (
-            f"₺{value / 1_000_000_000:.2f} Mr"
-        )
+        return f"₺{value / 1_000_000_000:.2f} Mr"
 
     if value >= 1_000_000:
-
-        return (
-            f"₺{value / 1_000_000:.1f} Mn"
-        )
+        return f"₺{value / 1_000_000:.1f} Mn"
 
     if value >= 1_000:
-
-        return (
-            f"₺{value / 1_000:.0f} Bin"
-        )
+        return f"₺{value / 1_000:.1f} B"
 
     return f"₺{value:,.0f}"
 
 
-# ============================================================
-# RSI
-# ============================================================
+def pct(value):
 
-def calculate_rsi(
-    series,
-    period=14
-):
-
-    series = pd.Series(
-        series
-    ).astype(float)
-
-    delta = series.diff()
-
-    gain = delta.clip(
-        lower=0
-    )
-
-    loss = -delta.clip(
-        upper=0
-    )
-
-    avg_gain = gain.rolling(
-        period
-    ).mean()
-
-    avg_loss = loss.rolling(
-        period
-    ).mean()
-
-    rs = (
-        avg_gain /
-        avg_loss.replace(
-            0,
-            np.nan
-        )
-    )
-
-    return (
-        100 -
-        (
-            100 /
-            (1 + rs)
-        )
-    )
+    return f"{safe_float(value):+.2f}%"
 
 
 # ============================================================
-# EMA
+# TEKNİK FONKSİYONLAR
 # ============================================================
 
-def calculate_ema(
-    series,
-    period
-):
+def calculate_ema(series, period):
 
-    return pd.Series(
-        series
-    ).ewm(
+    return series.ewm(
         span=period,
         adjust=False
     ).mean()
 
 
-# ============================================================
-# ATR
-# ============================================================
+def calculate_rsi(series, period=14):
 
-def calculate_atr(
-    df,
-    period=14
-):
+    delta = series.diff()
 
-    high = df["high"]
-    low = df["low"]
-    close = df["close"]
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
 
-    prev_close = close.shift(1)
-
-    tr1 = high - low
-
-    tr2 = (
-        high -
-        prev_close
-    ).abs()
-
-    tr3 = (
-        low -
-        prev_close
-    ).abs()
-
-    tr = pd.concat(
-        [
-            tr1,
-            tr2,
-            tr3
-        ],
-        axis=1
-    ).max(axis=1)
-
-    return tr.rolling(
-        period
+    avg_gain = gain.ewm(
+        alpha=1 / period,
+        adjust=False
     ).mean()
 
+    avg_loss = loss.ewm(
+        alpha=1 / period,
+        adjust=False
+    ).mean()
 
-# ============================================================
-# ORTAK TRY EVRENİ
-# ============================================================
+    rs = avg_gain / avg_loss.replace(0, np.nan)
 
-@st.cache_data(ttl=60)
-def get_common_universe():
+    rsi = 100 - (100 / (1 + rs))
 
-    try:
+    return rsi.fillna(50)
 
-        raw = (
-            crypto_engine
-            .get_all_try_universe()
-        )
 
-    except Exception as e:
+def calculate_vwap(df):
 
-        st.error(
-            "Kripto piyasa verisi alınamadı."
-        )
+    typical_price = (
+        df["high"]
+        + df["low"]
+        + df["close"]
+    ) / 3
 
-        st.caption(
-            f"Engine hatası: {e}"
-        )
+    volume = df["volume"]
 
-        return pd.DataFrame()
+    cumulative_volume = volume.cumsum()
 
-    if raw is None:
-
-        return pd.DataFrame()
-
-    if isinstance(
-        raw,
-        pd.DataFrame
-    ):
-
-        df = raw.copy()
-
-    elif isinstance(
-        raw,
-        list
-    ):
-
-        if not raw:
-
-            return pd.DataFrame()
-
-        if isinstance(
-            raw[0],
-            dict
-        ):
-
-            df = pd.DataFrame(
-                raw
-            )
-
-        else:
-
-            df = pd.DataFrame(
-                {
-                    "symbol": raw
-                }
-            )
-
-    else:
-
-        return pd.DataFrame()
-
-    if df.empty:
-
-        return df
-
-    # --------------------------------------------------------
-    # SYMBOL
-    # --------------------------------------------------------
-
-    if "symbol" not in df.columns:
-
-        possible = [
-            "pair",
-            "name",
-            "code"
-        ]
-
-        found = None
-
-        for col in possible:
-
-            if col in df.columns:
-
-                found = col
-                break
-
-        if found:
-
-            df["symbol"] = (
-                df[found]
-                .astype(str)
-            )
-
-        else:
-
-            return pd.DataFrame()
-
-    # --------------------------------------------------------
-    # SYMBOL TEMİZLE
-    # --------------------------------------------------------
-
-    df["symbol"] = (
-        df["symbol"]
-        .astype(str)
-        .str.upper()
-        .str.strip()
-    )
-
-    # --------------------------------------------------------
-    # SADECE TRY
-    # --------------------------------------------------------
-
-    df = df[
-        df["symbol"].str.contains(
-            "TRY",
-            na=False
-        )
-    ].copy()
-
-    # --------------------------------------------------------
-    # BASE ASSET
-    # --------------------------------------------------------
-
-    if "base_asset" not in df.columns:
-
-        df["base_asset"] = (
-            df["symbol"]
-            .str.replace(
-                "_TRY",
-                "",
-                regex=False
-            )
-            .str.replace(
-                "TRY",
-                "",
-                regex=False
-            )
-            .str.replace(
-                "/",
-                "",
-                regex=False
-            )
-        )
-
-    # --------------------------------------------------------
-    # TEKRARLARI SİL
-    # --------------------------------------------------------
-
-    df = df.drop_duplicates(
-        subset=["symbol"]
-    )
-
-    # --------------------------------------------------------
-    # SADECE GEÇERLİ FİYAT
-    # --------------------------------------------------------
-
-    if "price_try" in df.columns:
-
-        df["price_try"] = pd.to_numeric(
-            df["price_try"],
-            errors="coerce"
-        )
-
-        df = df[
-            df["price_try"] > 0
-        ]
-
-    # --------------------------------------------------------
-    # HACİM
-    # --------------------------------------------------------
-
-    if "volume_try" in df.columns:
-
-        df["volume_try"] = pd.to_numeric(
-            df["volume_try"],
-            errors="coerce"
-        ).fillna(0)
-
-        df = df[
-            df["volume_try"] >=
-            MIN_VOLUME_TRY
-        ]
-
-    # --------------------------------------------------------
-    # DEĞİŞİM
-    # --------------------------------------------------------
-
-    if "change_24h" in df.columns:
-
-        df["change_24h"] = pd.to_numeric(
-            df["change_24h"],
-            errors="coerce"
-        ).fillna(0)
-
-    # --------------------------------------------------------
-    # HACME GÖRE SIRALA
-    # --------------------------------------------------------
-
-    if "volume_try" in df.columns:
-
-        df = df.sort_values(
-            "volume_try",
-            ascending=False
-        )
+    cumulative_value = (
+        typical_price * volume
+    ).cumsum()
 
     return (
-        df.head(MAX_ANALYSIS)
-        .reset_index(drop=True)
-    )
+        cumulative_value
+        / cumulative_volume.replace(0, np.nan)
+    ).fillna(df["close"])
 
 
-# ============================================================
-# SYMBOL'Ü KLINE FORMATINA ÇEVİR
-# ============================================================
+def prepare_candles(raw):
 
-def normalize_kline_symbol(
-    symbol
-):
-
-    symbol = (
-        str(symbol)
-        .upper()
-        .strip()
-    )
-
-    symbol = (
-        symbol
-        .replace(
-            "_TRY",
-            "TRY"
-        )
-        .replace(
-            "/TRY",
-            "TRY"
-        )
-        .replace(
-            "-TRY",
-            "TRY"
-        )
-    )
-
-    if not symbol.endswith("TRY"):
-
-        symbol += "TRY"
-
-    return symbol
-
-
-# ============================================================
-# KLINE
-# ============================================================
-
-@st.cache_data(ttl=60)
-def get_klines(symbol):
+    if raw is None or len(raw) == 0:
+        return pd.DataFrame()
 
     try:
 
-        api_symbol = (
-            normalize_kline_symbol(
-                symbol
-            )
-        )
-
-        params = {
-
-            "symbol": api_symbol,
-
-            "interval":
-                KLINE_INTERVAL,
-
-            "limit":
-                KLINE_LIMIT,
-        }
-
-        response = requests.get(
-            KLINE_URL,
-            params=params,
-            timeout=8
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        if not isinstance(
-            data,
-            list
-        ):
-
-            return pd.DataFrame()
-
-        if not data:
-
-            return pd.DataFrame()
-
-        rows = []
-
-        for item in data:
-
-            if len(item) < 6:
-
-                continue
-
-            rows.append(
-                {
-                    "open_time":
-                        item[0],
-
-                    "open":
-                        safe_float(item[1]),
-
-                    "high":
-                        safe_float(item[2]),
-
-                    "low":
-                        safe_float(item[3]),
-
-                    "close":
-                        safe_float(item[4]),
-
-                    "volume":
-                        safe_float(item[5]),
-                }
-            )
-
         df = pd.DataFrame(
-            rows
+            raw,
+            columns=[
+                "open_time",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "close_time",
+                "quote_volume",
+                "trades",
+                "taker_buy_base",
+                "taker_buy_quote",
+                "ignore",
+            ]
         )
+
+        numeric_cols = [
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "quote_volume",
+        ]
+
+        for col in numeric_cols:
+
+            df[col] = pd.to_numeric(
+                df[col],
+                errors="coerce"
+            )
+
+        df = df.dropna(
+            subset=[
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+            ]
+        ).copy()
 
         if df.empty:
-
             return df
 
         df["ema9"] = calculate_ema(
@@ -704,9 +321,17 @@ def get_klines(symbol):
             14
         )
 
-        df["atr"] = calculate_atr(
-            df,
-            14
+        df["vwap"] = calculate_vwap(df)
+
+        df["vol_ma20"] = (
+            df["volume"]
+            .rolling(20)
+            .mean()
+        )
+
+        df["volume_ratio"] = (
+            df["volume"]
+            / df["vol_ma20"].replace(0, np.nan)
         )
 
         return df
@@ -717,85 +342,598 @@ def get_klines(symbol):
 
 
 # ============================================================
-# TEKNİK YAPI
+# ORTAK TRY EVRENİ
 # ============================================================
 
-def analyze_technical(
-    row,
-    klines
-):
+def _normalize_engine_universe(raw_data):
+    """
+    crypto_engine.get_all_try_universe() çıktısını Trade motorunun
+    kullandığı standart kolonlara dönüştürür.
 
-    price = safe_float(
-        row.get(
+    Standart kolonlar:
+        symbol, coin, price, change, volume, high, low
+    """
+
+    if raw_data is None:
+        return pd.DataFrame()
+
+    if isinstance(raw_data, pd.DataFrame):
+        df = raw_data.copy()
+
+    elif isinstance(raw_data, list):
+        if not raw_data:
+            return pd.DataFrame()
+
+        if isinstance(raw_data[0], dict):
+            df = pd.DataFrame(raw_data)
+        else:
+            df = pd.DataFrame({"symbol": raw_data})
+
+    else:
+        return pd.DataFrame()
+
+    if df.empty:
+        return pd.DataFrame()
+
+    # Kolon isimlerini küçük harfe normalize etmeden,
+    # olası isimleri tek tek destekliyoruz.
+    symbol_candidates = ["symbol", "pair", "name", "code"]
+
+    if "symbol" not in df.columns:
+        found = next(
+            (c for c in symbol_candidates if c in df.columns),
+            None
+        )
+        if found is None:
+            return pd.DataFrame()
+        df["symbol"] = df[found]
+
+    df["symbol"] = (
+        df["symbol"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+        .str.replace("/", "", regex=False)
+        .str.replace("_", "", regex=False)
+        .str.replace("-", "", regex=False)
+    )
+
+    df = df[
+        df["symbol"].str.endswith("TRY", na=False)
+    ].copy()
+
+    if df.empty:
+        return pd.DataFrame()
+
+    def first_existing(*names):
+        for name in names:
+            if name in df.columns:
+                return df[name]
+        return pd.Series(
+            [np.nan] * len(df),
+            index=df.index
+        )
+
+    if "base_asset" in df.columns:
+        coin_series = df["base_asset"]
+    elif "coin" in df.columns:
+        coin_series = df["coin"]
+    else:
+        coin_series = (
+            df["symbol"]
+            .str.replace("TRY", "", regex=False)
+        )
+
+    out = pd.DataFrame(index=df.index)
+
+    out["symbol"] = df["symbol"]
+
+    out["coin"] = (
+        coin_series
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    out["price"] = pd.to_numeric(
+        first_existing(
             "price_try",
-            0
-        )
+            "price",
+            "lastPrice",
+            "last_price",
+            "close",
+        ),
+        errors="coerce",
     )
 
-    change = safe_float(
-        row.get(
+    out["change"] = pd.to_numeric(
+        first_existing(
             "change_24h",
-            0
-        )
+            "change",
+            "priceChangePercent",
+            "changePercent",
+        ),
+        errors="coerce",
     )
 
-    # --------------------------------------------------------
-    # KLINE YOK
-    # --------------------------------------------------------
+    out["volume"] = pd.to_numeric(
+        first_existing(
+            "volume_try",
+            "quoteVolume",
+            "quote_volume",
+            "volume",
+        ),
+        errors="coerce",
+    )
 
-    if klines.empty:
+    out["high"] = pd.to_numeric(
+        first_existing(
+            "high_24h",
+            "high",
+            "highPrice",
+        ),
+        errors="coerce",
+    )
+
+    out["low"] = pd.to_numeric(
+        first_existing(
+            "low_24h",
+            "low",
+            "lowPrice",
+        ),
+        errors="coerce",
+    )
+
+    # Aynı sembol birden fazla geldiyse en güncel/ilk geçerli kaydı koru.
+    out = out.drop_duplicates(
+        subset=["symbol"],
+        keep="first",
+    )
+
+    # Coin adı boş/NaN görünmesin.
+    out["coin"] = out["coin"].replace(
+        {
+            "": np.nan,
+            "NAN": np.nan,
+            "NONE": np.nan,
+        }
+    )
+
+    missing_coin = out["coin"].isna()
+
+    out.loc[missing_coin, "coin"] = (
+        out.loc[missing_coin, "symbol"]
+        .str.replace("TRY", "", regex=False)
+    )
+
+    return out.reset_index(drop=True)
+
+
+@st.cache_data(
+    ttl=CACHE_TTL,
+    show_spinner=False
+)
+def get_engine_market_data():
+    """
+    Kripto Piyasa sayfasıyla aynı ana kaynağı kullanır:
+    crypto_engine.get_all_try_universe()
+    """
+
+    try:
+        engine = importlib.reload(crypto_engine)
+        raw_data = engine.get_all_try_universe()
+        return _normalize_engine_universe(raw_data)
+
+    except Exception:
+        return pd.DataFrame()
+
+
+# ============================================================
+# YEDEK MARKET DATA
+# ============================================================
+
+@st.cache_data(
+    ttl=CACHE_TTL,
+    show_spinner=False
+)
+def get_market_data():
+
+    errors = []
+
+    for url in TICKER_ENDPOINTS:
+
+        try:
+
+            response = requests.get(
+                url,
+                timeout=TIMEOUT,
+                headers={
+                    "User-Agent": "Mozilla/5.0"
+                },
+            )
+
+            if response.status_code != 200:
+
+                errors.append(
+                    f"{url} -> HTTP {response.status_code}"
+                )
+
+                continue
+
+            data = response.json()
+
+            # ------------------------------------------------
+            # STANDARD
+            # ------------------------------------------------
+
+            if isinstance(data, list):
+
+                rows = []
+
+                for item in data:
+
+                    symbol = str(
+                        item.get(
+                            "symbol",
+                            ""
+                        )
+                    ).upper()
+
+                    if not symbol.endswith("TRY"):
+                        continue
+
+                    price = safe_float(
+                        item.get(
+                            "lastPrice"
+                        )
+                    )
+
+                    if price <= 0:
+                        continue
+
+                    rows.append(
+                        {
+                            "symbol": symbol,
+
+                            "coin": symbol.replace(
+                                "TRY",
+                                ""
+                            ),
+
+                            "price": price,
+
+                            "change": safe_float(
+                                item.get(
+                                    "priceChangePercent"
+                                )
+                            ),
+
+                            "high": safe_float(
+                                item.get(
+                                    "highPrice"
+                                )
+                            ),
+
+                            "low": safe_float(
+                                item.get(
+                                    "lowPrice"
+                                )
+                            ),
+
+                            "volume": safe_float(
+                                item.get(
+                                    "quoteVolume"
+                                )
+                            ),
+                        }
+                    )
+
+                if rows:
+
+                    return pd.DataFrame(rows)
+
+            # ------------------------------------------------
+            # BINANCE TR WRAPPER
+            # ------------------------------------------------
+
+            payload = data.get(
+                "data",
+                data
+            )
+
+            if isinstance(payload, dict):
+
+                payload = (
+                    payload.get("list")
+                    or payload.get("data")
+                    or []
+                )
+
+            if isinstance(payload, list):
+
+                rows = []
+
+                for item in payload:
+
+                    symbol = str(
+                        item.get(
+                            "symbol",
+                            ""
+                        )
+                    ).upper()
+
+                    if not symbol.endswith("TRY"):
+                        continue
+
+                    price = safe_float(
+                        item.get("lastPrice")
+                        or item.get("price")
+                        or item.get("close")
+                    )
+
+                    if price <= 0:
+                        continue
+
+                    rows.append(
+                        {
+                            "symbol": symbol,
+
+                            "coin": symbol.replace(
+                                "TRY",
+                                ""
+                            ),
+
+                            "price": price,
+
+                            "change": safe_float(
+                                item.get(
+                                    "priceChangePercent"
+                                )
+                                or item.get(
+                                    "changePercent"
+                                )
+                            ),
+
+                            "high": safe_float(
+                                item.get(
+                                    "highPrice"
+                                )
+                                or item.get("high")
+                            ),
+
+                            "low": safe_float(
+                                item.get(
+                                    "lowPrice"
+                                )
+                                or item.get("low")
+                            ),
+
+                            "volume": safe_float(
+                                item.get(
+                                    "quoteVolume"
+                                )
+                                or item.get("volume")
+                            ),
+                        }
+                    )
+
+                if rows:
+
+                    return pd.DataFrame(rows)
+
+        except Exception as exc:
+
+            errors.append(
+                f"{url} -> {str(exc)}"
+            )
+
+    return pd.DataFrame()
+
+
+# ============================================================
+# FALLBACK MARKET DATA
+# ============================================================
+
+def fallback_market_data():
+
+    data = [
+
+        [
+            "XRPTRY",
+            "XRP",
+            70.22,
+            -9.16,
+            2_260_000_000,
+            78.20,
+            68.80
+        ],
+
+        [
+            "BTCTRY",
+            "BTC",
+            3_673_670,
+            -1.77,
+            631_400_000,
+            3_740_000,
+            3_610_000
+        ],
+
+        [
+            "PEPETRY",
+            "PEPE",
+            0.00019175,
+            -9.79,
+            863_600_000,
+            0.000205,
+            0.000185
+        ],
+
+        [
+            "ETHTRY",
+            "ETH",
+            114_987,
+            -4.13,
+            747_000_000,
+            119_000,
+            113_000
+        ],
+
+        [
+            "SOLTRY",
+            "SOL",
+            4456.80,
+            -5.80,
+            318_600_000,
+            4700,
+            4300
+        ],
+
+        [
+            "TRXTRY",
+            "TRX",
+            16.389,
+            -0.83,
+            97_800_000,
+            16.70,
+            16.10
+        ],
+
+        [
+            "BNBTRY",
+            "BNB",
+            32845,
+            -3.80,
+            137_300_000,
+            34000,
+            32000
+        ],
+
+        [
+            "AVAXTRY",
+            "AVAX",
+            353.60,
+            -9.12,
+            254_400_000,
+            390,
+            345
+        ],
+
+        [
+            "COTITRY",
+            "COTI",
+            0.5831,
+            5.62,
+            444_600_000,
+            0.61,
+            0.54
+        ],
+
+        [
+            "ENATRY",
+            "ENA",
+            7.175,
+            -6.16,
+            921_700_000,
+            7.70,
+            7.00
+        ],
+    ]
+
+    return pd.DataFrame(
+        data,
+        columns=[
+            "symbol",
+            "coin",
+            "price",
+            "change",
+            "volume",
+            "high",
+            "low",
+        ]
+    )
+
+
+# ============================================================
+# KLINE
+# ============================================================
+
+@st.cache_data(
+    ttl=120,
+    show_spinner=False
+)
+def get_klines(symbol, interval):
+
+    for base in KLINE_BASES:
+
+        try:
+
+            response = requests.get(
+                base,
+                params={
+                    "symbol": symbol,
+                    "interval": interval,
+                    "limit": CANDLE_LIMIT,
+                },
+                timeout=TIMEOUT,
+                headers={
+                    "User-Agent": "Mozilla/5.0"
+                },
+            )
+
+            if response.status_code != 200:
+                continue
+
+            data = response.json()
+
+            if isinstance(data, list):
+
+                df = prepare_candles(data)
+
+                if not df.empty:
+                    return df
+
+        except Exception:
+
+            continue
+
+    return pd.DataFrame()
+
+
+# ============================================================
+# TEKNİK PUANLAMA
+# ============================================================
+
+def calculate_trend_score(df):
+
+    if df.empty or len(df) < 55:
 
         return {
-
-            "ema9":
-                price,
-
-            "ema20":
-                price,
-
-            "ema50":
-                price,
-
-            "rsi":
-                50,
-
-            "atr":
-                price * 0.03,
-
-            "support":
-                price * 0.94,
-
-            "resistance":
-                price * 1.03,
-
-            "volume_ratio":
-                1.0,
-
-            "trend_score":
-                50,
-
-            "breakout_score":
-                0,
-
-            "technical_score":
-                50,
+            "trend_score": 50,
+            "trend_state": "VERİ YETERSİZ",
+            "ema9": 0,
+            "ema20": 0,
+            "ema50": 0,
+            "rsi": 50,
+            "vwap": 0,
+            "volume_ratio": 1,
         }
 
-    last = klines.iloc[-1]
+    last = df.iloc[-1]
+
+    price = safe_float(
+        last["close"]
+    )
 
     ema9 = safe_float(
-        last["ema9"],
-        price
+        last["ema9"]
     )
 
     ema20 = safe_float(
-        last["ema20"],
-        price
+        last["ema20"]
     )
 
     ema50 = safe_float(
-        last["ema50"],
-        price
+        last["ema50"]
     )
 
     rsi = safe_float(
@@ -803,2375 +941,2476 @@ def analyze_technical(
         50
     )
 
-    atr = safe_float(
-        last["atr"],
-        price * 0.03
+    vwap = safe_float(
+        last["vwap"]
     )
 
-    # --------------------------------------------------------
-    # SON 12 SAAT
-    # --------------------------------------------------------
-
-    lookback = klines.iloc[
-        -49:-1
-    ]
-
-    if lookback.empty:
-
-        resistance = price * 1.03
-        support = price * 0.94
-
-    else:
-
-        resistance = safe_float(
-            lookback["high"].max(),
-            price * 1.03
-        )
-
-        support = safe_float(
-            lookback["low"].min(),
-            price * 0.94
-        )
-
-    # --------------------------------------------------------
-    # HACİM ORANI
-    # --------------------------------------------------------
-
-    previous_volume = (
-        klines["volume"]
-        .iloc[-21:-1]
-        .mean()
+    volume_ratio = safe_float(
+        last["volume_ratio"],
+        1
     )
 
-    current_volume = safe_float(
-        last["volume"]
-    )
+    score = 0
 
-    if previous_volume > 0:
-
-        volume_ratio = (
-            current_volume /
-            previous_volume
-        )
-
-    else:
-
-        volume_ratio = 1
-
-    # --------------------------------------------------------
-    # TREND
-    # --------------------------------------------------------
-
-    trend_score = 40
-
+    # EMA sıralaması
     if price > ema9:
-
-        trend_score += 12
+        score += 15
 
     if ema9 > ema20:
-
-        trend_score += 16
+        score += 15
 
     if ema20 > ema50:
+        score += 15
 
-        trend_score += 16
+    if price > ema20:
+        score += 10
 
     if price > ema50:
+        score += 10
 
-        trend_score += 10
+    # VWAP
+    if price > vwap:
+        score += 10
 
-    trend_score = clamp(
-        trend_score
-    )
+    # RSI
+    if 52 <= rsi <= 68:
+        score += 15
 
-    # --------------------------------------------------------
-    # RSI SKORU
-    # --------------------------------------------------------
+    elif 45 <= rsi < 52:
+        score += 8
 
-    if 55 <= rsi <= 68:
+    elif 68 < rsi <= 75:
+        score += 7
 
-        rsi_score = 95
+    elif rsi > 75:
+        score += 2
 
-    elif 68 < rsi <= 73:
+    # Hacim
+    if volume_ratio >= 1.5:
+        score += 10
 
-        rsi_score = 82
+    elif volume_ratio >= 1.1:
+        score += 6
 
-    elif 73 < rsi <= 78:
+    elif volume_ratio >= 0.8:
+        score += 3
 
-        rsi_score = 65
+    score = clamp(score)
 
-    elif rsi > 78:
+    if score >= 80:
 
-        rsi_score = 35
+        state = "GÜÇLÜ YÜKSELİŞ"
 
-    elif 45 <= rsi < 55:
+    elif score >= 68:
 
-        rsi_score = 65
+        state = "POZİTİF"
+
+    elif score >= 55:
+
+        state = "NÖTR"
+
+    elif score >= 40:
+
+        state = "ZAYIF"
 
     else:
+
+        state = "NEGATİF"
+
+    return {
+        "trend_score": round(score, 1),
+        "trend_state": state,
+        "ema9": ema9,
+        "ema20": ema20,
+        "ema50": ema50,
+        "rsi": rsi,
+        "vwap": vwap,
+        "volume_ratio": volume_ratio,
+    }
+
+
+# ============================================================
+# DESTEK / DİRENÇ
+# ============================================================
+
+def calculate_support_resistance(df, price):
+
+    if df.empty:
+
+        return {
+            "support": price * 0.97,
+            "resistance": price * 1.03,
+            "support2": price * 0.94,
+            "resistance2": price * 1.06,
+        }
+
+    recent = df.tail(60)
+
+    support = safe_float(
+        recent["low"].min(),
+        price * 0.97
+    )
+
+    resistance = safe_float(
+        recent["high"].max(),
+        price * 1.03
+    )
+
+    support2 = safe_float(
+        recent["low"].tail(30).min(),
+        support
+    )
+
+    resistance2 = safe_float(
+        recent["high"].tail(30).max(),
+        resistance
+    )
+
+    return {
+        "support": support,
+        "resistance": resistance,
+        "support2": support2,
+        "resistance2": resistance2,
+    }
+
+
+# ============================================================
+# ANA COIN ANALİZİ
+# ============================================================
+
+def analyze_coin(
+    row,
+    df15=None,
+    df1h=None
+):
+
+    price = safe_float(
+        row["price"]
+    )
+
+    change = safe_float(
+        row["change"]
+    )
+
+    high = safe_float(
+        row["high"]
+    )
+
+    low = safe_float(
+        row["low"]
+    )
+
+    volume = safe_float(
+        row["volume"]
+    )
+
+    # ========================================================
+    # 1. 24S RANGE
+    # ========================================================
+
+    if high > low > 0:
+
+        range_pct = (
+            (high - low)
+            / low
+        ) * 100
+
+        position = (
+            (price - low)
+            / (high - low)
+        ) * 100
+
+    else:
+
+        range_pct = 0
+        position = 50
+
+    position = clamp(position)
+
+    # ========================================================
+    # 2. MOMENTUM
+    # ========================================================
+
+    if change <= -15:
+
+        momentum = 10
+
+    elif change <= -10:
+
+        momentum = 20
+
+    elif change < -5:
+
+        momentum = 35
+
+    elif change < 0:
+
+        momentum = 45
+
+    elif change < 3:
+
+        momentum = 55
+
+    elif change < 7:
+
+        momentum = 70
+
+    elif change < 12:
+
+        momentum = 82
+
+    elif change < 18:
+
+        momentum = 72
+
+    else:
+
+        momentum = 55
+
+    # ========================================================
+    # 3. RANGE LOCATION
+    # ========================================================
+
+    if position < 15:
+
+        location_score = 70
+
+    elif position < 30:
+
+        location_score = 82
+
+    elif position < 50:
+
+        location_score = 90
+
+    elif position < 65:
+
+        location_score = 84
+
+    elif position < 80:
+
+        location_score = 68
+
+    elif position < 90:
+
+        location_score = 48
+
+    else:
+
+        location_score = 28
+
+    # ========================================================
+    # 4. LIKİDİTE
+    # ========================================================
+
+    if volume >= 2_000_000_000:
+
+        liquidity_score = 100
+
+    elif volume >= 1_000_000_000:
+
+        liquidity_score = 94
+
+    elif volume >= 500_000_000:
+
+        liquidity_score = 86
+
+    elif volume >= 250_000_000:
+
+        liquidity_score = 78
+
+    elif volume >= 100_000_000:
+
+        liquidity_score = 70
+
+    elif volume >= 50_000_000:
+
+        liquidity_score = 58
+
+    else:
+
+        liquidity_score = 35
+
+    # ========================================================
+    # 5. KOVALAMA
+    # ========================================================
+
+    chase_score = 0
+
+    if change >= 5:
+        chase_score += 20
+
+    if change >= 10:
+        chase_score += 20
+
+    if change >= 15:
+        chase_score += 20
+
+    if change >= 20:
+        chase_score += 15
+
+    if position >= 80:
+        chase_score += 10
+
+    if position >= 90:
+        chase_score += 10
+
+    if position >= 97:
+        chase_score += 5
+
+    chase_score = clamp(
+        chase_score
+    )
+
+    # ========================================================
+    # 6. VOLATİLİTE
+    # ========================================================
+
+    volatility_score = clamp(
+        100 - min(
+            range_pct * 3.0,
+            70
+        )
+    )
+
+    # ========================================================
+    # 7. 15 DAKİKA TREND
+    # ========================================================
+
+    trend15 = calculate_trend_score(
+        df15
+    )
+
+    # ========================================================
+    # 8. 1 SAAT TREND
+    # ========================================================
+
+    trend1h = calculate_trend_score(
+        df1h
+    )
+
+    trend15_score = trend15[
+        "trend_score"
+    ]
+
+    trend1h_score = trend1h[
+        "trend_score"
+    ]
+
+    # ========================================================
+    # 9. TREND UYUMU
+    # ========================================================
+
+    trend_alignment = (
+        trend15_score * 0.45
+        + trend1h_score * 0.55
+    )
+
+    # ========================================================
+    # 10. RSI
+    # ========================================================
+
+    rsi = trend15["rsi"]
+
+    if 52 <= rsi <= 68:
+
+        rsi_score = 90
+
+    elif 45 <= rsi < 52:
+
+        rsi_score = 65
+
+    elif 68 < rsi <= 75:
+
+        rsi_score = 72
+
+    elif rsi > 75:
 
         rsi_score = 40
 
-    # --------------------------------------------------------
-    # BREAKOUT
-    # --------------------------------------------------------
+    elif 35 <= rsi < 45:
 
-    breakout_score = 0
+        rsi_score = 45
 
-    if price >= resistance * 1.002:
+    else:
 
-        breakout_score += 40
+        rsi_score = 25
 
-    elif price >= resistance * 0.997:
+    # ========================================================
+    # 11. VWAP
+    # ========================================================
 
-        breakout_score += 28
+    vwap = trend15["vwap"]
 
-    elif price >= resistance * 0.985:
+    if vwap > 0:
 
-        breakout_score += 15
+        if price > vwap * 1.02:
+
+            vwap_score = 72
+
+        elif price > vwap:
+
+            vwap_score = 90
+
+        elif price > vwap * 0.98:
+
+            vwap_score = 60
+
+        else:
+
+            vwap_score = 35
+
+    else:
+
+        vwap_score = 50
+
+    # ========================================================
+    # 12. HACİM
+    # ========================================================
+
+    volume_ratio = trend15[
+        "volume_ratio"
+    ]
 
     if volume_ratio >= 2:
 
-        breakout_score += 30
+        volume_score = 100
 
     elif volume_ratio >= 1.5:
 
-        breakout_score += 24
+        volume_score = 90
 
-    elif volume_ratio >= 1.25:
+    elif volume_ratio >= 1.2:
 
-        breakout_score += 18
+        volume_score = 78
 
-    elif volume_ratio >= 1.0:
+    elif volume_ratio >= 1:
 
-        breakout_score += 10
+        volume_score = 65
 
-    breakout_score += (
-        trend_score * 0.20
+    elif volume_ratio >= 0.7:
+
+        volume_score = 50
+
+    else:
+
+        volume_score = 35
+
+    # ========================================================
+    # 13. GÜÇ SKORU
+    # ========================================================
+
+    strength = (
+
+        momentum * 0.15
+
+        + liquidity_score * 0.10
+
+        + location_score * 0.10
+
+        + volatility_score * 0.05
+
+        + trend_alignment * 0.35
+
+        + rsi_score * 0.10
+
+        + vwap_score * 0.05
+
+        + volume_score * 0.10
+
     )
 
-    if 55 <= rsi <= 72:
+    # Sert düşüş cezası
+    if change <= -10:
 
-        breakout_score += 15
+        strength -= 8
 
-    elif 72 < rsi <= 78:
+    if change <= -15:
 
-        breakout_score += 7
+        strength -= 8
 
-    elif rsi > 78:
+    # Çok düşük RSI cezası
+    if rsi < 35:
 
-        breakout_score -= 10
+        strength -= 8
+
+    strength = clamp(
+        strength
+    )
+
+    # ========================================================
+    # 14. DESTEK / DİRENÇ
+    # ========================================================
+
+    sr = calculate_support_resistance(
+        df15,
+        price
+    )
+
+    support = sr["support"]
+    resistance = sr["resistance"]
+
+    support2 = sr["support2"]
+    resistance2 = sr["resistance2"]
+
+    # ========================================================
+    # 15. DİRENCE UZAKLIK
+    # ========================================================
+
+    if resistance > price:
+
+        resistance_distance = (
+            (resistance - price)
+            / price
+        ) * 100
+
+    else:
+
+        resistance_distance = 0
+
+    # ========================================================
+    # 16. KIRILIM PUANI
+    # ========================================================
+
+    breakout_score = 0
+
+    if resistance > 0:
+
+        if price >= resistance * 0.995:
+
+            breakout_score += 40
+
+        elif price >= resistance * 0.98:
+
+            breakout_score += 25
+
+        elif price >= resistance * 0.95:
+
+            breakout_score += 15
+
+    if trend15_score >= 75:
+
+        breakout_score += 20
+
+    if trend1h_score >= 70:
+
+        breakout_score += 20
+
+    if volume_ratio >= 1.5:
+
+        breakout_score += 20
 
     breakout_score = clamp(
         breakout_score
     )
 
-    # --------------------------------------------------------
-    # TEKNİK SKOR
-    # --------------------------------------------------------
-
-    volume_score = clamp(
-        volume_ratio * 35
-    )
-
-    technical_score = (
-
-        trend_score * 0.45
-
-        + rsi_score * 0.20
-
-        + volume_score * 0.15
-
-        + breakout_score * 0.20
-    )
-
-    technical_score = clamp(
-        technical_score
-    )
-
-    return {
-
-        "ema9":
-            ema9,
-
-        "ema20":
-            ema20,
-
-        "ema50":
-            ema50,
-
-        "rsi":
-            rsi,
-
-        "atr":
-            atr,
-
-        "support":
-            support,
-
-        "resistance":
-            resistance,
-
-        "volume_ratio":
-            volume_ratio,
-
-        "trend_score":
-            trend_score,
-
-        "breakout_score":
-            breakout_score,
-
-        "technical_score":
-            technical_score,
-    }
-
-
-# ============================================================
-# PRO GÜÇ SKORU
-# ============================================================
-
-def calculate_power_score(
-    row,
-    technical
-):
-
-    change = safe_float(
-        row.get(
-            "change_24h",
-            0
-        )
-    )
-
-    volume = safe_float(
-        row.get(
-            "volume_try",
-            0
-        )
-    )
-
-    technical_score = (
-        technical[
-            "technical_score"
-        ]
-    )
-
-    # --------------------------------------------------------
-    # MOMENTUM
-    # --------------------------------------------------------
-
-    if change >= 25:
-
-        momentum = 100
-
-    elif change >= 20:
-
-        momentum = 96
-
-    elif change >= 15:
-
-        momentum = 92
-
-    elif change >= 10:
-
-        momentum = 86
-
-    elif change >= 7:
-
-        momentum = 80
-
-    elif change >= 5:
-
-        momentum = 74
-
-    elif change >= 3:
-
-        momentum = 68
-
-    elif change >= 0:
-
-        momentum = 58
-
-    else:
-
-        momentum = 40
-
-    # --------------------------------------------------------
-    # LİKİDİTE
-    # --------------------------------------------------------
-
-    if volume >= 2_000_000_000:
-
-        liquidity = 100
-
-    elif volume >= 1_000_000_000:
-
-        liquidity = 95
-
-    elif volume >= 500_000_000:
-
-        liquidity = 90
-
-    elif volume >= 250_000_000:
-
-        liquidity = 82
-
-    elif volume >= 100_000_000:
-
-        liquidity = 70
-
-    else:
-
-        liquidity = 50
-
-    score = (
-
-        momentum * 0.35
-
-        + liquidity * 0.25
-
-        + technical_score * 0.40
-    )
-
-    return clamp(
-        score
-    )
-
-
-# ============================================================
-# GİRİŞ KALİTESİ
-# ============================================================
-
-def calculate_entry_quality(
-    row,
-    technical
-):
-
-    price = safe_float(
-        row.get(
-            "price_try",
-            0
-        )
-    )
-
-    high = safe_float(
-        row.get(
-            "high_24h",
-            price
-        )
-    )
-
-    low = safe_float(
-        row.get(
-            "low_24h",
-            price
-        )
-    )
-
-    change = safe_float(
-        row.get(
-            "change_24h",
-            0
-        )
-    )
-
-    rsi = safe_float(
-        technical["rsi"],
-        50
-    )
-
-    # --------------------------------------------------------
-    # GÜNLÜK RANGE POZİSYONU
-    # --------------------------------------------------------
+    # ========================================================
+    # 17. GERİ ÇEKİLME
+    # ========================================================
 
     if high > low:
 
-        position = (
-            (price - low)
-            /
-            (high - low)
-        ) * 100
+        fib382 = (
+            high
+            - (high - low) * 0.382
+        )
+
+        fib500 = (
+            high
+            - (high - low) * 0.500
+        )
+
+        fib618 = (
+            high
+            - (high - low) * 0.618
+        )
 
     else:
 
-        position = 50
+        fib382 = price * 0.985
+        fib500 = price * 0.96
+        fib618 = price * 0.93
 
-    position = clamp(
-        position
-    )
+    # ========================================================
+    # 18. İDEAL GİRİŞ
+    # ========================================================
 
-    if position >= 95:
+    # Trend pozitifse EMA20 / fib bölgesi
+    ema20 = trend15["ema20"]
 
-        position_score = 35
+    candidates = [
+        fib382,
+        fib500,
+        ema20,
+        support,
+    ]
 
-    elif position >= 90:
+    valid_candidates = [
+        x for x in candidates
+        if x > 0 and x < price
+    ]
 
-        position_score = 48
+    if valid_candidates:
 
-    elif position >= 80:
+        entry_low = min(
+            valid_candidates
+        )
 
-        position_score = 62
+        entry_high = max(
+            valid_candidates
+        )
 
-    elif position >= 70:
+        # Çok geniş bölgeyi daralt
+        if entry_high > price * 0.98:
 
-        position_score = 72
-
-    elif position >= 50:
-
-        position_score = 88
-
-    elif position >= 30:
-
-        position_score = 82
+            entry_high = price * 0.98
 
     else:
 
-        position_score = 70
+        entry_low = price * 0.97
+        entry_high = price * 0.985
 
-    # --------------------------------------------------------
-    # RSI
-    # --------------------------------------------------------
+    # Çok uzak giriş bölgesi engeli
+    entry_low = max(
+        entry_low,
+        price * 0.85
+    )
 
-    if 52 <= rsi <= 65:
+    entry_high = min(
+        entry_high,
+        price * 0.99
+    )
 
-        rsi_score = 95
+    if entry_low >= entry_high:
 
-    elif 65 < rsi <= 70:
+        entry_low = price * 0.97
+        entry_high = price * 0.985
 
-        rsi_score = 88
+    # ========================================================
+    # 19. STOP
+    # ========================================================
 
-    elif 70 < rsi <= 75:
+    stop_candidates = [
+        support2 * 0.985,
+        fib618 * 0.985,
+        price * 0.93,
+    ]
 
-        rsi_score = 72
+    stop_candidates = [
+        x for x in stop_candidates
+        if x > 0 and x < price
+    ]
 
-    elif 75 < rsi <= 80:
+    if stop_candidates:
 
-        rsi_score = 50
-
-    elif rsi > 80:
-
-        rsi_score = 30
+        stop = max(
+            stop_candidates
+        )
 
     else:
 
-        rsi_score = 55
+        stop = price * 0.93
 
-    # --------------------------------------------------------
-    # GÜNLÜK MOMENTUM
-    # --------------------------------------------------------
-
-    if 3 <= change <= 8:
-
-        momentum_score = 95
-
-    elif 8 < change <= 12:
-
-        momentum_score = 85
-
-    elif 12 < change <= 15:
-
-        momentum_score = 72
-
-    elif 15 < change <= 20:
-
-        momentum_score = 58
-
-    elif change > 20:
-
-        momentum_score = 35
-
-    elif 0 <= change < 3:
-
-        momentum_score = 65
-
-    else:
-
-        momentum_score = 45
-
-    score = (
-
-        position_score * 0.40
-
-        + rsi_score * 0.30
-
-        + momentum_score * 0.30
+    # Stop maksimum %12
+    stop = max(
+        stop,
+        price * 0.88
     )
 
-    return clamp(
-        score
+    # ========================================================
+    # 20. RİSK
+    # ========================================================
+
+    risk = max(
+        price - stop,
+        price * 0.005
     )
 
+    # ========================================================
+    # 21. HEDEFLER
+    # ========================================================
 
-# ============================================================
-# KOVALAMA SKORU
-# ============================================================
+    target1 = price + risk * 2
+    target2 = price + risk * 3
+    target3 = price + risk * 4
 
-def calculate_chase_score(
-    row,
-    technical
-):
+    # Direnç hedeflerden daha anlamlıysa
+    if resistance > price:
 
-    change = safe_float(
-        row.get(
-            "change_24h",
-            0
-        )
-    )
-
-    price = safe_float(
-        row.get(
-            "price_try",
-            0
-        )
-    )
-
-    high = safe_float(
-        row.get(
-            "high_24h",
-            price
-        )
-    )
-
-    low = safe_float(
-        row.get(
-            "low_24h",
-            price
-        )
-    )
-
-    rsi = safe_float(
-        technical["rsi"],
-        50
-    )
-
-    if high > low:
-
-        position = (
-            (price - low)
-            /
-            (high - low)
-        ) * 100
-
-    else:
-
-        position = 50
-
-    score = 0
-
-    # --------------------------------------------------------
-    # GÜNLÜK YÜKSELİŞ
-    # --------------------------------------------------------
-
-    if change >= 30:
-
-        score += 45
-
-    elif change >= 25:
-
-        score += 38
-
-    elif change >= 20:
-
-        score += 30
-
-    elif change >= 15:
-
-        score += 22
-
-    elif change >= 10:
-
-        score += 14
-
-    elif change >= 7:
-
-        score += 7
-
-    # --------------------------------------------------------
-    # GÜNLÜK ZİRVE
-    # --------------------------------------------------------
-
-    if position >= 95:
-
-        score += 30
-
-    elif position >= 90:
-
-        score += 24
-
-    elif position >= 80:
-
-        score += 16
-
-    elif position >= 70:
-
-        score += 8
-
-    # --------------------------------------------------------
-    # RSI
-    # --------------------------------------------------------
-
-    if rsi >= 85:
-
-        score += 30
-
-    elif rsi >= 80:
-
-        score += 22
-
-    elif rsi >= 75:
-
-        score += 12
-
-    return clamp(
-        score
-    )
-
-
-# ============================================================
-# RİSK / ÖDÜL
-# ============================================================
-
-def calculate_trade_levels(
-    row,
-    technical
-):
-
-    price = safe_float(
-        row.get(
-            "price_try",
-            0
-        )
-    )
-
-    support = safe_float(
-        technical["support"],
-        price * 0.94
-    )
-
-    resistance = safe_float(
-        technical["resistance"],
-        price * 1.03
-    )
-
-    atr = safe_float(
-        technical["atr"],
-        price * 0.03
-    )
-
-    # --------------------------------------------------------
-    # STOP
-    # --------------------------------------------------------
-
-    atr_stop = (
-        price -
-        atr * 1.5
-    )
-
-    support_stop = (
-        support * 0.995
-    )
-
-    stop = min(
-        atr_stop,
-        support_stop
-    )
-
-    # Çok geniş stopu sınırlıyoruz
-    max_stop = price * 0.88
-
-    if stop < max_stop:
-
-        stop = max_stop
-
-    # Çok dar stopu da engelliyoruz
-    min_stop = price * 0.94
-
-    if stop > min_stop:
-
-        stop = min_stop
-
-    risk = (
-        price -
-        stop
-    )
-
-    if risk <= 0:
-
-        risk = price * 0.06
-
-        stop = (
-            price -
-            risk
+        target1 = max(
+            target1,
+            resistance
         )
 
-    # --------------------------------------------------------
-    # HEDEF
-    # --------------------------------------------------------
+        target2 = max(
+            target2,
+            resistance * 1.03
+        )
 
-    target1 = (
-        price +
-        risk * 2
-    )
-
-    target2 = (
-        price +
-        risk * 3
-    )
-
-    # --------------------------------------------------------
-    # GİRİŞ BÖLGESİ
-    # --------------------------------------------------------
-
-    entry_low = (
-        price * 0.995
-    )
-
-    entry_high = (
-        price * 1.005
-    )
+        target3 = max(
+            target3,
+            resistance * 1.07
+        )
 
     rr = (
-        target1 -
-        price
+        target2 - price
     ) / risk
+
+    # ========================================================
+    # 22. R/R SKORU
+    # ========================================================
+
+    if rr >= 3:
+
+        rr_score = 100
+
+    elif rr >= 2.5:
+
+        rr_score = 90
+
+    elif rr >= 2:
+
+        rr_score = 80
+
+    elif rr >= 1.5:
+
+        rr_score = 60
+
+    else:
+
+        rr_score = 35
+
+    # ========================================================
+    # 23. GİRİŞ SKORU
+    # ========================================================
+
+    entry_score = (
+
+        strength * 0.30
+
+        + trend_alignment * 0.25
+
+        + location_score * 0.10
+
+        + liquidity_score * 0.05
+
+        + (100 - chase_score) * 0.10
+
+        + rr_score * 0.10
+
+        + volume_score * 0.05
+
+        + vwap_score * 0.05
+
+    )
+
+    entry_score = clamp(
+        entry_score
+    )
+
+    # ========================================================
+    # 24. DÜŞÜŞ BICAĞI
+    # ========================================================
+
+    falling_knife = (
+
+        change <= -8
+        and trend15_score < 50
+        and trend1h_score < 55
+    )
+
+    # ========================================================
+    # 25. KARAR MOTORU
+    # ========================================================
+
+    if volume < MIN_VOLUME_TRY:
+
+        decision = (
+            "🔴 LİKİDİTE YETERSİZ"
+        )
+
+    elif falling_knife:
+
+        decision = (
+            "🔴 DÜŞÜŞ BICAĞI"
+        )
+
+    elif (
+        change >= CHASE_EXTREME
+        and chase_score >= 75
+    ):
+
+        decision = (
+            "🔴 KOVALAMA"
+        )
+
+    elif (
+        chase_score >= 75
+        and trend_alignment >= 70
+    ):
+
+        decision = (
+            "🟡 GERİ ÇEKİLME BEKLE"
+        )
+
+    elif (
+        breakout_score >= 75
+        and trend_alignment >= 72
+        and volume_ratio >= 1.3
+    ):
+
+        decision = (
+            "🔵 KIRILIM BEKLE"
+        )
+
+    elif (
+        entry_score >= 78
+        and strength >= 72
+        and trend_alignment >= 70
+        and rr >= MIN_RR
+        and chase_score < 60
+    ):
+
+        decision = (
+            "🟢 AL"
+        )
+
+    elif (
+        entry_score >= 68
+        and strength >= 62
+        and trend_alignment >= 65
+        and rr >= MIN_RR
+        and chase_score < 70
+    ):
+
+        decision = (
+            "🟢 GERİ ÇEKİLMEDE AL"
+        )
+
+    elif (
+        strength >= 68
+        and trend_alignment >= 60
+    ):
+
+        decision = (
+            "🟡 TEYİT BEKLE"
+        )
+
+    else:
+
+        decision = (
+            "🟠 İZLE"
+        )
+
+    # ========================================================
+    # 26. SINIF
+    # ========================================================
+
+    if strength >= 80:
+
+        grade = "🟢 A SINIFI"
+
+    elif strength >= 70:
+
+        grade = "🟡 B SINIFI"
+
+    elif strength >= 60:
+
+        grade = "🟠 C SINIFI"
+
+    else:
+
+        grade = "🔴 ZAYIF"
+
+    # ========================================================
+    # 27. MESAJ
+    # ========================================================
+
+    if decision == "🟢 AL":
+
+        message = (
+            "Trend, momentum, hacim ve risk/getiri "
+            "aynı yönde. Mevcut fiyat trade için uygun."
+        )
+
+    elif decision == "🟢 GERİ ÇEKİLMEDE AL":
+
+        message = (
+            "Trend pozitif. Mevcut seviyede kovalamak "
+            "yerine destek/EMA bölgesine geri çekilme "
+            "daha iyi risk/getiri sağlayabilir."
+        )
+
+    elif decision == "🔵 KIRILIM BEKLE":
+
+        message = (
+            "Coin direnç bölgesine yaklaşıyor. "
+            "Hacimli kırılım teyidi gelmeden pozisyon "
+            "açmak yerine kırılım beklenmeli."
+        )
+
+    elif decision == "🟡 GERİ ÇEKİLME BEKLE":
+
+        message = (
+            "Momentum güçlü ancak fiyat fazla yükselmiş. "
+            "Mevcut seviyeden kovalamak yerine geri çekilme "
+            "beklenmeli."
+        )
+
+    elif decision == "🔴 KOVALAMA":
+
+        message = (
+            "Fiyat kısa sürede aşırı yükselmiş. "
+            "Risk/getiri bozulduğu için mevcut seviyeden "
+            "pozisyon açılması uygun değil."
+        )
+
+    elif decision == "🔴 DÜŞÜŞ BICAĞI":
+
+        message = (
+            "Fiyat sert düşüyor ve kısa/orta vadeli trend "
+            "henüz toparlanmış değil. Sırf ucuzladı diye "
+            "pozisyon açılmamalı."
+        )
+
+    elif decision == "🟡 TEYİT BEKLE":
+
+        message = (
+            "Bazı olumlu sinyaller var ancak trend teyidi "
+            "henüz yeterince güçlü değil."
+        )
+
+    elif decision == "🔴 LİKİDİTE YETERSİZ":
+
+        message = (
+            "İşlem hacmi profesyonel trade için yeterli değil."
+        )
+
+    else:
+
+        message = (
+            "Şimdilik izleme bölgesinde."
+        )
+
+    # ========================================================
+    # 28. RETURN
+    # ========================================================
 
     return {
 
-        "entry_low":
-            entry_low,
+        "strength": round(
+            strength,
+            1
+        ),
 
-        "entry_high":
-            entry_high,
+        "entry_score": round(
+            entry_score,
+            1
+        ),
 
-        "stop":
-            stop,
+        "trend15": round(
+            trend15_score,
+            1
+        ),
 
-        "target1":
-            target1,
+        "trend1h": round(
+            trend1h_score,
+            1
+        ),
 
-        "target2":
-            target2,
+        "trend_alignment": round(
+            trend_alignment,
+            1
+        ),
 
-        "resistance":
-            resistance,
+        "rsi": round(
+            rsi,
+            1
+        ),
 
-        "risk_pct":
-            (
-                risk /
-                price
-            ) * 100
-            if price > 0
-            else 0,
+        "volume_ratio": round(
+            volume_ratio,
+            2
+        ),
 
-        "rr":
+        "vwap": vwap,
+
+        "chase_score": round(
+            chase_score,
+            1
+        ),
+
+        "breakout_score": round(
+            breakout_score,
+            1
+        ),
+
+        "position": round(
+            position,
+            1
+        ),
+
+        "range_pct": round(
+            range_pct,
+            2
+        ),
+
+        "momentum": round(
+            momentum,
+            1
+        ),
+
+        "liquidity_score": round(
+            liquidity_score,
+            1
+        ),
+
+        "ema9": trend15["ema9"],
+
+        "ema20": trend15["ema20"],
+
+        "ema50": trend15["ema50"],
+
+        "support": support,
+
+        "support2": support2,
+
+        "resistance": resistance,
+
+        "resistance2": resistance2,
+
+        "resistance_distance": round(
+            resistance_distance,
+            2
+        ),
+
+        "grade": grade,
+
+        "decision": decision,
+
+        "entry_low": entry_low,
+
+        "entry_high": entry_high,
+
+        "stop": stop,
+
+        "target1": target1,
+
+        "target2": target2,
+
+        "target3": target3,
+
+        "rr": round(
             rr,
+            2
+        ),
+
+        "message": message,
     }
 
 
 # ============================================================
-# BREAKOUT MOTORU
+# MARKET DATA
 # ============================================================
 
-def evaluate_breakout(
-    row,
-    technical,
-    chase_score
-):
+# 1) Kripto Piyasa ile AYNI crypto_engine TRY evrenini al
+engine_df = get_engine_market_data()
 
-    price = safe_float(
-        row.get(
-            "price_try",
-            0
-        )
-    )
+# 2) Aynı anda canlı ticker verisini de al.
+# ÖNEMLİ:
+# Eski sürümde engine_df tamamen boş değilse ticker API kullanılmıyordu.
+# Bu nedenle engine evreninde bulunan fakat price_try değeri boş/0 gelen
+# coinler daha sonra dropna(price) / price > 0 aşamasında kayboluyordu.
+ticker_df = get_market_data()
 
-    resistance = safe_float(
-        technical["resistance"],
-        price
-    )
+using_fallback = False
+data_source = "crypto_engine+ticker"
 
-    volume_ratio = safe_float(
-        technical["volume_ratio"],
-        1
-    )
+# ------------------------------------------------------------
+# ENGINE + TICKER BİRLEŞTİR
+# ------------------------------------------------------------
 
-    breakout_score = safe_float(
-        technical["breakout_score"]
-    )
+if not engine_df.empty:
 
-    rsi = safe_float(
-        technical["rsi"],
-        50
-    )
+    df = engine_df.copy()
 
-    trend = safe_float(
-        technical["trend_score"]
-    )
+    if not ticker_df.empty:
 
-    broken = (
-        price >
-        resistance * 1.002
-    )
+        ticker_fill = ticker_df[
+            [
+                "symbol",
+                "price",
+                "change",
+                "volume",
+                "high",
+                "low",
+            ]
+        ].copy()
 
-    near_breakout = (
-        price >=
-        resistance * 0.995
-        and
-        price <=
-        resistance * 1.015
-    )
-
-    volume_confirmed = (
-        volume_ratio >=
-        MIN_BREAKOUT_VOLUME_RATIO
-    )
-
-    rsi_ok = (
-        52 <= rsi <= 78
-    )
-
-    trend_ok = (
-        trend >= 70
-    )
-
-    chase_ok = (
-        chase_score < 60
-    )
-
-    # --------------------------------------------------------
-    # GERÇEK BREAKOUT
-    # --------------------------------------------------------
-
-    if (
-
-        broken
-
-        and volume_confirmed
-
-        and rsi_ok
-
-        and trend_ok
-
-        and chase_ok
-
-        and breakout_score >= 70
-
-    ):
-
-        return (
-            "BREAKOUT",
-            "Direnç kırıldı. Hacim, trend ve RSI teyidi mevcut."
+        ticker_fill = ticker_fill.drop_duplicates(
+            subset=["symbol"],
+            keep="first",
         )
 
-    # --------------------------------------------------------
-    # BREAKOUT TEYİDİ
-    # --------------------------------------------------------
-
-    if (
-
-        near_breakout
-
-        and breakout_score >= 55
-
-    ):
-
-        return (
-            "WAIT_BREAKOUT",
-            "Direnç bölgesinde. Kırılım ve hacim teyidi bekleniyor."
+        df = df.merge(
+            ticker_fill,
+            on="symbol",
+            how="left",
+            suffixes=("", "_ticker"),
         )
 
-    return (
-        "NO_BREAKOUT",
-        "Breakout teyidi oluşmadı."
-    )
-
-
-# ============================================================
-# FIRSAT SINIFI
-# ============================================================
-
-def classify_opportunity(
-    power,
-    entry,
-    technical,
-    chase,
-    final_score
-):
-
-    trend = technical[
-        "trend_score"
-    ]
-
-    volume_ratio = technical[
-        "volume_ratio"
-    ]
-
-    breakout = technical[
-        "breakout_score"
-    ]
-
-    if (
-
-        final_score >= 75
-
-        and power >= 78
-
-        and entry >= 72
-
-        and chase < 55
-
-    ):
-
-        return "🟢 A SINIFI FIRSAT"
-
-    if (
-
-        final_score >= 68
-
-        and power >= 72
-
-        and (
-            entry >= 62
-            or breakout >= 65
-        )
-
-        and chase < 65
-
-    ):
-
-        return "🟡 B SINIFI FIRSAT"
-
-    if (
-
-        power >= 65
-
-        and trend >= 60
-
-        and volume_ratio >= 1
-
-    ):
-
-        return "🟠 C SINIFI İZLE"
-
-    return "⚪ ZAYIF"
-
-
-# ============================================================
-# FINAL KARAR MOTORU
-# ============================================================
-
-def calculate_final_decision(
-    row,
-    technical,
-    power_score,
-    entry_quality,
-    chase_score,
-    levels
-):
-
-    volume_ratio = safe_float(
-        technical[
-            "volume_ratio"
-        ],
-        1
-    )
-
-    technical_score = safe_float(
-        technical[
-            "technical_score"
-        ]
-    )
-
-    # --------------------------------------------------------
-    # GÜNLÜK TRADE SKORU
-    # --------------------------------------------------------
-
-    daily_trade = (
-
-        technical_score * 0.40
-
-        + entry_quality * 0.30
-
-        + (
-            100 -
-            chase_score
-        ) * 0.15
-
-        + min(
-            volume_ratio * 40,
-            100
-        ) * 0.15
-    )
-
-    daily_trade = clamp(
-        daily_trade
-    )
-
-    # --------------------------------------------------------
-    # BREAKOUT
-    # --------------------------------------------------------
-
-    breakout_status, breakout_reason = (
-        evaluate_breakout(
-            row,
-            technical,
-            chase_score
-        )
-    )
-
-    # --------------------------------------------------------
-    # FINAL
-    # --------------------------------------------------------
-
-    final_score = (
-
-        power_score * 0.30
-
-        + daily_trade * 0.30
-
-        + entry_quality * 0.20
-
-        + 90 * 0.10
-
-        + (
-            100 -
-            chase_score
-        ) * 0.10
-    )
-
-    final_score = clamp(
-        final_score
-    )
-
-    # --------------------------------------------------------
-    # SINIF
-    # --------------------------------------------------------
-
-    opportunity = classify_opportunity(
-        power_score,
-        entry_quality,
-        technical,
-        chase_score,
-        final_score
-    )
-
-    # --------------------------------------------------------
-    # KOVALAMA
-    # --------------------------------------------------------
-
-    if chase_score >= 75:
-
-        return (
-            daily_trade,
-            final_score,
-            opportunity,
-            "🔴 KOVALAMA",
-            "Fiyat güçlü ancak mevcut seviyeden giriş riski yüksek.",
-            breakout_status
-        )
-
-    # --------------------------------------------------------
-    # BREAKOUT AL
-    # --------------------------------------------------------
-
-    if (
-
-        breakout_status ==
-        "BREAKOUT"
-
-        and final_score >=
-        BREAKOUT_BUY_SCORE
-
-        and power_score >= 72
-
-    ):
-
-        return (
-            daily_trade,
-            final_score,
-            opportunity,
-            "🟢 BREAKOUT AL",
-            breakout_reason,
-            breakout_status
-        )
-
-    # --------------------------------------------------------
-    # BREAKOUT TEYİDİ
-    # --------------------------------------------------------
-
-    if (
-
-        breakout_status ==
-        "WAIT_BREAKOUT"
-
-        and final_score >=
-        OPPORTUNITY_SCORE
-
-    ):
-
-        return (
-            daily_trade,
-            final_score,
-            opportunity,
-            "🟡 BREAKOUT TEYİDİ BEKLE",
-            breakout_reason,
-            breakout_status
-        )
-
-    # --------------------------------------------------------
-    # NORMAL GÜNLÜK AL
-    # --------------------------------------------------------
-
-    if (
-
-        final_score >=
-        FINAL_BUY_SCORE
-
-        and power_score >= 75
-
-        and entry_quality >= 72
-
-        and chase_score <
-        MAX_CHASE_FOR_BUY
-
-        and levels["rr"] >= 2
-
-    ):
-
-        return (
-            daily_trade,
-            final_score,
-            opportunity,
-            "🟢 GÜNLÜK AL",
-            "Güç, giriş kalitesi, teknik yapı ve risk/getiri birlikte uygun.",
-            breakout_status
-        )
-
-    # --------------------------------------------------------
-    # GİRİŞ BEKLE
-    # --------------------------------------------------------
-
-    if (
-
-        power_score >= 75
-
-        and entry_quality < 72
-
-        and chase_score < 70
-
-    ):
-
-        return (
-            daily_trade,
-            final_score,
-            opportunity,
-            "🟡 GİRİŞ BEKLE",
-            "Coin güçlü ancak mevcut fiyat daha iyi bir giriş için uygun değil.",
-            breakout_status
-        )
-
-    # --------------------------------------------------------
-    # TEYİT
-    # --------------------------------------------------------
-
-    if (
-
-        final_score >=
-        WATCH_SCORE
-
-        and power_score >= 65
-
-    ):
-
-        return (
-            daily_trade,
-            final_score,
-            opportunity,
-            "🟡 TEYİT BEKLE",
-            "Setup oluşuyor ancak işlem için ek teyit gerekiyor.",
-            breakout_status
-        )
-
-    # --------------------------------------------------------
-    # İŞLEM YOK
-    # --------------------------------------------------------
-
-    return (
-        daily_trade,
-        final_score,
-        opportunity,
-        "🔴 İŞLEM YOK",
-        "Mevcut koşullarda yeterli trade avantajı bulunamadı.",
-        breakout_status
-    )
-
-
-# ============================================================
-# PİYASAYI ANALİZ ET
-# ============================================================
-
-def analyze_market(df):
-
-    results = []
-
-    progress = st.progress(
-        0,
-        text="50 coin analiz ediliyor..."
-    )
-
-    total = len(df)
-
-    for index, (_, row) in enumerate(
-        df.iterrows()
-    ):
-
-        symbol = row[
-            "symbol"
-        ]
-
-        klines = get_klines(
-            symbol
-        )
-
-        technical = analyze_technical(
-            row,
-            klines
-        )
-
-        power_score = calculate_power_score(
-            row,
-            technical
-        )
-
-        entry_quality = calculate_entry_quality(
-            row,
-            technical
-        )
-
-        chase_score = calculate_chase_score(
-            row,
-            technical
-        )
-
-        levels = calculate_trade_levels(
-            row,
-            technical
-        )
-
-        (
-            daily_trade,
-            final_score,
-            opportunity,
-            decision,
-            reason,
-            breakout_status
-        ) = calculate_final_decision(
-
-            row,
-
-            technical,
-
-            power_score,
-
-            entry_quality,
-
-            chase_score,
-
-            levels
-        )
-
-        results.append(
-
-            {
-                "Coin":
-                    row.get(
-                        "base_asset",
-                        symbol
-                    ),
-
-                "Parite":
-                    symbol,
-
-                "Fiyat":
-                    safe_float(
-                        row.get(
-                            "price_try"
-                        )
-                    ),
-
-                "Günlük %":
-                    safe_float(
-                        row.get(
-                            "change_24h"
-                        )
-                    ),
-
-                "Hacim":
-                    safe_float(
-                        row.get(
-                            "volume_try"
-                        )
-                    ),
-
-                "PRO Güç":
-                    round(
-                        power_score,
-                        1
-                    ),
-
-                "Günlük Trade":
-                    round(
-                        daily_trade,
-                        1
-                    ),
-
-                "Giriş Kalitesi":
-                    round(
-                        entry_quality,
-                        1
-                    ),
-
-                "Trend":
-                    round(
-                        technical[
-                            "trend_score"
-                        ],
-                        1
-                    ),
-
-                "Breakout":
-                    round(
-                        technical[
-                            "breakout_score"
-                        ],
-                        1
-                    ),
-
-                "Hacim Oranı":
-                    round(
-                        technical[
-                            "volume_ratio"
-                        ],
-                        2
-                    ),
-
-                "RSI":
-                    round(
-                        technical[
-                            "rsi"
-                        ],
-                        1
-                    ),
-
-                "Kovalama":
-                    round(
-                        chase_score,
-                        1
-                    ),
-
-                "Direnç":
-                    technical[
-                        "resistance"
-                    ],
-
-                "Destek":
-                    technical[
-                        "support"
-                    ],
-
-                "Final":
-                    round(
-                        final_score,
-                        1
-                    ),
-
-                "R/R":
-                    round(
-                        levels[
-                            "rr"
-                        ],
-                        1
-                    ),
-
-                "Fırsat":
-                    opportunity,
-
-                "Karar":
-                    decision,
-
-                "Giriş Alt":
-                    levels[
-                        "entry_low"
-                    ],
-
-                "Giriş Üst":
-                    levels[
-                        "entry_high"
-                    ],
-
-                "Stop":
-                    levels[
-                        "stop"
-                    ],
-
-                "Hedef 1":
-                    levels[
-                        "target1"
-                    ],
-
-                "Hedef 2":
-                    levels[
-                        "target2"
-                    ],
-
-                "Breakout Durumu":
-                    breakout_status,
-
-                "Açıklama":
-                    reason,
-            }
-        )
-
-        progress.progress(
-            (index + 1) / total,
-            text=(
-                f"{row.get('base_asset', symbol)} "
-                f"analiz ediliyor..."
+        # Engine verisi geçerliyse koru; boş/0 ise ticker ile tamamla.
+        for col in [
+            "price",
+            "change",
+            "volume",
+            "high",
+            "low",
+        ]:
+
+            ticker_col = f"{col}_ticker"
+
+            if ticker_col not in df.columns:
+                continue
+
+            current = pd.to_numeric(
+                df[col],
+                errors="coerce",
             )
-        )
 
-    progress.empty()
+            ticker_values = pd.to_numeric(
+                df[ticker_col],
+                errors="coerce",
+            )
 
-    result = pd.DataFrame(
-        results
-    )
+            if col == "price":
+                invalid = (
+                    current.isna()
+                    | (current <= 0)
+                )
+            elif col in ["high", "low"]:
+                invalid = (
+                    current.isna()
+                    | (current <= 0)
+                )
+            else:
+                invalid = current.isna()
 
-    if result.empty:
+            df.loc[invalid, col] = (
+                ticker_values.loc[invalid]
+            )
 
-        return result
+            df = df.drop(
+                columns=[ticker_col]
+            )
 
-    return (
-        result
-        .sort_values(
-            "Final",
-            ascending=False
-        )
-        .reset_index(
-            drop=True
-        )
-    )
+elif not ticker_df.empty:
+
+    df = ticker_df.copy()
+    data_source = "ticker_api"
+
+else:
+
+    df = fallback_market_data()
+    data_source = "fallback"
+    using_fallback = True
 
 
 # ============================================================
-# VERİYİ AL
+# TEMİZLİK ÖNCESİ TEŞHİS
 # ============================================================
 
-with st.spinner(
-    "Ortak TRY evreni hazırlanıyor..."
-):
+universe_before_price_filter = len(df)
 
-    df_market = (
-        get_common_universe()
+if "price" in df.columns:
+
+    _price_check = pd.to_numeric(
+        df["price"],
+        errors="coerce"
     )
 
-
-if df_market.empty:
-
-    st.error(
-        "❌ Ortak kripto piyasa evreni alınamadı."
+    missing_price_before_filter = int(
+        _price_check.isna().sum()
     )
 
-    st.info(
-        "Önce Kripto Piyasa sayfasını açıp "
-        "verinin yüklenmesini sağlayın."
+    zero_price_before_filter = int(
+        (_price_check.fillna(0) <= 0).sum()
     )
 
-    st.stop()
+else:
+
+    missing_price_before_filter = len(df)
+    zero_price_before_filter = len(df)
+
+
+# ============================================================
+# TEMİZLİK
+# ============================================================
+
+numeric_cols = [
+    "price",
+    "change",
+    "volume",
+    "high",
+    "low",
+]
+
+for col in numeric_cols:
+
+    if col not in df.columns:
+        df[col] = np.nan
+
+    df[col] = pd.to_numeric(
+        df[col],
+        errors="coerce"
+    )
+
+# Eksik 24s alanları güvenli varsayımlarla tamamla.
+# Fiyatı olmayan coin analiz edilemez; diğer alanlar coin'i evrenden düşürmez.
+df["change"] = df["change"].fillna(0.0)
+df["volume"] = df["volume"].fillna(0.0)
+df["high"] = df["high"].fillna(df["price"])
+df["low"] = df["low"].fillna(df["price"])
+
+# Teknik analiz için fiyat zorunludur.
+# Ancak artık önce ticker API ile eksik fiyatları tamamladığımız için
+# burada yalnızca gerçekten hiçbir canlı kaynaktan fiyatı alınamayan
+# pariteler elenir.
+df = df.dropna(
+    subset=["price"]
+)
+
+df = df[
+    df["price"] > 0
+].copy()
+
+universe_after_price_filter = len(df)
+
+dropped_for_no_price = max(
+    universe_before_price_filter
+    - universe_after_price_filter,
+    0
+)
+
+
+# ============================================================
+# LİKİDİTEYE GÖRE ÖN FİLTRE
+# ============================================================
+
+df = df.sort_values(
+    "volume",
+    ascending=False
+).reset_index(
+    drop=True
+)
 
 
 # ============================================================
 # ANALİZ
 # ============================================================
 
-df_result = analyze_market(
-    df_market
+analysis_rows = []
+
+progress = st.progress(
+    0,
+    text="Kripto piyasası analiz ediliyor..."
 )
 
+total = len(df)
 
-if df_result.empty:
+for i, (_, row) in enumerate(
+    df.iterrows()
+):
 
-    st.error(
-        "Analiz sonucunda veri oluşmadı."
+    symbol = row["symbol"]
+    volume = safe_float(row["volume"])
+
+    # Tüm coinler analysis tablosuna girer.
+    #
+    # Likiditesi MIN_VOLUME_TRY altında olan coinde pahalı 15D/1S
+    # mum çağrılarını yapmaya gerek yoktur; karar motoru zaten
+    # "LİKİDİTE YETERSİZ" üretecektir.
+    #
+    # Böylece:
+    # - coin evrenden KAYBOLMAZ,
+    # - düşük hacimli coinler de detay listesinde görünür,
+    # - API yükü gereksiz yere artmaz.
+    if volume >= MIN_VOLUME_TRY:
+
+        df15 = get_klines(
+            symbol,
+            "15m"
+        )
+
+        df1h = get_klines(
+            symbol,
+            "1h"
+        )
+
+    else:
+
+        df15 = pd.DataFrame()
+        df1h = pd.DataFrame()
+
+    result = analyze_coin(
+        row,
+        df15,
+        df1h
     )
 
+    analysis_rows.append(
+        {
+            **row.to_dict(),
+            **result,
+        }
+    )
+
+    progress.progress(
+        (i + 1) / max(total, 1),
+        text=(
+            f"{row['coin']} analiz ediliyor "
+            f"({i + 1}/{total})"
+        )
+    )
+
+progress.empty()
+
+
+analysis = pd.DataFrame(
+    analysis_rows
+)
+
+if analysis.empty:
+
+    st.error(
+        "TRY coin evreni alındı ancak analiz edilebilir geçerli fiyat verisi bulunamadı."
+    )
     st.stop()
 
 
 # ============================================================
-# ÜST BİLGİ
+# SIRALAMA
 # ============================================================
 
-st.caption(
-    "Ortak piyasa evreni aktif. "
-    "Günlük Trade motoru kendi başına coin keşfetmez."
+analysis = analysis.sort_values(
+    [
+        "entry_score",
+        "strength",
+        "trend_alignment",
+    ],
+    ascending=False
+).reset_index(
+    drop=True
+)
+
+
+# ============================================================
+# BAŞLIK
+# ============================================================
+
+st.title(
+    "⚡ Kripto Trade Merkezi"
 )
 
 st.caption(
-    f"Analiz edilen evren: "
-    f"{len(df_result)} coin"
+    "Trend + momentum + hacim + VWAP + RSI + "
+    "destek/direnç + risk/getiri tabanlı profesyonel "
+    "trade radar"
 )
 
-st.caption(
-    "Son analiz: "
-    +
-    datetime.now().strftime(
-        "%d.%m.%Y %H:%M:%S"
+
+# ============================================================
+# VERİ DURUMU
+# ============================================================
+
+if using_fallback:
+
+    st.warning(
+        "⚠️ Canlı API verisine ulaşılamadı. "
+        "Son sağlanan piyasa tablosu ile sınırlı analiz yapılıyor."
     )
-)
+
+else:
+
+    if data_source == "crypto_engine+ticker":
+        source_text = (
+            "crypto_engine ortak TRY evreni + canlı ticker tamamlama"
+        )
+
+    elif data_source == "ticker_api":
+        source_text = "canlı ticker API"
+
+    else:
+        source_text = data_source
+
+    liquid_count = int(
+        (analysis["volume"] >= MIN_VOLUME_TRY).sum()
+    )
+
+    st.success(
+        f"🟢 Veri kaynağı: {source_text} — "
+        f"{len(analysis)} TRY coin evrene alındı, "
+        f"{liquid_count} coin 15D + 1S mum analizine girdi."
+    )
 
 
 # ============================================================
-# ANA İSTATİSTİKLER
+# EVREN TEŞHİSİ
 # ============================================================
 
-buy_df = df_result[
-    df_result["Karar"].isin(
+with st.expander(
+    "🧪 TRY Evreni / Analiz Teşhisi"
+):
+
+    liquid_count = int(
+        (analysis["volume"] >= MIN_VOLUME_TRY).sum()
+    )
+
+    low_liquidity_count = int(
+        (analysis["volume"] < MIN_VOLUME_TRY).sum()
+    )
+
+    c_ev1, c_ev2, c_ev3, c_ev4 = st.columns(4)
+
+    c_ev1.metric(
+        "Ham TRY Evreni",
+        universe_before_price_filter
+    )
+
+    c_ev2.metric(
+        "Geçerli Fiyat",
+        universe_after_price_filter
+    )
+
+    c_ev3.metric(
+        "Mum Analizi",
+        liquid_count
+    )
+
+    c_ev4.metric(
+        "Fiyat Alınamadı",
+        dropped_for_no_price
+    )
+
+    st.caption(
+        "Engine evrenindeki eksik/0 fiyatlar önce canlı ticker API ile "
+        "tamamlanır. Buna rağmen fiyatı hiçbir kaynaktan alınamayan parite "
+        "teknik analiz yapılamayacağı için elenir. ₺50 Mn altı hacimli "
+        "coinler ise artık evrenden silinmez; yalnızca mum analizi atlanır "
+        "ve LİKİDİTE YETERSİZ olarak işaretlenir."
+    )
+
+    if dropped_for_no_price > 0:
+
+        st.warning(
+            f"{dropped_for_no_price} paritenin fiyatı ne crypto_engine "
+            "ne de canlı ticker API üzerinden alınabildiği için "
+            "teknik analize giremedi."
+        )
+
+    universe_debug = analysis[
         [
-            "🟢 GÜNLÜK AL",
-            "🟢 BREAKOUT AL"
+            "symbol",
+            "coin",
+            "price",
+            "volume",
+            "decision",
         ]
-    )
-]
+    ].copy()
 
-entry_df = df_result[
-    df_result["Karar"]
-    ==
-    "🟡 GİRİŞ BEKLE"
-]
-
-confirm_df = df_result[
-    df_result["Karar"].isin(
-        [
-            "🟡 TEYİT BEKLE",
-            "🟡 BREAKOUT TEYİDİ BEKLE"
-        ]
-    )
-]
-
-chase_df = df_result[
-    df_result["Karar"]
-    ==
-    "🔴 KOVALAMA"
-]
-
-
-c1, c2, c3, c4, c5 = st.columns(5)
-
-
-with c1:
-
-    st.metric(
-        "Analiz",
-        len(df_result)
+    st.dataframe(
+        universe_debug,
+        use_container_width=True,
+        hide_index=True,
     )
 
 
-with c2:
+# ============================================================
+# ÖZET
+# ============================================================
 
-    st.metric(
-        "🟢 İşlem",
-        len(buy_df)
-    )
+trade_count = len(
+    analysis[
+        analysis["decision"].isin(
+            [
+                "🟢 AL",
+                "🟢 GERİ ÇEKİLMEDE AL",
+            ]
+        )
+    ]
+)
+
+pullback_count = len(
+    analysis[
+        analysis["decision"]
+        == "🟡 GERİ ÇEKİLME BEKLE"
+    ]
+)
+
+breakout_count = len(
+    analysis[
+        analysis["decision"]
+        == "🔵 KIRILIM BEKLE"
+    ]
+)
+
+chase_count = len(
+    analysis[
+        analysis["decision"]
+        == "🔴 KOVALAMA"
+    ]
+)
+
+falling_count = len(
+    analysis[
+        analysis["decision"]
+        == "🔴 DÜŞÜŞ BICAĞI"
+    ]
+)
+
+c1, c2, c3, c4, c5, c6 = st.columns(6)
+
+c1.metric(
+    "Analiz",
+    len(analysis)
+)
+
+c2.metric(
+    "🟢 Trade",
+    trade_count
+)
+
+c3.metric(
+    "🟡 Geri Çekilme",
+    pullback_count
+)
+
+c4.metric(
+    "🔵 Kırılım",
+    breakout_count
+)
+
+c5.metric(
+    "🔴 Kovalama",
+    chase_count
+)
+
+c6.metric(
+    "🔴 Düşüş Bıçağı",
+    falling_count
+)
 
 
-with c3:
-
-    st.metric(
-        "🟡 Giriş Bekle",
-        len(entry_df)
-    )
-
-
-with c4:
-
-    st.metric(
-        "🟡 Teyit",
-        len(confirm_df)
-    )
-
-
-with c5:
-
-    st.metric(
-        "🔴 Kovalama",
-        len(chase_df)
-    )
-
+# ============================================================
+# EN İYİ TRADE FIRSATLARI
+# ============================================================
 
 st.divider()
 
+st.subheader(
+    "🏆 En İyi Kripto Trade Fırsatları"
+)
+
+best = analysis[
+    ~analysis["decision"].isin(
+        [
+            "🔴 LİKİDİTE YETERSİZ",
+            "🔴 DÜŞÜŞ BICAĞI",
+            "🔴 KOVALAMA",
+            "🟠 İZLE",
+        ]
+    )
+].copy()
+
+display_cols = [
+    "coin",
+    "price",
+    "change",
+    "volume",
+    "strength",
+    "entry_score",
+    "trend15",
+    "trend1h",
+    "rsi",
+    "volume_ratio",
+    "chase_score",
+    "grade",
+    "decision",
+]
+
+display_df = best[
+    display_cols
+].head(20).copy()
+
+display_df.columns = [
+    "Coin",
+    "Fiyat",
+    "24S",
+    "Hacim",
+    "Güç",
+    "Trade",
+    "15D",
+    "1S",
+    "RSI",
+    "Hacim Oranı",
+    "Kovalama",
+    "Sınıf",
+    "Karar",
+]
+
+display_df["Fiyat"] = display_df[
+    "Fiyat"
+].apply(fmt_price)
+
+display_df["24S"] = display_df[
+    "24S"
+].apply(pct)
+
+display_df["Hacim"] = display_df[
+    "Hacim"
+].apply(fmt_try)
+
+st.dataframe(
+    display_df,
+    use_container_width=True,
+    hide_index=True,
+)
+
 
 # ============================================================
-# 1 — KESİN İŞLEM ADAYLARI
+# PROFESYONEL TRADE ADAYLARI
 # ============================================================
+
+st.divider()
 
 st.subheader(
-    "🎯 1. Bugünün Kesin İşlem Adayları"
+    "🟢 Gerçek Trade Adayları"
 )
 
-st.caption(
-    "Buradaki coinler sistemin doğrudan işlem kriterlerini karşılamıştır."
+trade_df = analysis[
+    analysis["decision"].isin(
+        [
+            "🟢 AL",
+            "🟢 GERİ ÇEKİLMEDE AL",
+        ]
+    )
+].copy()
+
+trade_df = trade_df.sort_values(
+    [
+        "entry_score",
+        "rr",
+    ],
+    ascending=False
 )
 
 
-if not buy_df.empty:
+if trade_df.empty:
 
-    for _, row in buy_df.head(5).iterrows():
+    st.info(
+        "Şu anda bütün profesyonel kriterleri "
+        "aynı anda karşılayan coin bulunmuyor."
+    )
+
+else:
+
+    for _, row in trade_df.head(6).iterrows():
 
         with st.container(
             border=True
         ):
 
-            c1, c2, c3, c4 = st.columns(4)
-
-            with c1:
-
-                st.markdown(
-                    f"### 🟢 {row['Coin']}"
-                )
-
-                st.metric(
-                    "FINAL",
-                    f"{row['Final']:.1f}"
-                )
-
-                st.write(
-                    row["Karar"]
-                )
-
-            with c2:
-
-                st.metric(
-                    "PRO Güç",
-                    f"{row['PRO Güç']:.1f}"
-                )
-
-                st.metric(
-                    "Günlük Trade",
-                    f"{row['Günlük Trade']:.1f}"
-                )
-
-            with c3:
-
-                st.metric(
-                    "Giriş",
-                    f"{row['Giriş Kalitesi']:.1f}"
-                )
-
-                st.metric(
-                    "Trend",
-                    f"{row['Trend']:.1f}"
-                )
-
-            with c4:
-
-                st.metric(
-                    "Breakout",
-                    f"{row['Breakout']:.1f}"
-                )
-
-                st.metric(
-                    "Kovalama",
-                    f"{row['Kovalama']:.1f}"
-                )
-
-            st.write(
-                f"**Fiyat:** "
-                f"{fmt_price(row['Fiyat'])}"
+            st.markdown(
+                f"## 🟢 {row['coin']} "
+                f"— {row['decision']}"
             )
 
-            st.write(
-                f"**Giriş:** "
-                f"{fmt_price(row['Giriş Alt'])}"
-                f" – "
-                f"{fmt_price(row['Giriş Üst'])}"
+            a, b, c, d, e = st.columns(5)
+
+            a.metric(
+                "Fiyat",
+                fmt_price(
+                    row["price"]
+                )
             )
 
-            st.write(
-                f"**Stop:** "
-                f"{fmt_price(row['Stop'])}"
-                f" | "
-                f"**Hedef 1:** "
-                f"{fmt_price(row['Hedef 1'])}"
-                f" | "
-                f"**Hedef 2:** "
-                f"{fmt_price(row['Hedef 2'])}"
+            b.metric(
+                "Trade Skoru",
+                f"{row['entry_score']:.1f}"
             )
 
-            st.write(
-                f"**R/R:** "
-                f"1 : {row['R/R']:.1f}"
-                f" | "
-                f"**RSI:** "
-                f"{row['RSI']:.1f}"
-                f" | "
-                f"**Hacim:** "
-                f"{row['Hacim Oranı']:.2f}x"
+            c.metric(
+                "Güç",
+                f"{row['strength']:.1f}"
             )
 
-            st.caption(
-                row["Açıklama"]
+            d.metric(
+                "15D Trend",
+                f"{row['trend15']:.1f}"
             )
 
-else:
+            e.metric(
+                "1S Trend",
+                f"{row['trend1h']:.1f}"
+            )
 
-    st.info(
-        "Şu anda doğrudan AL kriterlerini karşılayan "
-        "coin yok. Bu normaldir."
-    )
+            st.markdown(
+                f"""
+### 🎯 Trade Planı
+
+**Giriş Bölgesi:**  
+`{fmt_price(row['entry_low'])}`
+ – `{fmt_price(row['entry_high'])}`
+
+**Stop:**  
+`{fmt_price(row['stop'])}`
+
+**Hedef 1:**  
+`{fmt_price(row['target1'])}`
+
+**Hedef 2:**  
+`{fmt_price(row['target2'])}`
+
+**Hedef 3:**  
+`{fmt_price(row['target3'])}`
+
+**Risk / Ödül:**  
+`1 : {row['rr']:.2f}`
+
+**Destek:**  
+`{fmt_price(row['support'])}`
+
+**Direnç:**  
+`{fmt_price(row['resistance'])}`
+
+**RSI:** `{row['rsi']:.1f}`  
+**VWAP:** `{fmt_price(row['vwap'])}`  
+**Hacim Oranı:** `{row['volume_ratio']:.2f}x`  
+**Kovalama:** `{row['chase_score']:.1f}`
+
+**Sınıf:** {row['grade']}
+
+**Karar:** {row['decision']}
+"""
+            )
+
+            st.info(
+                row["message"]
+            )
 
 
 # ============================================================
-# 2 — FIRSAT HAVUZU
+# GERİ ÇEKİLME BEKLENENLER
 # ============================================================
 
 st.divider()
 
 st.subheader(
-    "💎 2. Fırsat Havuzu"
+    "🟡 Güçlü Ama Geri Çekilme Beklenmeli"
 )
 
-st.caption(
-    "Henüz doğrudan AL olmayan ancak profesyonel "
-    "izleme listesine girmeye değer coinler."
-)
-
-opportunity_df = df_result[
-    df_result["Fırsat"].isin(
-        [
-            "🟢 A SINIFI FIRSAT",
-            "🟡 B SINIFI FIRSAT"
-        ]
-    )
+pullback_df = analysis[
+    analysis["decision"]
+    == "🟡 GERİ ÇEKİLME BEKLE"
 ].copy()
 
-if not opportunity_df.empty:
-
-    st.dataframe(
-        opportunity_df[
-            [
-                "Coin",
-                "Fiyat",
-                "Günlük %",
-                "PRO Güç",
-                "Günlük Trade",
-                "Giriş Kalitesi",
-                "Trend",
-                "Breakout",
-                "Hacim Oranı",
-                "RSI",
-                "Kovalama",
-                "Final",
-                "Fırsat",
-                "Karar",
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True
-    )
-
-else:
+if pullback_df.empty:
 
     st.info(
-        "Şu anda güçlü bir fırsat havuzu oluşmadı."
-    )
-
-
-# ============================================================
-# 3 — GİRİŞ BEKLEYENLER
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "🟡 3. Güçlü Ama Giriş Beklenmeli"
-)
-
-if not entry_df.empty:
-
-    st.dataframe(
-        entry_df[
-            [
-                "Coin",
-                "Fiyat",
-                "Günlük %",
-                "PRO Güç",
-                "Giriş Kalitesi",
-                "RSI",
-                "Kovalama",
-                "Final",
-                "Karar",
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True
+        "Şu anda güçlü fakat kovalama riski nedeniyle "
+        "geri çekilme beklenen coin yok."
     )
 
 else:
 
-    st.success(
-        "Şu anda giriş beklenmesi gereken güçlü coin yok."
-    )
-
-
-# ============================================================
-# 4 — BREAKOUT MERKEZİ
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "🚀 4. Breakout Merkezi"
-)
-
-breakout_df = df_result[
-    df_result["Karar"].isin(
+    pullback_display = pullback_df[
         [
-            "🟢 BREAKOUT AL",
-            "🟡 BREAKOUT TEYİDİ BEKLE"
+            "coin",
+            "price",
+            "change",
+            "strength",
+            "trend_alignment",
+            "chase_score",
+            "entry_low",
+            "entry_high",
+            "support",
+            "resistance",
         ]
-    )
-]
+    ].copy()
 
-if not breakout_df.empty:
+    pullback_display.columns = [
+        "Coin",
+        "Fiyat",
+        "24S",
+        "Güç",
+        "Trend",
+        "Kovalama",
+        "Giriş Alt",
+        "Giriş Üst",
+        "Destek",
+        "Direnç",
+    ]
+
+    pullback_display["Fiyat"] = (
+        pullback_display["Fiyat"]
+        .apply(fmt_price)
+    )
+
+    pullback_display["24S"] = (
+        pullback_display["24S"]
+        .apply(pct)
+    )
+
+    for col in [
+        "Giriş Alt",
+        "Giriş Üst",
+        "Destek",
+        "Direnç",
+    ]:
+
+        pullback_display[col] = (
+            pullback_display[col]
+            .apply(fmt_price)
+        )
 
     st.dataframe(
-        breakout_df[
-            [
-                "Coin",
-                "Fiyat",
-                "Direnç",
-                "Breakout",
-                "Trend",
-                "Hacim Oranı",
-                "RSI",
-                "Kovalama",
-                "Final",
-                "Karar",
-            ]
-        ],
+        pullback_display,
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
     )
 
-else:
+
+# ============================================================
+# KIRILIM BEKLEYENLER
+# ============================================================
+
+st.divider()
+
+st.subheader(
+    "🔵 Kırılım Beklenen Coinler"
+)
+
+breakout_df = analysis[
+    analysis["decision"]
+    == "🔵 KIRILIM BEKLE"
+].copy()
+
+if breakout_df.empty:
 
     st.info(
-        "Şu anda güçlü bir breakout setup'ı yok."
-    )
-
-
-# ============================================================
-# 5 — TEYİT BEKLEYENLER
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "🟡 5. Teyit Bekleyen Coinler"
-)
-
-if not confirm_df.empty:
-
-    st.dataframe(
-        confirm_df[
-            [
-                "Coin",
-                "Fiyat",
-                "Günlük %",
-                "PRO Güç",
-                "Günlük Trade",
-                "Trend",
-                "Breakout",
-                "Hacim Oranı",
-                "RSI",
-                "Final",
-                "Karar",
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True
+        "Şu anda yeterli trend + hacim teyidiyle "
+        "kırılım beklenen coin bulunmuyor."
     )
 
 else:
 
-    st.success(
-        "Teyit bekleyen önemli coin yok."
-    )
-
-
-# ============================================================
-# 6 — KOVALAMA
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "🔴 6. Kovalama Riski Yüksek Coinler"
-)
-
-st.caption(
-    "Güçlü olabilirler; fakat mevcut seviyeden "
-    "işleme girmek riskli olabilir."
-)
-
-if not chase_df.empty:
-
-    st.dataframe(
-        chase_df[
-            [
-                "Coin",
-                "Fiyat",
-                "Günlük %",
-                "PRO Güç",
-                "Giriş Kalitesi",
-                "RSI",
-                "Kovalama",
-                "Final",
-                "Karar",
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True
-    )
-
-else:
-
-    st.success(
-        "Yüksek kovalama riski taşıyan coin yok."
-    )
-
-
-# ============================================================
-# 7 — TÜM PİYASA
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "📊 7. Tüm Coinler"
-)
-
-all_columns = [
-
-    "Coin",
-
-    "Fiyat",
-
-    "Günlük %",
-
-    "PRO Güç",
-
-    "Günlük Trade",
-
-    "Giriş Kalitesi",
-
-    "Trend",
-
-    "Breakout",
-
-    "Hacim Oranı",
-
-    "RSI",
-
-    "Kovalama",
-
-    "Final",
-
-    "Fırsat",
-
-    "Karar",
-]
-
-st.dataframe(
-    df_result[
-        all_columns
-    ],
-    use_container_width=True,
-    hide_index=True,
-    height=600
-)
-
-
-# ============================================================
-# 8 — DETAYLI COİN ANALİZİ
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "🔎 8. Detaylı Coin Analizi"
-)
-
-coin_list = (
-    df_result[
-        "Coin"
-    ]
-    .tolist()
-)
-
-selected_coin = st.selectbox(
-    "Coin seç",
-    coin_list
-)
-
-selected = df_result[
-    df_result["Coin"]
-    ==
-    selected_coin
-].iloc[0]
-
-
-st.markdown(
-    f"## {selected['Coin']}"
-)
-
-
-decision = selected[
-    "Karar"
-]
-
-
-if "🟢" in decision:
-
-    st.success(
-        decision
-    )
-
-elif "🟡" in decision:
-
-    st.warning(
-        decision
-    )
-
-else:
-
-    st.error(
-        decision
-    )
-
-
-# ============================================================
-# SKORLAR
-# ============================================================
-
-c1, c2, c3, c4, c5, c6 = st.columns(6)
-
-with c1:
-
-    st.metric(
-        "PRO Güç",
-        f"{selected['PRO Güç']:.1f}"
-    )
-
-with c2:
-
-    st.metric(
-        "Günlük Trade",
-        f"{selected['Günlük Trade']:.1f}"
-    )
-
-with c3:
-
-    st.metric(
-        "Giriş",
-        f"{selected['Giriş Kalitesi']:.1f}"
-    )
-
-with c4:
-
-    st.metric(
-        "Breakout",
-        f"{selected['Breakout']:.1f}"
-    )
-
-with c5:
-
-    st.metric(
-        "Kovalama",
-        f"{selected['Kovalama']:.1f}"
-    )
-
-with c6:
-
-    st.metric(
-        "FINAL",
-        f"{selected['Final']:.1f}"
-    )
-
-
-# ============================================================
-# İŞLEM PLANI
-# ============================================================
-
-st.markdown(
-    "### 🎯 İşlem Planı"
-)
-
-p1, p2, p3, p4 = st.columns(4)
-
-with p1:
-
-    st.metric(
-        "Mevcut Fiyat",
-        fmt_price(
-            selected["Fiyat"]
-        )
-    )
-
-with p2:
-
-    st.metric(
+    breakout_display = breakout_df[
+        [
+            "coin",
+            "price",
+            "change",
+            "strength",
+            "entry_score",
+            "trend15",
+            "trend1h",
+            "volume_ratio",
+            "breakout_score",
+            "resistance",
+        ]
+    ].copy()
+
+    breakout_display.columns = [
+        "Coin",
+        "Fiyat",
+        "24S",
+        "Güç",
+        "Trade",
+        "15D",
+        "1S",
+        "Hacim Oranı",
+        "Kırılım",
         "Direnç",
-        fmt_price(
-            selected["Direnç"]
-        )
+    ]
+
+    breakout_display["Fiyat"] = (
+        breakout_display["Fiyat"]
+        .apply(fmt_price)
     )
 
-with p3:
-
-    st.metric(
-        "Stop",
-        fmt_price(
-            selected["Stop"]
-        )
+    breakout_display["24S"] = (
+        breakout_display["24S"]
+        .apply(pct)
     )
 
-with p4:
-
-    st.metric(
-        "R/R",
-        f"1 : {selected['R/R']:.1f}"
+    breakout_display["Direnç"] = (
+        breakout_display["Direnç"]
+        .apply(fmt_price)
     )
 
-
-st.write(
-    f"**Giriş bölgesi:** "
-    f"{fmt_price(selected['Giriş Alt'])}"
-    f" – "
-    f"{fmt_price(selected['Giriş Üst'])}"
-)
-
-st.write(
-    f"**Hedef 1:** "
-    f"{fmt_price(selected['Hedef 1'])}"
-)
-
-st.write(
-    f"**Hedef 2:** "
-    f"{fmt_price(selected['Hedef 2'])}"
-)
+    st.dataframe(
+        breakout_display,
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 # ============================================================
-# TEKNİK DURUM
+# TEYİT BEKLEYENLER
 # ============================================================
 
-st.markdown(
-    "### 📐 Teknik Durum"
+st.divider()
+
+st.subheader(
+    "🟡 Teyit Bekleyenler"
 )
 
-t1, t2, t3, t4, t5 = st.columns(5)
+confirm_df = analysis[
+    analysis["decision"]
+    == "🟡 TEYİT BEKLE"
+].copy()
 
-with t1:
+if confirm_df.empty:
 
-    st.metric(
-        "Trend",
-        f"{selected['Trend']:.1f}"
+    st.success(
+        "Teyit bekleyen belirgin coin yok."
     )
 
-with t2:
+else:
 
-    st.metric(
+    confirm_display = confirm_df[
+        [
+            "coin",
+            "price",
+            "change",
+            "strength",
+            "trend15",
+            "trend1h",
+            "rsi",
+            "volume_ratio",
+            "entry_score",
+        ]
+    ].copy()
+
+    confirm_display.columns = [
+        "Coin",
+        "Fiyat",
+        "24S",
+        "Güç",
+        "15D",
+        "1S",
         "RSI",
-        f"{selected['RSI']:.1f}"
+        "Hacim Oranı",
+        "Trade",
+    ]
+
+    confirm_display["Fiyat"] = (
+        confirm_display["Fiyat"]
+        .apply(fmt_price)
     )
 
-with t3:
-
-    st.metric(
-        "Hacim",
-        f"{selected['Hacim Oranı']:.2f}x"
+    confirm_display["24S"] = (
+        confirm_display["24S"]
+        .apply(pct)
     )
 
-with t4:
-
-    st.metric(
-        "Breakout",
-        f"{selected['Breakout']:.1f}"
+    st.dataframe(
+        confirm_display,
+        use_container_width=True,
+        hide_index=True,
     )
-
-with t5:
-
-    st.metric(
-        "Fırsat",
-        selected["Fırsat"]
-    )
-
-
-st.info(
-    selected["Açıklama"]
-)
 
 
 # ============================================================
-# PROFESYONEL KARAR MOTORU AÇIKLAMASI
+# DÜŞÜŞ BICAĞI
+# ============================================================
+
+st.divider()
+
+st.subheader(
+    "🔴 Düşüş Bıçağı — Uzak Dur"
+)
+
+falling_df = analysis[
+    analysis["decision"]
+    == "🔴 DÜŞÜŞ BICAĞI"
+].copy()
+
+if falling_df.empty:
+
+    st.success(
+        "Şu anda düşüş bıçağı filtresine takılan coin yok."
+    )
+
+else:
+
+    falling_display = falling_df[
+        [
+            "coin",
+            "price",
+            "change",
+            "strength",
+            "trend15",
+            "trend1h",
+            "rsi",
+            "volume_ratio",
+            "entry_score",
+        ]
+    ].copy()
+
+    falling_display.columns = [
+        "Coin",
+        "Fiyat",
+        "24S",
+        "Güç",
+        "15D",
+        "1S",
+        "RSI",
+        "Hacim Oranı",
+        "Trade",
+    ]
+
+    falling_display["Fiyat"] = (
+        falling_display["Fiyat"]
+        .apply(fmt_price)
+    )
+
+    falling_display["24S"] = (
+        falling_display["24S"]
+        .apply(pct)
+    )
+
+    st.dataframe(
+        falling_display,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+# ============================================================
+# KOVALAMA
+# ============================================================
+
+st.divider()
+
+st.subheader(
+    "🔴 Kovalama Riski"
+)
+
+chase_df = analysis[
+    analysis["decision"]
+    == "🔴 KOVALAMA"
+].copy()
+
+if chase_df.empty:
+
+    st.success(
+        "Aşırı kovalama bölgesinde coin bulunmuyor."
+    )
+
+else:
+
+    chase_display = chase_df[
+        [
+            "coin",
+            "price",
+            "change",
+            "position",
+            "chase_score",
+            "strength",
+            "trend_alignment",
+        ]
+    ].copy()
+
+    chase_display.columns = [
+        "Coin",
+        "Fiyat",
+        "24S",
+        "24S Zirve Konumu",
+        "Kovalama",
+        "Güç",
+        "Trend",
+    ]
+
+    chase_display["Fiyat"] = (
+        chase_display["Fiyat"]
+        .apply(fmt_price)
+    )
+
+    chase_display["24S"] = (
+        chase_display["24S"]
+        .apply(pct)
+    )
+
+    st.dataframe(
+        chase_display,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+# ============================================================
+# DETAYLI COIN ANALİZİ
+# ============================================================
+
+st.divider()
+
+st.subheader(
+    "🔎 Coin Detay Analizi"
+)
+
+coin_list = analysis[
+    "coin"
+].tolist()
+
+if coin_list:
+
+    selected_coin = st.selectbox(
+        "Coin seç",
+        coin_list
+    )
+
+    row = analysis[
+        analysis["coin"]
+        == selected_coin
+    ].iloc[0]
+
+    st.markdown(
+        f"## {row['coin']} — {row['decision']}"
+    )
+
+    x1, x2, x3, x4, x5 = st.columns(5)
+
+    x1.metric(
+        "Fiyat",
+        fmt_price(
+            row["price"]
+        )
+    )
+
+    x2.metric(
+        "Trade",
+        f"{row['entry_score']:.1f}"
+    )
+
+    x3.metric(
+        "Güç",
+        f"{row['strength']:.1f}"
+    )
+
+    x4.metric(
+        "15D",
+        f"{row['trend15']:.1f}"
+    )
+
+    x5.metric(
+        "1S",
+        f"{row['trend1h']:.1f}"
+    )
+
+    st.markdown("---")
+
+    d1, d2, d3 = st.columns(3)
+
+    with d1:
+
+        st.markdown(
+            "### 📊 Teknik Yapı"
+        )
+
+        st.write(
+            f"**24S:** "
+            f"{pct(row['change'])}"
+        )
+
+        st.write(
+            f"**RSI:** "
+            f"{row['rsi']:.1f}"
+        )
+
+        st.write(
+            f"**EMA9:** "
+            f"{fmt_price(row['ema9'])}"
+        )
+
+        st.write(
+            f"**EMA20:** "
+            f"{fmt_price(row['ema20'])}"
+        )
+
+        st.write(
+            f"**EMA50:** "
+            f"{fmt_price(row['ema50'])}"
+        )
+
+        st.write(
+            f"**VWAP:** "
+            f"{fmt_price(row['vwap'])}"
+        )
+
+    with d2:
+
+        st.markdown(
+            "### 📈 Destek / Direnç"
+        )
+
+        st.write(
+            f"**Destek 1:** "
+            f"{fmt_price(row['support'])}"
+        )
+
+        st.write(
+            f"**Destek 2:** "
+            f"{fmt_price(row['support2'])}"
+        )
+
+        st.write(
+            f"**Direnç 1:** "
+            f"{fmt_price(row['resistance'])}"
+        )
+
+        st.write(
+            f"**Direnç 2:** "
+            f"{fmt_price(row['resistance2'])}"
+        )
+
+        st.write(
+            f"**Dirence Uzaklık:** "
+            f"{row['resistance_distance']:.2f}%"
+        )
+
+        st.write(
+            f"**Kırılım Skoru:** "
+            f"{row['breakout_score']:.1f}"
+        )
+
+    with d3:
+
+        st.markdown(
+            "### 🎯 Trade Planı"
+        )
+
+        st.write(
+            f"**Giriş:** "
+            f"{fmt_price(row['entry_low'])}"
+            f" – "
+            f"{fmt_price(row['entry_high'])}"
+        )
+
+        st.write(
+            f"**Stop:** "
+            f"{fmt_price(row['stop'])}"
+        )
+
+        st.write(
+            f"**Hedef 1:** "
+            f"{fmt_price(row['target1'])}"
+        )
+
+        st.write(
+            f"**Hedef 2:** "
+            f"{fmt_price(row['target2'])}"
+        )
+
+        st.write(
+            f"**Hedef 3:** "
+            f"{fmt_price(row['target3'])}"
+        )
+
+        st.write(
+            f"**R/R:** "
+            f"1 : {row['rr']:.2f}"
+        )
+
+        st.write(
+            f"**Kovalama:** "
+            f"{row['chase_score']:.1f}"
+        )
+
+    st.info(
+        row["message"]
+    )
+
+
+# ============================================================
+# HAM VERİ
 # ============================================================
 
 with st.expander(
-    "🧠 Profesyonel Karar Motoru"
+    "📊 Ham Piyasa Verisi"
+):
+
+    raw = analysis[
+        [
+            "symbol",
+            "coin",
+            "price",
+            "change",
+            "volume",
+            "high",
+            "low",
+        ]
+    ].copy()
+
+    st.dataframe(
+        raw,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+# ============================================================
+# MOTOR MANTIĞI
+# ============================================================
+
+with st.expander(
+    "🧠 Yeni Crypto Trade Motoru Nasıl Çalışıyor?"
 ):
 
     st.markdown(
         """
-### 1. Ortak Piyasa Evreni
+## 0. Ortak TRY Evreni
 
-Motor kendi başına coin keşfetmez.
+Kripto Trade artık **Kripto Piyasa ile aynı `crypto_engine` TRY evrenini** kullanır.
 
-`crypto_engine.get_all_try_universe()`
-
-tarafından sağlanan TRY pariteleri kullanılır.
-
-Böylece Kripto Piyasa ve Günlük Trade aynı evren üzerinde çalışır.
+- Hacim sıralamasında ilk 60 ile sınırlama yoktur.
+- Tüm TRY pariteleri önce ortak `crypto_engine` evreninden alınır.
+- Engine'de fiyatı eksik olan coinler canlı ticker API ile tamamlanır.
+- Düşük likiditeli coinler listeden kaybolmaz.
+- Yalnızca gerçekten fiyatı hiçbir kaynaktan alınamayan parite elenir.
+- Düşük likiditede gereksiz mum API çağrısı yapılmaz.
 
 ---
 
-### 2. PRO Güç
+## 1. Güç Skoru
 
-Coinin genel gücünü ölçer.
+Coinin sadece yükselip yükselmediğine bakılmaz.
 
-- 24 saatlik momentum
-- TRY işlem hacmi
-- EMA trendi
+Birlikte değerlendirilir:
+
+- 24S momentum
+- 15D trend
+- 1S trend
+- EMA9
+- EMA20
+- EMA50
 - RSI
-- Teknik yapı
-- Breakout potansiyeli
+- VWAP
+- hacim
+- likidite
+- fiyatın range içindeki konumu
+
+---
+
+## 2. Trade Skoru
+
+**Güçlü coin = otomatik AL değildir.**
+
+Trade skoru ayrıca:
+
+- trend uyumu
+- giriş bölgesi
+- risk/getiri
+- kovalama riski
+- hacim
+- VWAP
+
+üzerinden hesaplanır.
+
+---
+
+## 3. Düşüş Bıçağı Filtresi
+
+Örneğin:
+
+> XRP %10 düştü.
+
+Bu tek başına:
+
+> "Ucuzladı, AL"
+
+anlamına gelmez.
+
+Eğer:
+
+- 15D trend zayıf
+- 1S trend zayıf
+- RSI zayıf
+
+ise sistem:
+
+**🔴 DÜŞÜŞ BICAĞI**
+
+üretir.
+
+---
+
+## 4. Geri Çekilmede AL
+
+Bu karar için:
+
+- trend pozitif
+- trade skoru yeterli
+- R/R ≥ 1:2
+- kovalama riski kontrol altında
+
+olması gerekir.
+
+---
+
+## 5. Kırılım Bekle
+
+Coin direnç bölgesine yaklaşıyorsa:
+
+**🔵 KIRILIM BEKLE**
+
+denir.
+
+Kırılım için:
+
+- direnç yakınlığı
+- 15D trend
+- 1S trend
+- hacim
 
 birlikte değerlendirilir.
 
 ---
 
-### 3. Günlük Trade
+## 6. Kovalama
 
-Burada soru:
+Bir coin %15-20 yükselmiş olabilir.
 
-**"Bu coin güçlü mü?"**
+Bu onu otomatik olarak iyi trade yapmaz.
 
-değil;
+Fiyat zirveye fazla yaklaşmışsa:
 
-**"Bugün işlem yapılabilir mi?"**
+**🔴 KOVALAMA**
 
-sorusudur.
-
----
-
-### 4. Giriş Kalitesi
-
-Fiyatın günlük range içerisindeki konumu,
-
-RSI ve günlük yükseliş miktarı birlikte değerlendirilir.
-
-Bu nedenle %15–20 yükselmiş bir coin otomatik olarak AL değildir.
+üretilir.
 
 ---
 
-### 5. Kovalama
+## 7. Nihai Soru
 
-Kovalama skoru:
+Sistem artık:
 
-**0 → düşük risk**
+> "Hangi coin güçlü?"
 
-**100 → çok yüksek risk**
+sorusunu değil,
 
-demektir.
+> **"Hangi coin şu anda trade edilebilir ve risk/getiri açısından mantıklı?"**
 
-Yüksek skor doğrudan "coin kötü" anlamına gelmez.
-
-Anlamı:
-
-**"Coin güçlü ama mevcut fiyatı kovalamak riskli."**
-
----
-
-### 6. Breakout
-
-Breakout için:
-
-**Direnç**
-
-↓
-
-**Fiyat kırılımı**
-
-↓
-
-**Hacim**
-
-↓
-
-**Trend**
-
-↓
-
-**RSI**
-
-↓
-
-**Kovalama**
-
-kontrol edilir.
-
----
-
-### 7. Fırsat Havuzu
-
-Her gün doğrudan AL çıkması beklenmez.
-
-Sistem güçlü fakat henüz giriş için hazır olmayan coinleri de saklar.
-
-Bu nedenle:
-
-**A SINIFI FIRSAT**
-
-**B SINIFI FIRSAT**
-
-**C SINIFI İZLE**
-
-şeklinde ayrı bir takip havuzu vardır.
-
----
-
-### 8. Nihai prensip
-
-**En çok yükseleni almak yok.**
-
-Amaç:
-
-**Güç + Trend + Hacim + Uygun Giriş + Teyit + Kontrollü Risk**
-
-kombinasyonunu bulmaktır.
+sorusunu cevaplar.
 """
     )
 
 
 # ============================================================
-# SON UYARI
+# UYARI
 # ============================================================
 
-st.divider()
-
 st.caption(
-    "⚠️ Bu sayfa teknik karar desteği sağlar. "
-    "Gerçek işlem öncesinde Midas üzerindeki gerçek zamanlı fiyat, "
-    "spread, likidite, emir gerçekleşmesi ve piyasa koşulları "
-    "ayrıca kontrol edilmelidir."
+    "⚠️ Bu sayfa otomatik emir göndermez. "
+    "Skorlar ve seviyeler teknik analiz amaçlıdır; "
+    "yatırım tavsiyesi değildir."
 )

@@ -1,5173 +1,740 @@
-import streamlit as st
-import pandas as pd
+from __future__ import annotations
+
+import math
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
 import numpy as np
+import pandas as pd
+import streamlit as st
 import yfinance as yf
 
 
 # ============================================================
-# SAYFA AYARLARI
+# BIST AI PRO - GUNLUK TRADE PRO V3
+#
+# Veri akisi:
+# borsa.db/stocks -> BIST evreni
+# Yahoo 1D       -> trend, momentum, goreceli guc, likidite
+# Yahoo 15m      -> yalnizca en iyi adaylarda giris teyidi
+# XU100.IS       -> piyasa rejimi
+#
+# Bu sayfa yatirim tavsiyesi degildir. Karar destek aracidir.
 # ============================================================
 
 st.set_page_config(
-    page_title="BIST AI PRO - Hisse Bazlı Karar Sistemi",
-    page_icon="📊",
-    layout="wide"
+    page_title="BIST AI PRO - Günlük Trade V3",
+    page_icon="⚡",
+    layout="wide",
+)
+
+st.title("⚡ Günlük Trade Merkezi PRO V3")
+st.caption(
+    "Piyasa rejimi + göreceli güç + trend kalitesi + hacim + "
+    "setup + gerçek risk/ödül + 15 dakikalık giriş teyidi"
 )
 
 
 # ============================================================
-# SİSTEM AYARLARI
+# SABITLER
 # ============================================================
 
-# Genel skor ağırlıkları
-SHORT_WEIGHT = 0.20
-MID_WEIGHT = 0.35
-LONG_WEIGHT = 0.45
+BASE_DIR = Path(__file__).resolve().parent.parent
+DB_PATH = BASE_DIR / "borsa.db"
+BENCHMARK = "XU100.IS"
+DAILY_PERIOD = "6mo"
 
-# Tek hisse için normal maksimum hedef ağırlık
-MAX_TARGET_WEIGHT = 15.0
-
-# Tek işlemde pozisyonun en fazla ne kadarı değişebilir?
-MAX_INCREASE_PCT = 25.0
-MAX_REDUCE_PCT = 25.0
-
-# Çok güçlü teyitte biraz daha yüksek artırma
-STRONG_INCREASE_PCT = 35.0
-
-# %100 çıkış koruması
-EMERGENCY_EXIT = True
-
-# Veri güvenliği
-MIN_PRICE_HISTORY = 200
-
-# Piyasa cache
-MARKET_CACHE_TTL = 1800
-
-# Şirket verisi cache
-INFO_CACHE_TTL = 21600
+DEFAULT_MIN_LIQUIDITY = 30_000_000
+DEFAULT_MIN_PRICE = 2.0
+DEFAULT_MIN_SCORE = 58.0
+DEFAULT_MIN_RR = 1.35
+MAX_INTRADAY_CHECK = 60
+MAX_BATCH_SIZE = 120
 
 
 # ============================================================
-# YARDIMCI FONKSİYONLAR
+# GENEL YARDIMCILAR
 # ============================================================
 
-def safe_float(value, default=np.nan):
-
+def finite(value: Any, default: float = np.nan) -> float:
     try:
-
-        if value is None:
-            return default
-
-        if pd.isna(value):
-            return default
-
-        return float(value)
-
-    except Exception:
-
+        if isinstance(value, pd.Series):
+            value = value.iloc[-1]
+        number = float(value)
+        return number if np.isfinite(number) else default
+    except (TypeError, ValueError, IndexError):
         return default
 
 
-def clamp(value, low=0, high=100):
-
-    value = safe_float(value, low)
-
-    return max(
-        low,
-        min(high, value)
-    )
+def clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
+    return float(min(max(finite(value, low), low), high))
 
 
-def parse_number(value):
-
-    if pd.isna(value):
-        return np.nan
-
-    if isinstance(
-        value,
-        (int, float, np.number)
-    ):
-        return float(value)
-
-    text = str(value).strip()
-
-    text = text.replace(
-        "%",
-        ""
-    )
-
-    text = text.replace(
-        " ",
-        ""
-    )
-
-    # Türkçe sayı formatı
-    if "," in text and "." in text:
-
-        text = text.replace(
-            ".",
-            ""
-        )
-
-        text = text.replace(
-            ",",
-            "."
-        )
-
-    elif "," in text:
-
-        text = text.replace(
-            ",",
-            "."
-        )
-
-    try:
-
-        return float(text)
-
-    except Exception:
-
-        return np.nan
+def linear_score(value: float, bad: float, good: float) -> float:
+    """bad=0, good=100 olacak sekilde surekli skor."""
+    value = finite(value, bad)
+    if math.isclose(bad, good):
+        return 50.0
+    return clamp((value - bad) / (good - bad) * 100.0)
 
 
-def normalize_weight(value):
-
-    value = safe_float(
-        value,
-        0
-    )
-
-    if value <= 1:
-
-        return value * 100
-
-    return value
+def normalize_ticker(value: Any) -> str | None:
+    if value is None:
+        return None
+    ticker = str(value).upper().strip()
+    for text in (".IS", " BIST", "$", " "):
+        ticker = ticker.replace(text, "")
+    ticker = ticker.rstrip(".")
+    return ticker or None
 
 
-def safe_bool(value):
-
-    try:
-
-        if pd.isna(value):
-            return False
-
-        return bool(value)
-
-    except Exception:
-
-        return False
+def yahoo_symbol(ticker: str) -> str:
+    return f"{normalize_ticker(ticker)}.IS"
 
 
-def fmt_pct(value):
-
-    value = safe_float(
-        value,
-        0
-    )
-
-    return f"%{value:.1f}"
-
-
-def fmt_money(value):
-
-    value = safe_float(
-        value,
-        0
-    )
-
-    return f"{value:,.2f} TL"
+def clean_ohlcv(data: pd.DataFrame | None) -> pd.DataFrame | None:
+    if data is None or data.empty:
+        return None
+    data = data.copy()
+    if isinstance(data.columns, pd.MultiIndex):
+        # Tek sembollu yfinance cevabi.
+        if "Close" in data.columns.get_level_values(0):
+            data.columns = data.columns.get_level_values(0)
+        elif "Close" in data.columns.get_level_values(-1):
+            data.columns = data.columns.get_level_values(-1)
+    required = ["Open", "High", "Low", "Close", "Volume"]
+    if not all(column in data.columns for column in required):
+        return None
+    for column in required:
+        data[column] = pd.to_numeric(data[column], errors="coerce")
+    data = data.replace([np.inf, -np.inf], np.nan)
+    data = data.dropna(subset=["High", "Low", "Close"])
+    return data if len(data) else None
 
 
 # ============================================================
-# YAHOO FİYAT VERİSİ
+# VERITABANI - SADECE HISSE EVRENI
 # ============================================================
 
-@st.cache_data(
-    ttl=900,
-    show_spinner=False
-)
-def download_price_data(symbol):
-
-    ticker = str(
-        symbol
-    ).upper().strip()
-
-    if not ticker.endswith(".IS"):
-
-        ticker += ".IS"
-
+@st.cache_data(ttl=60, show_spinner=False)
+def get_universe(db_mtime: float) -> list[str]:
+    del db_mtime  # Dosya degisince cache anahtari degissin diye parametre.
+    if not DB_PATH.exists():
+        return []
     try:
+        with sqlite3.connect(DB_PATH) as connection:
+            tables = pd.read_sql_query(
+                "SELECT name FROM sqlite_master WHERE type='table'", connection
+            )["name"].tolist()
+            if "stocks" not in tables:
+                return []
+            stocks = pd.read_sql_query("SELECT * FROM stocks", connection)
+    except (sqlite3.Error, pd.errors.DatabaseError):
+        return []
 
-        df = yf.download(
-            ticker,
-            period="2y",
-            interval="1d",
-            auto_adjust=False,
-            progress=False
-        )
+    candidates = ["symbol", "ticker", "code", "hisse", "hisse_kodu"]
+    column = next((name for name in candidates if name in stocks.columns), None)
+    if column is None:
+        return []
 
-        if df is None or df.empty:
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw in stocks[column].dropna():
+        ticker = normalize_ticker(raw)
+        if ticker and ticker not in seen:
+            seen.add(ticker)
+            result.append(ticker)
+    return result
 
-            return None
 
-        # MultiIndex düzeltmesi
-        if isinstance(
-            df.columns,
-            pd.MultiIndex
-        ):
+# ============================================================
+# YAHOO TOPLU INDIRME
+# ============================================================
 
-            df.columns = (
-                df.columns
-                .get_level_values(0)
+def split_download(data: pd.DataFrame, symbols: list[str]) -> dict[str, pd.DataFrame]:
+    result: dict[str, pd.DataFrame] = {}
+    if data is None or data.empty:
+        return result
+    if not isinstance(data.columns, pd.MultiIndex):
+        if len(symbols) == 1:
+            cleaned = clean_ohlcv(data)
+            if cleaned is not None:
+                result[symbols[0]] = cleaned
+        return result
+
+    level0 = set(data.columns.get_level_values(0))
+    level1 = set(data.columns.get_level_values(1))
+    fields = {"Open", "High", "Low", "Close", "Volume"}
+
+    for symbol in symbols:
+        try:
+            if symbol in level0 and fields.intersection(level1):
+                part = data[symbol].copy()
+            elif symbol in level1 and fields.intersection(level0):
+                part = data.xs(symbol, axis=1, level=1).copy()
+            else:
+                continue
+            cleaned = clean_ohlcv(part)
+            if cleaned is not None:
+                result[symbol] = cleaned
+        except (KeyError, ValueError):
+            continue
+    return result
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def download_daily(tickers: tuple[str, ...]) -> dict[str, pd.DataFrame]:
+    all_data: dict[str, pd.DataFrame] = {}
+    symbols = [yahoo_symbol(ticker) for ticker in tickers]
+    for start in range(0, len(symbols), MAX_BATCH_SIZE):
+        group = symbols[start : start + MAX_BATCH_SIZE]
+        try:
+            raw = yf.download(
+                group,
+                period=DAILY_PERIOD,
+                interval="1d",
+                group_by="ticker",
+                auto_adjust=False,
+                progress=False,
+                threads=True,
             )
+            all_data.update(split_download(raw, group))
+        except Exception:
+            continue
+    return all_data
 
-        required = [
-            "Close",
-            "Volume"
-        ]
 
-        for col in required:
-
-            if col not in df.columns:
-
-                return None
-
-        df = df.copy()
-
-        df["Close"] = pd.to_numeric(
-            df["Close"],
-            errors="coerce"
+@st.cache_data(ttl=300, show_spinner=False)
+def download_benchmark() -> pd.DataFrame | None:
+    try:
+        return clean_ohlcv(
+            yf.download(
+                BENCHMARK,
+                period=DAILY_PERIOD,
+                interval="1d",
+                auto_adjust=False,
+                progress=False,
+                threads=False,
+            )
         )
-
-        df["Volume"] = pd.to_numeric(
-            df["Volume"],
-            errors="coerce"
-        )
-
-        df = df.dropna(
-            subset=[
-                "Close"
-            ]
-        )
-
-        if len(df) < 80:
-
-            return None
-
-        return df
-
     except Exception:
-
         return None
 
 
 # ============================================================
-# ŞİRKET BİLGİLERİ
+# TEKNIK GOSTERGELER
 # ============================================================
 
-@st.cache_data(
-    ttl=INFO_CACHE_TTL,
-    show_spinner=False
-)
-def get_info(symbol):
+def add_indicators(data: pd.DataFrame) -> pd.DataFrame | None:
+    data = clean_ohlcv(data)
+    if data is None or len(data) < 70:
+        return None
+    df = data.copy()
+    close, high, low, volume = df["Close"], df["High"], df["Low"], df["Volume"]
 
-    ticker = str(
-        symbol
-    ).upper().strip()
-
-    if not ticker.endswith(".IS"):
-
-        ticker += ".IS"
-
-    try:
-
-        info = yf.Ticker(
-            ticker
-        ).info
-
-        if not isinstance(
-            info,
-            dict
-        ):
-
-            return {}
-
-        return info
-
-    except Exception:
-
-        return {}
-
-
-# ============================================================
-# TEKNİK GÖSTERGELER
-# ============================================================
-
-def build_indicators(df):
-
-    df = df.copy()
-
-    close = df["Close"]
-
-    volume = df["Volume"]
-
-    # --------------------------------------------------------
-    # HAREKETLİ ORTALAMALAR
-    # --------------------------------------------------------
-
-    df["MA5"] = (
-        close
-        .rolling(5)
-        .mean()
-    )
-
-    df["MA20"] = (
-        close
-        .rolling(20)
-        .mean()
-    )
-
-    df["MA50"] = (
-        close
-        .rolling(50)
-        .mean()
-    )
-
-    df["MA100"] = (
-        close
-        .rolling(100)
-        .mean()
-    )
-
-    df["MA200"] = (
-        close
-        .rolling(200)
-        .mean()
-    )
-
-    # --------------------------------------------------------
-    # EMA
-    # --------------------------------------------------------
-
-    df["EMA9"] = (
-        close
-        .ewm(
-            span=9,
-            adjust=False
-        )
-        .mean()
-    )
-
-    df["EMA20"] = (
-        close
-        .ewm(
-            span=20,
-            adjust=False
-        )
-        .mean()
-    )
-
-    # --------------------------------------------------------
-    # RSI - Wilder yaklaşımı
-    # --------------------------------------------------------
+    for span in (5, 9, 20, 50):
+        df[f"EMA{span}"] = close.ewm(span=span, adjust=False).mean()
 
     delta = close.diff()
+    gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    rs = gain / loss.replace(0, np.nan)
+    df["RSI"] = (100 - 100 / (1 + rs)).clip(0, 100)
 
-    gain = delta.clip(
-        lower=0
-    )
+    previous_close = close.shift(1)
+    true_range = pd.concat(
+        [(high - low), (high - previous_close).abs(), (low - previous_close).abs()],
+        axis=1,
+    ).max(axis=1)
+    df["ATR"] = true_range.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    df["ATR_PCT"] = df["ATR"] / close.replace(0, np.nan) * 100
 
-    loss = -delta.clip(
-        upper=0
-    )
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = pd.Series(np.where((up_move > down_move) & (up_move > 0), up_move, 0.0), index=df.index)
+    minus_dm = pd.Series(np.where((down_move > up_move) & (down_move > 0), down_move, 0.0), index=df.index)
+    atr14 = true_range.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    plus_di = 100 * plus_dm.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean() / atr14.replace(0, np.nan)
+    minus_di = 100 * minus_dm.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean() / atr14.replace(0, np.nan)
+    dx = ((plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)) * 100
+    df["ADX"] = dx.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    df["PLUS_DI"] = plus_di
+    df["MINUS_DI"] = minus_di
 
-    avg_gain = (
-        gain
-        .ewm(
-            alpha=1 / 14,
-            adjust=False,
-            min_periods=14
-        )
-        .mean()
-    )
-
-    avg_loss = (
-        loss
-        .ewm(
-            alpha=1 / 14,
-            adjust=False,
-            min_periods=14
-        )
-        .mean()
-    )
-
-    rs = (
-        avg_gain /
-        avg_loss.replace(
-            0,
-            np.nan
-        )
-    )
-
-    df["RSI"] = (
-        100 -
-        (
-            100 /
-            (1 + rs)
-        )
-    )
-
-    # --------------------------------------------------------
-    # MOMENTUM
-    # --------------------------------------------------------
-
-    df["MOM5"] = (
-        (
-            close /
-            close.shift(5)
-        ) - 1
-    ) * 100
-
-    df["MOM20"] = (
-        (
-            close /
-            close.shift(20)
-        ) - 1
-    ) * 100
-
-    df["MOM60"] = (
-        (
-            close /
-            close.shift(60)
-        ) - 1
-    ) * 100
-
-    df["MOM120"] = (
-        (
-            close /
-            close.shift(120)
-        ) - 1
-    ) * 100
-
-    # --------------------------------------------------------
-    # HACİM
-    # --------------------------------------------------------
-
-    df["VOL20"] = (
-        volume
-        .rolling(20)
-        .mean()
-    )
-
-    df["VOLUME_RATIO"] = (
-        volume /
-        df["VOL20"].replace(
-            0,
-            np.nan
-        )
-    )
-
-    # --------------------------------------------------------
-    # 5 GÜNLÜK KESİŞİM
-    # --------------------------------------------------------
-
-    df["CROSS_UP_5"] = (
-
-        (
-            df["Close"] >
-            df["MA5"]
-        )
-
-        &
-
-        (
-            df["Close"].shift(1)
-            <=
-            df["MA5"].shift(1)
-        )
-
-    )
-
-    df["CROSS_DOWN_5"] = (
-
-        (
-            df["Close"] <
-            df["MA5"]
-        )
-
-        &
-
-        (
-            df["Close"].shift(1)
-            >=
-            df["MA5"].shift(1)
-        )
-
-    )
-
-    # --------------------------------------------------------
-    # TREND YAPISI
-    # --------------------------------------------------------
-
-    df["TREND_SHORT"] = (
-        (
-            df["EMA9"] >
-            df["EMA20"]
-        )
-    )
-
-    df["TREND_MID"] = (
-        (
-            df["MA20"] >
-            df["MA50"]
-        )
-    )
-
-    df["TREND_LONG"] = (
-        (
-            df["MA50"] >
-            df["MA100"]
-        )
-        &
-        (
-            df["MA100"] >
-            df["MA200"]
-        )
-    )
-
-    return df
+    df["VOL20"] = volume.rolling(20, min_periods=10).mean()
+    df["VOL_RATIO"] = volume / df["VOL20"].replace(0, np.nan)
+    df["TURNOVER20"] = (close * volume).rolling(20, min_periods=10).mean()
+    df["RET1"] = close.pct_change(1) * 100
+    df["RET5"] = close.pct_change(5) * 100
+    df["RET20"] = close.pct_change(20) * 100
+    df["EMA9_SLOPE"] = df["EMA9"].pct_change(5) * 100
+    df["EMA20_SLOPE"] = df["EMA20"].pct_change(10) * 100
+    df["PREV20_HIGH"] = high.shift(1).rolling(20, min_periods=15).max()
+    df["PREV10_LOW"] = low.shift(1).rolling(10, min_periods=7).min()
+    df["PREV20_LOW"] = low.shift(1).rolling(20, min_periods=15).min()
+    df["BREAKOUT_PCT"] = (close / df["PREV20_HIGH"] - 1) * 100
+    df["DIST_EMA9"] = (close / df["EMA9"] - 1) * 100
+    df["RANGE_POS20"] = (close - df["PREV20_LOW"]) / (df["PREV20_HIGH"] - df["PREV20_LOW"]).replace(0, np.nan) * 100
+    return df.replace([np.inf, -np.inf], np.nan)
 
 
 # ============================================================
-# TEKNİK SKOR MOTORU
+# PIYASA REJIMI
 # ============================================================
 
-def technical_engine(df):
+def market_regime(benchmark: pd.DataFrame | None) -> dict[str, Any]:
+    if benchmark is None:
+        return {"label": "⚪ VERİ YOK", "score": np.nan, "multiplier": 0.90, "ret20": np.nan}
+    df = add_indicators(benchmark)
+    if df is None:
+        return {"label": "⚪ VERİ YOK", "score": np.nan, "multiplier": 0.90, "ret20": np.nan}
+    row = df.iloc[-1]
+    price = finite(row["Close"])
+    ema20 = finite(row["EMA20"])
+    ema50 = finite(row["EMA50"])
+    ret20 = finite(row["RET20"], 0)
+    score = 0.0
+    score += 30 if price > ema20 else 8
+    score += 25 if ema20 > ema50 else 5
+    score += linear_score(ret20, -8, 8) * 0.25
+    score += linear_score(finite(row["RSI"], 50), 38, 62) * 0.20
+    score = clamp(score)
+    if score >= 72:
+        return {"label": "🟢 POZİTİF", "score": score, "multiplier": 1.03, "ret20": ret20}
+    if score >= 48:
+        return {"label": "🟡 NÖTR", "score": score, "multiplier": 1.00, "ret20": ret20}
+    return {"label": "🔴 NEGATİF", "score": score, "multiplier": 0.90, "ret20": ret20}
 
-    last = df.iloc[-1]
 
-    price = safe_float(
-        last["Close"],
-        0
-    )
+# ============================================================
+# SETUP, RISK VE SKOR
+# ============================================================
 
-    previous = safe_float(
-        df["Close"].iloc[-2],
-        price
-    )
+def identify_setup(row: pd.Series) -> tuple[str, float]:
+    breakout = finite(row["BREAKOUT_PCT"], -99)
+    volume_ratio = finite(row["VOL_RATIO"], 0)
+    distance9 = finite(row["DIST_EMA9"], 99)
+    close = finite(row["Close"])
+    ema9 = finite(row["EMA9"])
+    ema20 = finite(row["EMA20"])
+    ret1 = finite(row["RET1"], 0)
 
-    if previous > 0:
+    if -0.6 <= breakout <= 2.2 and volume_ratio >= 1.15 and close > ema9 > ema20:
+        quality = 65 + linear_score(volume_ratio, 1.0, 2.0) * 0.25
+        return "🚀 KIRILIM", clamp(quality)
+    if -1.5 <= distance9 <= 2.5 and close >= ema20 and ema9 >= ema20 * 0.995:
+        quality = 72 + linear_score(ret1, -2, 2) * 0.15
+        return "↩️ PULLBACK", clamp(quality)
+    if close > ema9 > ema20 and 0 <= distance9 <= 4:
+        return "📈 TREND DEVAMI", clamp(62 + linear_score(finite(row["ADX"], 15), 15, 35) * 0.22)
+    return "⚪ BELİRSİZ", 35.0
 
-        daily_change = (
-            (
-                price /
-                previous
-            ) - 1
-        ) * 100
 
+def risk_plan(df: pd.DataFrame, minimum_rr: float) -> dict[str, float]:
+    row = df.iloc[-1]
+    price = finite(row["Close"])
+    atr = finite(row["ATR"], price * 0.025)
+    ema20 = finite(row["EMA20"], price - atr)
+    swing_low = finite(df["Low"].iloc[-11:-1].min(), price - atr)
+
+    # Stop ne cok dar ne de asiri genis olsun.
+    technical_stop = min(ema20, swing_low) - 0.15 * atr
+    atr_stop = price - 1.35 * atr
+    stop = max(technical_stop, atr_stop)
+    stop = min(stop, price - 0.60 * atr)
+    stop = max(stop, price * 0.90)
+    risk = price - stop
+
+    previous_highs = df["High"].iloc[-61:-1]
+    valid_resistance = previous_highs[previous_highs > price * 1.003]
+    resistance = finite(valid_resistance.min(), np.nan) if len(valid_resistance) else np.nan
+    target_2r = price + risk * 2.0
+    if np.isfinite(resistance) and resistance >= price + risk * minimum_rr:
+        target = min(target_2r, resistance)
     else:
+        target = target_2r
+    rr = (target - price) / risk if risk > 0 else 0
+    stop_pct = risk / price * 100 if price > 0 else np.nan
+    return {"stop": stop, "target": target, "rr": rr, "stop_pct": stop_pct, "resistance": resistance}
 
-        daily_change = 0
 
-    ma5 = safe_float(
-        last["MA5"]
+def analyze_stock(
+    ticker: str,
+    raw: pd.DataFrame,
+    benchmark_ret20: float,
+    regime: dict[str, Any],
+    min_liquidity: float,
+    min_price: float,
+    minimum_rr: float,
+) -> tuple[dict[str, Any] | None, str]:
+    df = add_indicators(raw)
+    if df is None:
+        return None, "veri_yetersiz"
+    row = df.iloc[-1]
+    price = finite(row["Close"])
+    liquidity = finite(row["TURNOVER20"], 0)
+    if price < min_price:
+        return None, "fiyat"
+    if liquidity < min_liquidity:
+        return None, "likidite"
+
+    ema9, ema20, ema50 = finite(row["EMA9"]), finite(row["EMA20"]), finite(row["EMA50"])
+    rsi, adx = finite(row["RSI"], 50), finite(row["ADX"], 0)
+    plus_di, minus_di = finite(row["PLUS_DI"], 0), finite(row["MINUS_DI"], 0)
+    ret5, ret20 = finite(row["RET5"], 0), finite(row["RET20"], 0)
+    volume_ratio = finite(row["VOL_RATIO"], 0)
+    atr_pct = finite(row["ATR_PCT"], 0)
+    distance9 = finite(row["DIST_EMA9"], 99)
+    rs20 = ret20 - finite(benchmark_ret20, 0)
+
+    trend = 0.0
+    trend += 28 if price > ema20 else linear_score(price / ema20 - 1, -0.04, 0) * 0.20
+    trend += 24 if ema9 > ema20 else 5
+    trend += 22 if ema20 > ema50 else 5
+    trend += linear_score(finite(row["EMA20_SLOPE"], -3), -2, 5) * 0.16
+    trend += (linear_score(adx, 12, 35) * 0.10) if plus_di > minus_di else 0
+    trend = clamp(trend)
+
+    momentum = clamp(
+        linear_score(ret5, -4, 8) * 0.35
+        + linear_score(rs20, -8, 12) * 0.40
+        + linear_score(rsi, 42, 67) * 0.25
+    )
+    volume = clamp(linear_score(volume_ratio, 0.55, 1.80))
+    relative_strength = clamp(linear_score(rs20, -10, 15))
+
+    if 1.2 <= atr_pct <= 5.5:
+        volatility = 100.0
+    elif 0.8 <= atr_pct < 1.2:
+        volatility = linear_score(atr_pct, 0.5, 1.2)
+    elif 5.5 < atr_pct <= 8.0:
+        volatility = linear_score(atr_pct, 9.0, 5.5)
+    else:
+        volatility = 25.0
+
+    setup, setup_quality = identify_setup(row)
+    plan = risk_plan(df, minimum_rr)
+    rr_quality = linear_score(plan["rr"], 0.8, 2.2)
+
+    raw_score = (
+        trend * 0.25
+        + relative_strength * 0.18
+        + momentum * 0.14
+        + setup_quality * 0.17
+        + volume * 0.10
+        + volatility * 0.06
+        + rr_quality * 0.10
     )
 
-    ma20 = safe_float(
-        last["MA20"]
-    )
-
-    ma50 = safe_float(
-        last["MA50"]
-    )
-
-    ma100 = safe_float(
-        last["MA100"]
-    )
-
-    ma200 = safe_float(
-        last["MA200"]
-    )
-
-    ema9 = safe_float(
-        last["EMA9"]
-    )
-
-    ema20 = safe_float(
-        last["EMA20"]
-    )
-
-    rsi = safe_float(
-        last["RSI"],
-        50
-    )
-
-    mom5 = safe_float(
-        last["MOM5"],
-        0
-    )
-
-    mom20 = safe_float(
-        last["MOM20"],
-        0
-    )
-
-    mom60 = safe_float(
-        last["MOM60"],
-        0
-    )
-
-    mom120 = safe_float(
-        last["MOM120"],
-        0
-    )
-
-    volume_ratio = safe_float(
-        last["VOLUME_RATIO"],
-        1
-    )
-
-    cross_up = safe_bool(
-        last["CROSS_UP_5"]
-    )
-
-    cross_down = safe_bool(
-        last["CROSS_DOWN_5"]
-    )
-
-    # ========================================================
-    # KISA VADE
-    # ========================================================
-
-    short = 0
-
-    # Fiyat / MA5
-    if (
-        not np.isnan(ma5)
-        and price > ma5
-    ):
-
-        short += 15
-
-    # Fiyat / EMA9
-    if (
-        not np.isnan(ema9)
-        and price > ema9
-    ):
-
-        short += 15
-
-    # EMA9 / EMA20
-    if (
-        not np.isnan(ema9)
-        and not np.isnan(ema20)
-        and ema9 > ema20
-    ):
-
-        short += 20
-
-    # 5 günlük momentum
-    if mom5 > 0:
-
-        short += 10
-
-    # 20 günlük momentum
-    if mom20 > 0:
-
-        short += 10
-
-    # RSI
-    if 45 <= rsi <= 65:
-
-        short += 15
-
-    elif 65 < rsi <= 72:
-
-        short += 10
-
-    elif 40 <= rsi < 45:
-
-        short += 5
-
-    elif rsi > 80:
-
-        short -= 5
-
-    # Hacim
-    if volume_ratio >= 1.50:
-
-        short += 10
-
-    elif volume_ratio >= 1.10:
-
-        short += 5
-
-    # 5 günlük yukarı kesişim
-    if cross_up:
-
-        short += 5
-
-    short = clamp(
-        short
-    )
-
-    # ========================================================
-    # ORTA VADE
-    # ========================================================
-
-    mid = 0
-
-    if (
-        not np.isnan(ma20)
-        and price > ma20
-    ):
-
-        mid += 15
-
-    if (
-        not np.isnan(ma50)
-        and price > ma50
-    ):
-
-        mid += 15
-
-    if (
-        not np.isnan(ma20)
-        and not np.isnan(ma50)
-        and ma20 > ma50
-    ):
-
-        mid += 20
-
-    if (
-        not np.isnan(ema9)
-        and not np.isnan(ema20)
-        and ema9 > ema20
-    ):
-
-        mid += 10
-
-    if mom20 > 0:
-
-        mid += 10
-
-    if mom60 > 0:
-
-        mid += 15
-
-    if (
-        not np.isnan(ma100)
-        and price > ma100
-    ):
-
-        mid += 10
-
-    if volume_ratio >= 1:
-
-        mid += 5
-
-    mid = clamp(
-        mid
-    )
-
-    # ========================================================
-    # UZUN VADE TEKNİK
-    # ========================================================
-
-    long_technical = 0
-
-    if (
-        not np.isnan(ma50)
-        and price > ma50
-    ):
-
-        long_technical += 15
-
-    if (
-        not np.isnan(ma100)
-        and price > ma100
-    ):
-
-        long_technical += 15
-
-    if (
-        not np.isnan(ma50)
-        and not np.isnan(ma100)
-        and ma50 > ma100
-    ):
-
-        long_technical += 20
-
-    if (
-        not np.isnan(ma200)
-        and price > ma200
-    ):
-
-        long_technical += 20
-
-    if (
-        not np.isnan(ma100)
-        and not np.isnan(ma200)
-        and ma100 > ma200
-    ):
-
-        long_technical += 10
-
-    if mom60 > 0:
-
-        long_technical += 10
-
-    if mom120 > 0:
-
-        long_technical += 10
-
-    long_technical = clamp(
-        long_technical
-    )
-
-    # ========================================================
-    # TEKNİK ÇIKIŞ RİSKİ
-    # ========================================================
-
-    technical_breakdown = 0
-
-    if (
-        not np.isnan(ma20)
-        and price < ma20
-    ):
-
-        technical_breakdown += 1
-
-    if (
-        not np.isnan(ma50)
-        and price < ma50
-    ):
-
-        technical_breakdown += 1
-
-    if (
-        not np.isnan(ma200)
-        and price < ma200
-    ):
-
-        technical_breakdown += 1
-
-    if mom60 < 0:
-
-        technical_breakdown += 1
-
-    if mom120 < 0:
-
-        technical_breakdown += 1
-
+    penalties: list[str] = []
+    penalty = 0.0
+    if distance9 > 5.5:
+        penalty += min(18.0, (distance9 - 5.5) * 2.5)
+        penalties.append("EMA9'dan uzak")
+    if rsi >= 76:
+        penalty += 12.0
+        penalties.append("RSI aşırı alım")
+    if finite(row["RET1"], 0) > 7:
+        penalty += 10.0
+        penalties.append("günlük yükseliş aşırı")
+    if volume_ratio < 0.60:
+        penalty += 8.0
+        penalties.append("hacim zayıf")
+    if plan["stop_pct"] > 6.5:
+        penalty += 7.0
+        penalties.append("stop mesafesi geniş")
+    if plan["rr"] < minimum_rr:
+        penalty += 12.0
+        penalties.append("R/R yetersiz")
+    if setup == "⚪ BELİRSİZ":
+        penalty += 8.0
+        penalties.append("net setup yok")
+
+    score = clamp((raw_score - penalty) * finite(regime["multiplier"], 0.9))
     return {
-
-        "price": price,
-
-        "daily_change":
-            daily_change,
-
-        "short":
-            short,
-
-        "mid":
-            mid,
-
-        "long_technical":
-            long_technical,
-
-        "rsi":
-            rsi,
-
-        "mom5":
-            mom5,
-
-        "mom20":
-            mom20,
-
-        "mom60":
-            mom60,
-
-        "mom120":
-            mom120,
-
-        "volume_ratio":
-            volume_ratio,
-
-        "cross_up":
-            cross_up,
-
-        "cross_down":
-            cross_down,
-
-        "price_above_ema9":
-            price > ema9
-            if not np.isnan(ema9)
-            else False,
-
-        "ema9_above_ema20":
-            ema9 > ema20
-            if (
-                not np.isnan(ema9)
-                and not np.isnan(ema20)
-            )
-            else False,
-
-        "price_above_ma50":
-            price > ma50
-            if not np.isnan(ma50)
-            else False,
-
-        "price_above_ma200":
-            price > ma200
-            if not np.isnan(ma200)
-            else False,
-
-        "technical_breakdown":
-            technical_breakdown
-
-    }
+        "Hisse": ticker,
+        "Fiyat": price,
+        "Setup": setup,
+        "Ana Skor": round(score, 1),
+        "Trend": round(trend, 1),
+        "Göreceli Güç": round(relative_strength, 1),
+        "RS 20G %": round(rs20, 2),
+        "Momentum": round(momentum, 1),
+        "Setup Kalitesi": round(setup_quality, 1),
+        "ADX": round(adx, 1),
+        "RSI": round(rsi, 1),
+        "Hacim Oranı": round(volume_ratio, 2),
+        "Likidite": liquidity,
+        "ATR %": round(atr_pct, 2),
+        "EMA9 Uzaklık %": round(distance9, 2),
+        "5G %": round(ret5, 2),
+        "20G %": round(ret20, 2),
+        "Stop": plan["stop"],
+        "Hedef": plan["target"],
+        "R/R": round(plan["rr"], 2),
+        "Risk %": round(plan["stop_pct"], 2),
+        "15D Skor": np.nan,
+        "15D VWAP": "KONTROL EDİLMEDİ",
+        "Final Skor": round(score, 1),
+        "Ceza": round(penalty, 1),
+        "Uyarılar": ", ".join(penalties) if penalties else "—",
+        "Karar": "BEKLENİYOR",
+    }, "ok"
 
 
 # ============================================================
-# FUNDAMENTAL MOTOR
+# 15 DAKIKALIK GIRIS TEYIDI
 # ============================================================
 
-def fundamental_engine(info):
-
-    score = 50
-
-    reasons = []
-
-    available = 0
-
-    # --------------------------------------------------------
-    # ROE
-    # --------------------------------------------------------
-
-    roe = safe_float(
-        info.get(
-            "returnOnEquity"
-        )
-    )
-
-    if not np.isnan(roe):
-
-        available += 1
-
-        if roe >= 0.20:
-
-            score += 15
-
-            reasons.append(
-                "ROE güçlü"
-            )
-
-        elif roe >= 0.10:
-
-            score += 8
-
-        elif roe < 0:
-
-            score -= 15
-
-            reasons.append(
-                "ROE negatif"
-            )
-
-    # --------------------------------------------------------
-    # NET KÂR MARJI
-    # --------------------------------------------------------
-
-    margin = safe_float(
-        info.get(
-            "profitMargins"
-        )
-    )
-
-    if not np.isnan(margin):
-
-        available += 1
-
-        if margin >= 0.15:
-
-            score += 12
-
-            reasons.append(
-                "net kâr marjı güçlü"
-            )
-
-        elif margin >= 0.05:
-
-            score += 5
-
-        elif margin < 0:
-
-            score -= 12
-
-            reasons.append(
-                "net kâr marjı negatif"
-            )
-
-    # --------------------------------------------------------
-    # GELİR BÜYÜMESİ
-    # --------------------------------------------------------
-
-    revenue_growth = safe_float(
-        info.get(
-            "revenueGrowth"
-        )
-    )
-
-    if not np.isnan(
-        revenue_growth
-    ):
-
-        available += 1
-
-        if revenue_growth >= 0.20:
-
-            score += 10
-
-            reasons.append(
-                "gelir büyümesi güçlü"
-            )
-
-        elif revenue_growth >= 0.05:
-
-            score += 5
-
-        elif revenue_growth < 0:
-
-            score -= 5
-
-            reasons.append(
-                "gelir büyümesi negatif"
-            )
-
-    # --------------------------------------------------------
-    # KÂR BÜYÜMESİ
-    # --------------------------------------------------------
-
-    earnings_growth = safe_float(
-        info.get(
-            "earningsGrowth"
-        )
-    )
-
-    if not np.isnan(
-        earnings_growth
-    ):
-
-        available += 1
-
-        if earnings_growth >= 0.20:
-
-            score += 10
-
-            reasons.append(
-                "kâr büyümesi güçlü"
-            )
-
-        elif earnings_growth >= 0.05:
-
-            score += 5
-
-        elif earnings_growth < 0:
-
-            score -= 10
-
-            reasons.append(
-                "kâr büyümesi negatif"
-            )
-
-    # --------------------------------------------------------
-    # BORÇ
-    # --------------------------------------------------------
-
-    debt_equity = safe_float(
-        info.get(
-            "debtToEquity"
-        )
-    )
-
-    if not np.isnan(
-        debt_equity
-    ):
-
-        available += 1
-
-        if debt_equity < 70:
-
-            score += 10
-
-        elif debt_equity < 120:
-
-            score += 4
-
-        elif debt_equity > 180:
-
-            score -= 12
-
-            reasons.append(
-                "borçluluk yüksek"
-            )
-
-    # --------------------------------------------------------
-    # TEMETTÜ
-    # --------------------------------------------------------
-
-    dividend = safe_float(
-        info.get(
-            "dividendYield"
-        )
-    )
-
-    if not np.isnan(
-        dividend
-    ):
-
-        available += 1
-
-        if dividend >= 0.03:
-
-            score += 5
-
-            reasons.append(
-                "temettü desteği var"
-            )
-
-    score = clamp(
-        score
-    )
-
-    completeness = (
-        available /
-        6
-    ) * 100
-
-    return (
-        score,
-        reasons,
-        completeness
-    )
-
-
-# ============================================================
-# FİNANSAL MOTOR
-# ============================================================
-
-def financial_engine(info):
-
-    score = 50
-
-    reasons = []
-
-    available = 0
-
-    # --------------------------------------------------------
-    # CURRENT RATIO
-    # --------------------------------------------------------
-
-    current_ratio = safe_float(
-        info.get(
-            "currentRatio"
-        )
-    )
-
-    if not np.isnan(
-        current_ratio
-    ):
-
-        available += 1
-
-        if current_ratio >= 1.5:
-
-            score += 15
-
-            reasons.append(
-                "likidite güçlü"
-            )
-
-        elif current_ratio >= 1:
-
-            score += 5
-
-        elif current_ratio < 1:
-
-            score -= 15
-
-            reasons.append(
-                "likidite zayıf"
-            )
-
-    # --------------------------------------------------------
-    # SERBEST NAKİT AKIŞI
-    # --------------------------------------------------------
-
-    fcf = safe_float(
-        info.get(
-            "freeCashflow"
-        )
-    )
-
-    if not np.isnan(
-        fcf
-    ):
-
-        available += 1
-
-        if fcf > 0:
-
-            score += 12
-
-            reasons.append(
-                "serbest nakit akışı pozitif"
-            )
-
-        elif fcf < 0:
-
-            score -= 12
-
-            reasons.append(
-                "serbest nakit akışı negatif"
-            )
-
-    # --------------------------------------------------------
-    # OPERASYONEL MARJ
-    # --------------------------------------------------------
-
-    operating_margin = safe_float(
-        info.get(
-            "operatingMargins"
-        )
-    )
-
-    if not np.isnan(
-        operating_margin
-    ):
-
-        available += 1
-
-        if operating_margin >= 0.15:
-
-            score += 12
-
-            reasons.append(
-                "operasyonel kârlılık güçlü"
-            )
-
-        elif operating_margin >= 0.05:
-
-            score += 5
-
-        elif operating_margin < 0:
-
-            score -= 12
-
-            reasons.append(
-                "operasyonel kârlılık zayıf"
-            )
-
-    # --------------------------------------------------------
-    # BRÜT MARJ
-    # --------------------------------------------------------
-
-    gross_margin = safe_float(
-        info.get(
-            "grossMargins"
-        )
-    )
-
-    if not np.isnan(
-        gross_margin
-    ):
-
-        available += 1
-
-        if gross_margin >= 0.25:
-
-            score += 8
-
-        elif gross_margin < 0:
-
-            score -= 8
-
-    score = clamp(
-        score
-    )
-
-    completeness = (
-        available /
-        4
-    ) * 100
-
-    return (
-        score,
-        reasons,
-        completeness
-    )
-
-
-# ============================================================
-# SEKTÖR
-# ============================================================
-
-SECTOR_MAP = {
-
-    "EREGL": "Metal",
-    "KCAER": "Metal",
-    "ISDMR": "Metal",
-
-    "BIMAS": "Perakende",
-    "MGROS": "Perakende",
-
-    "TUPRS": "Enerji",
-
-    "AKSA": "Kimya",
-
-    "CCOLA": "Gıda",
-
-    "TKFEN": "Holding/İnşaat",
-
-    "KCHOL": "Holding",
-
-    "MOBTL": "Teknoloji"
-}
-
-
-SECTOR_BASE = {
-
-    "Metal": 55,
-
-    "Perakende": 70,
-
-    "Enerji": 65,
-
-    "Kimya": 60,
-
-    "Gıda": 70,
-
-    "Holding/İnşaat": 60,
-
-    "Holding": 70,
-
-    "Teknoloji": 60,
-
-    "Diğer": 55
-}
-
-
-def sector_engine(symbol):
-
-    sector_name = SECTOR_MAP.get(
-        symbol,
-        "Diğer"
-    )
-
-    score = SECTOR_BASE.get(
-        sector_name,
-        55
-    )
-
-    return (
-        score,
-        sector_name
-    )
-
-
-# ============================================================
-# PİYASA MOTORU
-# ============================================================
-
-@st.cache_data(
-    ttl=MARKET_CACHE_TTL,
-    show_spinner=False
-)
-def market_engine():
-
-    score = 50
-
-    reasons = []
-
+@st.cache_data(ttl=180, show_spinner=False)
+def intraday_confirmation(ticker: str) -> dict[str, Any] | None:
     try:
-
-        bist = yf.download(
-            "XU100.IS",
-            period="1y",
-            interval="1d",
-            progress=False,
-            auto_adjust=False
-        )
-
-        if (
-            bist is None
-            or bist.empty
-        ):
-
-            return (
-                50,
-                [
-                    "Piyasa verisi alınamadı"
-                ]
+        data = clean_ohlcv(
+            yf.download(
+                yahoo_symbol(ticker),
+                period="5d",
+                interval="15m",
+                auto_adjust=False,
+                progress=False,
+                threads=False,
             )
-
-        if isinstance(
-            bist.columns,
-            pd.MultiIndex
-        ):
-
-            bist.columns = (
-                bist.columns
-                .get_level_values(0)
-            )
-
-        close = bist["Close"]
-
-        close = pd.to_numeric(
-            close,
-            errors="coerce"
-        ).dropna()
-
-        if len(close) >= 50:
-
-            mom20 = (
-                (
-                    close.iloc[-1] /
-                    close.iloc[-20]
-                ) - 1
-            ) * 100
-
-            mom50 = (
-                (
-                    close.iloc[-1] /
-                    close.iloc[-50]
-                ) - 1
-            ) * 100
-
-            if mom20 > 0:
-
-                score += 8
-
-                reasons.append(
-                    "BIST 20 günlük momentum pozitif"
-                )
-
-            else:
-
-                score -= 8
-
-                reasons.append(
-                    "BIST 20 günlük momentum negatif"
-                )
-
-            if mom50 > 0:
-
-                score += 8
-
-                reasons.append(
-                    "BIST 50 günlük momentum pozitif"
-                )
-
-            else:
-
-                score -= 8
-
-                reasons.append(
-                    "BIST 50 günlük momentum negatif"
-                )
-
-        return (
-            clamp(score),
-            reasons
         )
+        if data is None or len(data) < 35:
+            return None
+        df = data.copy()
+        close, volume = df["Close"], df["Volume"]
+        df["EMA9"] = close.ewm(span=9, adjust=False).mean()
+        df["EMA20"] = close.ewm(span=20, adjust=False).mean()
 
+        # Her seans yeniden baslayan intraday VWAP.
+        session = pd.Series(df.index.date, index=df.index)
+        typical = (df["High"] + df["Low"] + df["Close"]) / 3
+        cumulative_pv = (typical * volume).groupby(session).cumsum()
+        cumulative_volume = volume.groupby(session).cumsum().replace(0, np.nan)
+        df["VWAP"] = cumulative_pv / cumulative_volume
+        df["VOL20"] = volume.rolling(20, min_periods=10).mean()
+        df["VR"] = volume / df["VOL20"].replace(0, np.nan)
+        last, previous = df.iloc[-1], df.iloc[-2]
+
+        score = 0.0
+        score += 28 if last["EMA9"] > last["EMA20"] else 5
+        score += 25 if last["Close"] > last["EMA9"] else 8
+        score += 25 if last["Close"] > last["VWAP"] else 5
+        score += linear_score(finite(last["VR"], 0), 0.5, 1.8) * 0.12
+        score += 10 if last["Close"] > previous["Close"] else 2
+        return {
+            "score": clamp(score),
+            "vwap": "ÜSTÜNDE" if last["Close"] >= last["VWAP"] else "ALTINDA",
+        }
     except Exception:
-
-        return (
-            50,
-            [
-                "Piyasa verisi sınırlı"
-            ]
-        )
+        return None
 
 
-# ============================================================
-# ALIM / SATIŞ TEYİT MOTORU
-# ============================================================
-# ============================================================
-# ALIM / SATIŞ TEYİT MOTORU
-# ============================================================
-
-def confirmation_engine(technical):
-
-    """
-    ALIM / SATIŞ / DÜŞÜŞ TEYİT SİSTEMİ
-
-    ALIM TEYİDİ:
-        6 teknik koşuldan en az 4'ü olumlu olmalı.
-        Ayrıca kısa ve orta vade yeterli güçte olmalı.
-
-    DÜŞÜŞ SİNYALİ:
-        Erken uyarıdır.
-        Satış emri değildir.
-
-    SATIŞ TEYİDİ:
-        6 teknik satış koşulundan en az 4'ü oluşmalı.
-        Ayrıca kısa veya orta vadede bozulma bulunmalı.
-
-    Tek bir gösterge tek başına AL / SAT üretmez.
-    """
-
-    # ========================================================
-    # ALIM KONTROLLERİ
-    # ========================================================
-
-    buy_checks = {
-
-        "Fiyat EMA9 üzerinde":
-            technical["price_above_ema9"],
-
-        "EMA9 > EMA20":
-            technical["ema9_above_ema20"],
-
-        "5G yukarı kesişim":
-            technical["cross_up"],
-
-        "20G momentum pozitif":
-            technical["mom20"] > 0,
-
-        "60G momentum pozitif":
-            technical["mom60"] > 0,
-
-        "Hacim destekli":
-            technical["volume_ratio"] >= 1.10,
-    }
-
-    buy_count = sum(
-        bool(value)
-        for value in buy_checks.values()
-    )
-
-    # ========================================================
-    # SATIŞ KONTROLLERİ
-    # ========================================================
-
-    sell_checks = {
-
-        "Fiyat EMA9 altında":
-            not technical["price_above_ema9"],
-
-        "EMA9 < EMA20":
-            not technical["ema9_above_ema20"],
-
-        "5G aşağı kesişim":
-            technical["cross_down"],
-
-        "20G momentum negatif":
-            technical["mom20"] < 0,
-
-        "60G momentum negatif":
-            technical["mom60"] < 0,
-
-        "Fiyat MA50 altında":
-            not technical["price_above_ma50"],
-    }
-
-    sell_count = sum(
-        bool(value)
-        for value in sell_checks.values()
-    )
-
-    # ========================================================
-    # ALIM TEYİDİ
-    # ========================================================
-
-    buy_confirmation = (
-        buy_count >= 4
-        and technical["short"] >= 60
-        and technical["mid"] >= 55
-    )
-
-    # ========================================================
-    # SATIŞ TEYİDİ
-    # ========================================================
-
-    sell_confirmation = (
-        sell_count >= 4
-        and (
-            technical["short"] < 50
-            or technical["mid"] < 55
-        )
-    )
-
-    # ========================================================
-    # DÜŞÜŞ SİNYALİ
-    # ========================================================
-
-    decline_signal = (
-
-        sell_count >= 3
-
-        or technical["technical_breakdown"] >= 3
-
-        or (
-            technical["short"] < 40
-            and technical["mid"] < 50
-        )
-    )
-
-    # ========================================================
-    # YAZILAR
-    # ========================================================
-
-    if buy_confirmation:
-
-        buy_text = "🟢 ALIM TEYİDİ VAR"
-
+def finalize(row: dict[str, Any], regime: dict[str, Any], minimum_rr: float) -> dict[str, Any]:
+    intraday = intraday_confirmation(str(row["Hisse"]))
+    if intraday is None:
+        row["15D Skor"] = np.nan
+        row["15D VWAP"] = "VERİ YOK"
+        final_score = float(row["Ana Skor"])  # Veri yok diye sahte 50 ekleme.
     else:
+        row["15D Skor"] = round(float(intraday["score"]), 1)
+        row["15D VWAP"] = str(intraday["vwap"])
+        final_score = float(row["Ana Skor"]) * 0.82 + float(intraday["score"]) * 0.18
+        if intraday["vwap"] == "ALTINDA":
+            final_score -= 4
 
-        buy_text = "🟡 ALIM TEYİDİ YOK"
+    final_score = clamp(final_score)
+    row["Final Skor"] = round(final_score, 1)
+    warnings = str(row["Uyarılar"])
+    rr = float(row["R/R"])
 
-    # --------------------------------------------------------
-
-    if sell_confirmation:
-
-        sell_text = "🔴 SATIŞ TEYİDİ VAR"
-
+    if "EMA9'dan uzak" in warnings or "RSI aşırı alım" in warnings:
+        decision = "🟠 KOVALAMA / GERİ ÇEKİLME BEKLE"
+    elif regime["label"] == "🔴 NEGATİF" and final_score < 78:
+        decision = "🔴 PİYASA RİSKİ / İŞLEM YOK"
+    elif final_score >= 78 and rr >= max(1.50, minimum_rr) and row["15D VWAP"] == "ÜSTÜNDE":
+        decision = "🟢 A SINIFI TRADE"
+    elif final_score >= 68 and rr >= minimum_rr:
+        decision = "🟡 B SINIFI / TEYİTLE GİR"
+    elif final_score >= 58:
+        decision = "🔵 C SINIFI / İZLE"
     else:
+        decision = "⚪ İŞLEM YOK"
+    row["Karar"] = decision
+    return row
 
-        sell_text = "🟡 SATIŞ TEYİDİ YOK"
-
-    # --------------------------------------------------------
-
-    if decline_signal:
-
-        decline_text = "🔴 DÜŞÜŞ SİNYALİ VAR"
-
-    else:
-
-        decline_text = "🟢 DÜŞÜŞ SİNYALİ YOK"
-
-    # ========================================================
-    # SONUÇ
-    # ========================================================
-
-    return {
-
-        "buy_count":
-            buy_count,
-
-        "sell_count":
-            sell_count,
-
-        "buy_confirmation":
-            buy_confirmation,
-
-        "sell_confirmation":
-            sell_confirmation,
-
-        "decline_signal":
-            decline_signal,
-
-        "buy_text":
-            buy_text,
-
-        "sell_text":
-            sell_text,
-
-        "decline_text":
-            decline_text,
-
-        "buy_checks":
-            buy_checks,
-
-        "sell_checks":
-            sell_checks,
-    }
-# ============================================================
-# VADE SKORLARI
 
 # ============================================================
-
-def horizon_engine(
-    technical,
-    fundamental,
-    financial,
-    sector,
-    market
-):
-
-    # ========================================================
-    # KISA
-    # ========================================================
-
-    short = (
-
-        technical["short"] * 0.65
-
-        +
-
-        technical["mid"] * 0.10
-
-        +
-
-        market * 0.10
-
-        +
-
-        sector * 0.05
-
-        +
-
-        fundamental * 0.05
-
-        +
-
-        financial * 0.05
-
-    )
-
-    # ========================================================
-    # ORTA
-    # ========================================================
-
-    mid = (
-
-        technical["mid"] * 0.35
-
-        +
-
-        fundamental * 0.20
-
-        +
-
-        financial * 0.20
-
-        +
-
-        sector * 0.10
-
-        +
-
-        market * 0.15
-
-    )
-
-    # ========================================================
-    # UZUN
-    # ========================================================
-
-    long = (
-
-        fundamental * 0.30
-
-        +
-
-        financial * 0.25
-
-        +
-
-        technical["long_technical"] * 0.20
-
-        +
-
-        sector * 0.15
-
-        +
-
-        market * 0.10
-
-    )
-
-    # ========================================================
-    # GENEL
-    # ========================================================
-
-    general = (
-
-        short * SHORT_WEIGHT
-
-        +
-
-        mid * MID_WEIGHT
-
-        +
-
-        long * LONG_WEIGHT
-
-    )
-
-    return {
-
-        "short": round(
-            clamp(short),
-            1
-        ),
-
-        "mid": round(
-            clamp(mid),
-            1
-        ),
-
-        "long": round(
-            clamp(long),
-            1
-        ),
-
-        "general": round(
-            clamp(general),
-            1
-        )
-
-    }
-
-
-# ============================================================
-# KALİTE MOTORU
+# ARAYUZ
 # ============================================================
 
-def quality_engine(
-    long_score,
-    fundamental,
-    financial,
-    fundamental_completeness,
-    financial_completeness
-):
+mtime = DB_PATH.stat().st_mtime if DB_PATH.exists() else 0.0
+universe = get_universe(mtime)
+if not universe:
+    st.error("`borsa.db/stocks` tablosunda kullanılabilir hisse evreni bulunamadı.")
+    st.stop()
 
-    data_completeness = (
-        fundamental_completeness
-        +
-        financial_completeness
-    ) / 2
-
-    if (
-        long_score >= 75
-        and fundamental >= 70
-        and financial >= 65
-        and data_completeness >= 60
-    ):
-
-        return (
-            "🟢 A - Güçlü",
-            "Uzun vadeli yatırım kalitesi güçlü."
+with st.expander("⚙️ Profesyonel Tarama Ayarları", expanded=False):
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        min_liquidity = st.number_input(
+            "Min. 20G likidite (TL)", 1_000_000, 500_000_000,
+            DEFAULT_MIN_LIQUIDITY, 5_000_000, key="trade_v3_min_liquidity"
         )
-
-    if (
-        long_score >= 65
-        and fundamental >= 55
-        and financial >= 55
-        and data_completeness >= 40
-    ):
-
-        return (
-            "🟢 B - Olumlu",
-            "Uzun vadeli yapı olumlu."
+    with c2:
+        min_price = st.number_input(
+            "Min. fiyat", 0.5, 1_000.0, DEFAULT_MIN_PRICE, 0.5,
+            key="trade_v3_min_price"
         )
-
-    if long_score >= 50:
-
-        return (
-            "🟡 C - İzle",
-            "Uzun vadede üstünlük sınırlı."
+    with c3:
+        pool_score = st.slider(
+            "Havuz skoru", 40.0, 75.0, DEFAULT_MIN_SCORE, 1.0,
+            key="trade_v3_pool_score"
         )
-
-    return (
-        "🔴 D - Zayıf",
-        "Uzun vadeli yapı zayıf."
-    )
-
-
-# ============================================================
-# HEDEF AĞIRLIK MOTORU
-# ============================================================
-
-def target_weight_engine(
-    scores,
-    quality,
-    fundamental,
-    financial
-):
-
-    long = scores["long"]
-
-    general = scores["general"]
-
-    # --------------------------------------------------------
-    # TEMEL HEDEF
-    # --------------------------------------------------------
-
-    if long >= 80:
-
-        target = 14
-
-    elif long >= 72:
-
-        target = 12
-
-    elif long >= 65:
-
-        target = 10
-
-    elif long >= 58:
-
-        target = 8
-
-    elif long >= 50:
-
-        target = 6
-
-    elif long >= 42:
-
-        target = 4
-
-    else:
-
-        target = 2
-
-    # --------------------------------------------------------
-    # GENEL SKOR AYARI
-    # --------------------------------------------------------
-
-    if general >= 75:
-
-        target += 1
-
-    elif general < 50:
-
-        target -= 1
-
-    # --------------------------------------------------------
-    # A KALİTE KORUMASI
-    # --------------------------------------------------------
-
-    if quality.startswith(
-        "🟢 A"
-    ):
-
-        target = max(
-            target,
-            10
+    with c4:
+        minimum_rr = st.slider(
+            "Minimum R/R", 1.0, 2.5, DEFAULT_MIN_RR, 0.05,
+            key="trade_v3_min_rr"
         )
-
-    # --------------------------------------------------------
-    # ZAYIF KALİTE
-    # --------------------------------------------------------
-
-    if quality.startswith(
-        "🔴 D"
-    ):
-
-        target = min(
-            target,
-            4
+    with c5:
+        max_results = st.slider(
+            "Gösterilecek", 5, 50, 20, 5, key="trade_v3_max_results"
         )
-
-    # --------------------------------------------------------
-    # TEMEL / FİNANSAL ÇOK ZAYIFSA
-    # --------------------------------------------------------
-
-    if (
-        fundamental < 40
-        and financial < 40
-    ):
-
-        target = min(
-            target,
-            3
-        )
-
-    return round(
-        clamp(
-            target,
-            0,
-            MAX_TARGET_WEIGHT
-        ),
-        1
-    )
-
-
-# ============================================================
-# KARAR VADE MOTORU
-# ============================================================
-
-def determine_decision_horizon(
-    scores,
-    quality
-):
-
-    short = scores["short"]
-
-    mid = scores["mid"]
-
-    long = scores["long"]
-
-    # Uzun vadeli kalite güçlü
-    if (
-        long >= 70
-        and (
-            short < 55
-            or mid < 60
-        )
-    ):
-
-        return (
-            "🏦 Uzun Vade",
-            "Uzun vadeli yapı güçlü; kısa vadeli dalgalanma ana kararı değiştirmiyor."
-        )
-
-    # Kısa vadeli güçlü teyit
-    if (
-        short >= 75
-        and mid >= 65
-    ):
-
-        return (
-            "⚡ Kısa Vade",
-            "Kısa ve orta vadeli teknik momentum birlikte güçlü."
-        )
-
-    # Orta vadeli
-    if (
-        mid >= 65
-        and long >= 55
-    ):
-
-        return (
-            "📅 Orta Vade",
-            "Orta vadeli trend ve temel yapı birlikte değerlendiriliyor."
-        )
-
-    if long >= 65:
-
-        return (
-            "🏦 Uzun Vade",
-            "Kararın ana dayanağı uzun vadeli yatırım kalitesi."
-        )
-
-    return (
-        "🔎 İzleme",
-        "Vade yönünde yeterli üstünlük oluşmadı."
-    )
-
-
-# ============================================================
-# İŞLEM MOTORU
-# ============================================================
-# ============================================================
-# İŞLEM MOTORU — KARAR HİYERARŞİSİ
-# ============================================================
-
-def action_engine(
-    scores,
-    fundamental,
-    financial,
-    current_weight,
-    target_weight,
-    quality,
-    technical,
-    confirmations,
-    position_exists
-):
-
-    short = scores["short"]
-    mid = scores["mid"]
-    long = scores["long"]
-    general = scores["general"]
-
-    buy_confirmation = confirmations["buy_confirmation"]
-    sell_confirmation = confirmations["sell_confirmation"]
-    decline_signal = confirmations["decline_signal"]
-
-    # ========================================================
-    # 1. POZİSYON YOKSA
-    # ========================================================
-
-    if not position_exists:
-
-        # Düşüş sinyali varsa kesinlikle ALMA
-        if decline_signal:
-
-            return (
-                "⛔ ALMA / DÜŞÜŞ SİNYALİ",
-                0.0,
-                "Hissede düşüş sinyali var. "
-                "Portföyde pozisyon bulunmadığı için yeni alım yapılmıyor. "
-                "Önce düşüş sinyalinin ortadan kalkması bekleniyor."
-            )
-
-        # Alım teyidi yoksa ALMA
-        if not buy_confirmation:
-
-            return (
-                "🟡 İZLE / TEYİT BEKLE",
-                0.0,
-                "Portföyde pozisyon bulunmuyor ve alım teyidi oluşmadı. "
-                "Teyitsiz alım yapılmıyor."
-            )
-
-        # Alım teyidi var ama kısa/orta vade zayıf
-        if short < 65 or mid < 60:
-
-            return (
-                "🟡 İZLE / GÜÇLENME BEKLE",
-                0.0,
-                "Alım teyidi oluşmuş olsa da kısa veya orta vadeli yapı "
-                "yeterince güçlü değil. Pozisyon açmadan önce güçlenme bekleniyor."
-            )
-
-        # Gerçek başlangıç alımı
-        return (
-            "🟢 KADEMELİ ARTIR",
-            20.0,
-            "Portföyde pozisyon bulunmuyor. "
-            "Alım teyidi mevcut ve kısa/orta vadeli yapı yeterince güçlü. "
-            "Kontrollü başlangıç pozisyonu öneriliyor."
-        )
-
-    # ========================================================
-    # 2. KRİTİK ÇIKIŞ
-    # ========================================================
-
-    severe_long_failure = long < 40
-    severe_fundamental_failure = fundamental < 35
-    severe_financial_failure = financial < 35
-    severe_technical_failure = (
-        technical["technical_breakdown"] >= 4
-    )
-
-    if (
-        EMERGENCY_EXIT
-        and position_exists
-        and sell_confirmation
-        and severe_long_failure
-        and severe_fundamental_failure
-        and severe_financial_failure
-        and severe_technical_failure
-    ):
-
-        return (
-            "🔴 ÇIKIŞ",
-            -100.0,
-            "Uzun vadeli, temel, finansal ve teknik yapı "
-            "aynı anda ciddi biçimde bozulmuş ve satış teyidi oluşmuş. "
-            "Pozisyon tamamen kapatılabilir."
-        )
-
-    # ========================================================
-    # 3. A KALİTE ŞİRKET KORUMASI
-    # ========================================================
-
-    if quality.startswith("🟢 A"):
-
-        # Düşüş sinyali var ama satış teyidi yok
-        if decline_signal and not sell_confirmation:
-
-            return (
-                "🟡 TUT / TEYİT BEKLE",
-                0.0,
-                "A kalite şirket korunuyor. "
-                "Düşüş sinyali mevcut ancak satış teyidi oluşmadı. "
-                "Kısa vadeli zayıflık tek başına satış gerekçesi değildir."
-            )
-
-        # Satış teyidi varsa kaliteli şirkette önce azalt
-        if sell_confirmation:
-
-            if long >= 70 and fundamental >= 60 and financial >= 60:
-
-                return (
-                    "🟠 KADEMELİ AZALT",
-                    -20.0,
-                    "Satış teyidi oluştu ancak şirketin uzun vadeli, "
-                    "temel ve finansal yapısı güçlü. "
-                    "Tam çıkış yerine kontrollü pozisyon azaltımı öneriliyor."
-                )
-
-            return (
-                "🔴 AZALT",
-                -25.0,
-                "Satış teyidi oluştu ve şirketin uzun vadeli yapısında "
-                "zayıflama görülüyor. Pozisyon kontrollü azaltılmalı."
-            )
-
-        # Hedefin çok üzerindeyse portföy dengelemesi
-        if current_weight > target_weight + 7:
-
-            return (
-                "🟡 TUT / KADEMELİ AZALT",
-                -10.0,
-                "Şirketin yatırım kalitesi güçlü. "
-                "Portföy ağırlığı hedefin belirgin üzerinde. "
-                "Yalnızca portföy dengelemesi amacıyla kademeli azaltım öneriliyor."
-            )
-
-        # Hedefin biraz üzerindeyse satış yapma
-        if current_weight > target_weight + 3:
-
-            return (
-                "🟡 TUT",
-                0.0,
-                "Uzun vadeli kalite güçlü. "
-                "Mevcut ağırlık biraz yüksek ancak satış teyidi olmadığı için "
-                "sert satış yapılmıyor."
-            )
-
-        # Pozisyon hedefin altında + alım teyidi
-        if (
-            current_weight < target_weight - 3
-            and short >= 65
-            and mid >= 60
-            and buy_confirmation
-        ):
-
-            return (
-                "🟢 KADEMELİ ARTIR",
-                20.0,
-                "Uzun vadeli kalite güçlü, portföy ağırlığı düşük "
-                "ve alım teyidi oluştuğu için kademeli artırma öneriliyor."
-            )
-
-        # Kısa vade zayıf
-        if short < 45:
-
-            return (
-                "🟡 TUT / TEYİT BEKLE",
-                0.0,
-                "Uzun vadeli kalite güçlü ancak kısa vadeli momentum zayıf. "
-                "Yeni alım veya satış için teyit bekleniyor."
-            )
-
-        # A kalite normal durum
-        return (
-            "🟢 TUT",
-            0.0,
-            "Uzun vadeli kalite güçlü ve mevcut pozisyon dengeli."
-        )
-
-    # ========================================================
-    # 4. B / C KALİTE — SATIŞ TEYİDİ
-    # ========================================================
-
-    if sell_confirmation:
-
-        # Uzun vade hâlâ güçlü ise kontrollü azalt
-        if long >= 60 and fundamental >= 50 and financial >= 50:
-
-            return (
-                "🟠 KADEMELİ AZALT",
-                -20.0,
-                "Satış teyidi oluştu ancak uzun vadeli yapı tamamen bozulmuş değil. "
-                "Kontrollü pozisyon azaltımı öneriliyor."
-            )
-
-        # Yapı zayıflıyorsa daha güçlü azalt
-        return (
-            "🔴 AZALT",
-            -25.0,
-            "Satış teyidi oluştu ve uzun vadeli, temel veya finansal yapı zayıflıyor. "
-            "Pozisyon azaltılmalı."
-        )
-
-    # ========================================================
-    # 5. DÜŞÜŞ SİNYALİ — SATIŞ TEYİDİ YOK
-    # ========================================================
-
-    if decline_signal:
-
-        if long >= 60:
-
-            return (
-                "🟡 TUT / TEYİT BEKLE",
-                0.0,
-                "Düşüş sinyali mevcut ancak satış teyidi oluşmadı. "
-                "Uzun vadeli yapı hâlâ güçlü olduğu için pozisyon korunuyor."
-            )
-
-        if long >= 50:
-
-            return (
-                "🟡 TUT / İZLE",
-                0.0,
-                "Düşüş sinyali mevcut ancak satış teyidi oluşmadı. "
-                "Pozisyon korunuyor ve teknik yapının netleşmesi bekleniyor."
-            )
-
-        return (
-            "🟠 AZALTMA İZLE",
-            0.0,
-            "Düşüş sinyali mevcut ve uzun vadeli yapı zayıflıyor. "
-            "Ancak satış teyidi henüz oluşmadı."
-        )
-
-    # ========================================================
-    # 6. ALIM TEYİDİ
-    # ========================================================
-
-    if buy_confirmation:
-
-        # Hedef ağırlığın belirgin şekilde altında
-        if current_weight < target_weight - 3:
-
-            if (
-                short >= 80
-                and mid >= 70
-                and general >= 70
-            ):
-
-                return (
-                    "🟢 GÜÇLÜ ARTIR",
-                    STRONG_INCREASE_PCT,
-                    "Alım teyidi güçlü ve mevcut pozisyon hedef ağırlığın "
-                    "belirgin şekilde altında. Güçlü pozisyon artırımı öneriliyor."
-                )
-
-            return (
-                "🟢 KADEMELİ ARTIR",
-                MAX_INCREASE_PCT,
-                "Alım teyidi oluştu ve mevcut pozisyon hedef ağırlığın altında. "
-                "Kontrollü pozisyon artırımı öneriliyor."
-            )
-
-        # Hedefe yakın
-        if current_weight <= target_weight + 2:
-
-            return (
-                "🟢 TUT / HEDEFTE",
-                0.0,
-                "Alım teyidi mevcut ancak mevcut portföy ağırlığı "
-                "hedef seviyeye yakın. İlave işlem gerekmiyor."
-            )
-
-        # Hedefin üzerinde
-        return (
-            "🟡 TUT",
-            0.0,
-            "Alım teyidi mevcut ancak mevcut pozisyon hedef ağırlığın üzerinde. "
-            "Yeni alım yapılmıyor."
-        )
-
-    # ========================================================
-    # 7. HİÇBİR TEYİT YOK
-    # ========================================================
-
-    return (
-        "🟡 TUT",
-        0.0,
-        "Alım veya satış teyidi oluşmadı. Mevcut pozisyon korunuyor."
-    )
-    # ========================================================
-    # B KALİTE
-    # ========================================================
-
-    if quality.startswith("🟢 B"):
-
-        if position_exists and decline_signal and not sell_confirmation:
-
-            return (
-                "🟡 TUT / TEYİT BEKLE",
-                0.0,
-                "Düşüş sinyali var ancak satış teyidi yok. B kalite yapı nedeniyle erken satış yapılmıyor."
-            )
-
-        if (
-            current_weight < target_weight - 2
-            and short >= 72
-            and mid >= 65
-            and buy_confirmation
-        ):
-
-            return (
-                "🟢 KADEMELİ ARTIR",
-                20.0,
-                "Temel kalite olumlu, kısa ve orta vadeli momentum güçlü ve alım teyidi oluştu."
-            )
-
-        if short < 45 and not sell_confirmation:
-
-            return (
-                "🟡 TUT / TEYİT BEKLE",
-                0.0,
-                "Uzun vadeli yapı olumlu ancak kısa vadeli teknik görünüm zayıf ve satış teyidi oluşmadı."
-            )
-
-        if position_exists and current_weight > target_weight + 5:
-
-            if sell_confirmation:
-                return (
-                    "🟠 KADEMELİ AZALT",
-                    -15.0,
-                    "Şirket olumlu olsa da portföy ağırlığı hedefin üzerinde ve satış teyidi oluşmuş."
-                )
-
-            return (
-                "🟡 TUT / DENGELEMEYİ BEKLE",
-                0.0,
-                "Portföy ağırlığı yüksek ancak satış teyidi yok; gereksiz satış yapılmıyor."
-            )
-
-        return (
-            "🟢 TUT",
-            0.0,
-            "Uzun vadeli yapı olumlu ve mevcut pozisyon dengeli."
-        )
-
-    # ========================================================
-    # C KALİTE
-    # ========================================================
-
-    if quality.startswith("🟡 C"):
-
-        if position_exists and decline_signal and not sell_confirmation:
-
-            return (
-                "🟡 BEKLE / SATIŞ TEYİDİ BEKLE",
-                0.0,
-                "Düşüş sinyali oluştu ancak gerçek satış teyidi için çoklu teknik bozulma henüz yeterli değil."
-            )
-
-        if (
-            short >= 75
-            and mid >= 65
-            and current_weight < target_weight
-            and buy_confirmation
-        ):
-
-            return (
-                "🟢 KADEMELİ ARTIR",
-                10.0,
-                "Uzun vadeli kalite henüz güçlü değil ancak kısa ve orta vadeli teknik yapı olumlu ve alım teyidi mevcut."
-            )
-
-        if short < 45:
-
-            if position_exists and current_weight > target_weight + 5 and sell_confirmation:
-
-                return (
-                    "🟠 AZALT",
-                    -15.0,
-                    "Uzun vadeli üstünlük sınırlı, kısa vadeli yapı zayıf ve satış teyidi oluşmuş."
-                )
-
-            return (
-                "🟡 BEKLE",
-                0.0,
-                "Göstergeler yeterince güçlü değil. Yeni alım için teyit, mevcut pozisyon için ise satış teyidi bekleniyor."
-            )
-
-        if position_exists and current_weight > target_weight + 5:
-
-            if sell_confirmation:
-                return (
-                    "🟠 KADEMELİ AZALT",
-                    -15.0,
-                    "Uzun vadeli kalite orta seviyede, portföy ağırlığı hedefin üzerinde ve satış teyidi oluşmuş."
-                )
-
-            return (
-                "🟡 TUT / İZLE",
-                0.0,
-                "Portföy ağırlığı yüksek ancak satış teyidi yok."
-            )
-
-        return (
-            "🟡 TUT / İZLE",
-            0.0,
-            "Göstergeler karışık ve net işlem üstünlüğü oluşmadı."
-        )
-
-    # ========================================================
-    # D KALİTE
-    # ========================================================
-
-    if (
-        long < 45
-        and mid < 45
-        and short < 45
-    ):
-
-        if position_exists and sell_confirmation:
-
-            return (
-                "🟠 KADEMELİ AZALT",
-                -25.0,
-                "Kısa, orta ve uzun vadeli yapı zayıf ve satış teyidi oluşmuş. Otomatik %100 çıkış yerine pozisyon kademeli azaltılıyor."
-            )
-
-        if position_exists:
-
-            return (
-                "🟡 TUT / TEYİT BEKLE",
-                0.0,
-                "Kısa, orta ve uzun vadeli yapı zayıf ancak satış teyidi henüz oluşmadı."
-            )
-
-        return (
-            "🔴 ALMA / İZLE",
-            0.0,
-            "Kısa, orta ve uzun vadeli görünüm yeterince güçlü değil."
-        )
-
-    if short < 40 and not sell_confirmation:
-
-        return (
-            "🟡 BEKLE",
-            0.0,
-            "Kısa vadeli teknik yapı zayıf ancak satış teyidi oluşmadı; yeni işlem için teyit bekleniyor."
-        )
-
-    if position_exists and sell_confirmation:
-
-        return (
-            "🟠 KADEMELİ AZALT",
-            -15.0,
-            "Çoklu teknik satış teyidi oluştu. Pozisyon kademeli azaltılıyor."
-        )
-
-    return (
-        "🟡 TUT / İZLE",
-        0.0,
-        "Göstergeler karışık ve net işlem üstünlüğü oluşmadı."
-    )
-
-# ============================================================
-# 🎯 PORTFÖY AKSİYON ÖZETİ
-# ============================================================
-
-def portfolio_action_summary(
-    decision,
-    confirmations,
-    quality,
-    general_score,
-    short_score,
-    mid_score,
-    long_score,
-):
-
-    buy_confirmation = confirmations.get(
-        "buy_confirmation",
-        False
-    )
-
-    sell_confirmation = confirmations.get(
-        "sell_confirmation",
-        False
-    )
-
-    decline_signal = confirmations.get(
-        "decline_signal",
-        False
-    )
-
-    # SATIŞ TEYİDİ
-    if sell_confirmation:
-
-        if (
-            quality.startswith("🟢 A")
-            and long_score >= 70
-        ):
-            return (
-                "🟠 KADEMELİ AZALT",
-                "Satış teyidi oluştu ancak şirketin "
-                "uzun vadeli yapısı güçlü. "
-                "Kontrollü azaltma değerlendirilmeli."
-            )
-
-        return (
-            "🔴 SAT / ÇIKIŞI DEĞERLENDİR",
-            "Satış teyidi oluştu. "
-            "Pozisyon azaltılmalı veya çıkış değerlendirilmeli."
-        )
-
-    # DÜŞÜŞ VAR — SATIŞ TEYİDİ YOK
-    if decline_signal:
-
-        if (
-            long_score >= 70
-            and quality.startswith("🟢 A")
-        ):
-            return (
-                "🟡 TUT / TEYİT BEKLE",
-                "Düşüş sinyali var ancak satış teyidi yok. "
-                "Uzun vadeli yapı güçlü olduğu için pozisyon korunuyor."
-            )
-
-        return (
-            "🟡 DİKKAT / İZLE",
-            "Düşüş sinyali oluştu. "
-            "Satış teyidi beklenmeli."
-        )
-
-    # GÜÇLÜ POZİSYON
-    if (
-        general_score >= 75
-        and short_score >= 65
-        and mid_score >= 60
-    ):
-        return (
-            "🟢 TUT / POZİSYONU KORU",
-            "Genel skor ve kısa/orta vadeli yapı güçlü. "
-            "Satış veya düşüş teyidi bulunmuyor."
-        )
-
-    # ALIM TEYİDİ
-    if buy_confirmation:
-        return (
-            "🟢 KADEMELİ ARTIR",
-            "Alım teyidi mevcut. "
-            "Pozisyon kontrollü şekilde artırılabilir."
-        )
-
-    return (
-        "⚪ TUT / İZLE",
-        "Satış teyidi yok. "
-        "Yeni işlem için ek teyit bekleniyor."
-    )
-
-
-
-# ============================================================
-# GERÇEK İŞLEM HESAPLAMA
-# ============================================================
-
-def calculate_trade(
-    decision,
-    trade_pct,
-    shares,
-    price,
-    current_weight,
-    target_weight,
-    portfolio_total_value
-):
-
-    shares = max(
-        0,
-        safe_float(
-            shares,
-            0
-        )
-    )
-
-    price = max(
-        0,
-        safe_float(
-            price,
-            0
-        )
-    )
-
-    current_weight = max(
-        0,
-        safe_float(
-            current_weight,
-            0
-        )
-    )
-
-    target_weight = max(
-        0,
-        safe_float(
-            target_weight,
-            0
-        )
-    )
-
-    # ========================================================
-    # ÇIKIŞ
-    # ========================================================
-
-    if trade_pct <= -100:
-
-        signed_lots = -int(
-            round(shares)
-        )
-
-        actual_trade_pct = -100.0
-
-    # ========================================================
-    # SATIŞ
-    # ========================================================
-
-    elif trade_pct < 0:
-
-        requested = abs(
-            trade_pct
-        )
-
-        requested = min(
-            requested,
-            MAX_REDUCE_PCT
-        )
-
-        lots = int(
-            round(
-                shares *
-                requested /
-                100
-            )
-        )
-
-        signed_lots = -min(
-            lots,
-            int(round(shares))
-        )
-
-        if shares > 0:
-
-            actual_trade_pct = (
-                signed_lots /
-                shares
-            ) * 100
-
-        else:
-
-            actual_trade_pct = 0
-
-    # ========================================================
-    # ALIŞ
-    # ========================================================
-
-    elif trade_pct > 0:
-
-        requested = min(
-            trade_pct,
-            STRONG_INCREASE_PCT
-        )
-
-        lots = int(
-            round(
-                shares *
-                requested /
-                100
-            )
-        )
-
-        # Pozisyon yoksa hedef ağırlığa göre başlangıç pozisyonu
-        if shares <= 0 and price > 0:
-
-            target_value = (
-                portfolio_total_value
-                *
-                target_weight
-                /
-                100
-            )
-
-            lots = int(
-                target_value /
-                price
-            )
-
-        signed_lots = max(
-            0,
-            lots
-        )
-
-        if shares > 0:
-
-            actual_trade_pct = (
-                signed_lots /
-                shares
-            ) * 100
-
-        else:
-
-            actual_trade_pct = (
-                100.0
-                if signed_lots > 0
-                else 0
-            )
-
-    else:
-
-        signed_lots = 0
-
-        actual_trade_pct = 0.0
-
-    # ========================================================
-    # SONRAKİ LOT
-    # ========================================================
-
-    next_lots = max(
-        0,
-        shares + signed_lots
-    )
-
-    # ========================================================
-    # İŞLEM TUTARI
-    # ========================================================
-
-    transaction_value = (
-        signed_lots *
-        price
-    )
-
-    # ========================================================
-    # SONRAKİ PORTFÖY AĞIRLIĞI
-    # ========================================================
-
-    if portfolio_total_value > 0:
-
-        next_position_value = (
-            next_lots *
-            price
-        )
-
-        next_weight = (
-            next_position_value /
-            portfolio_total_value
-        ) * 100
-
-    else:
-
-        next_weight = 0
-
-    return {
-
-        "signed_lots":
-            int(signed_lots),
-        "lot_reason":
-            (
-                f"Satış: %{abs(actual_trade_pct):.1f} oranında azaltma"
-                if signed_lots < 0
-                else
-                f"Alış: %{actual_trade_pct:.1f} oranında artırma"
-                if signed_lots > 0
-                else
-                "İşlem önerilmiyor"
-            ),
-                "actual_trade_pct":
-                    round(
-                        actual_trade_pct,
-                        1
-                    ),
-
-        "transaction_value":
-            transaction_value,
-
-        "next_lots":
-            next_lots,
-
-        "next_weight":
-            next_weight
-
-    }
-
-
-# ============================================================
-# GÜVEN SKORU
-# ============================================================
-
-def confidence_engine(
-    scores,
-    fundamental_completeness,
-    financial_completeness
-):
-
-    values = [
-        scores["short"],
-        scores["mid"],
-        scores["long"]
-    ]
-
-    spread = (
-        max(values)
-        -
-        min(values)
-    )
-
-    data_quality = (
-        fundamental_completeness
-        +
-        financial_completeness
-    ) / 2
-
-    confidence = 100
-
-    confidence -= min(
-        spread * 0.55,
-        30
-    )
-
-    confidence -= (
-        100 -
-        data_quality
-    ) * 0.18
-
-    confidence = clamp(
-        confidence
-    )
-
-    if confidence >= 75:
-
-        label = "🟢 Yüksek"
-
-    elif confidence >= 55:
-
-        label = "🟡 Orta"
-
-    else:
-
-        label = "🟠 Düşük"
-
-    return (
-        round(
-            confidence,
-            1
-        ),
-        label
-    )
-
-
-# ============================================================
-# DETAYLI GEREKÇE
-# ============================================================
-
-def create_reason(
-    scores,
-    technical,
-    fundamental,
-    financial,
-    sector,
-    sector_name,
-    market,
-    current_weight,
-    target_weight,
-    decision_horizon,
-    action_reason
-):
-
-    reasons = []
-
-    # --------------------------------------------------------
-    # KISA
-    # --------------------------------------------------------
-
-    if scores["short"] >= 70:
-
-        reasons.append(
-            "kısa vadeli momentum güçlü"
-        )
-
-    elif scores["short"] < 40:
-
-        reasons.append(
-            "kısa vadeli teknik görünüm zayıf"
-        )
-
-    else:
-
-        reasons.append(
-            "kısa vadeli görünüm nötr"
-        )
-
-    # --------------------------------------------------------
-    # ORTA
-    # --------------------------------------------------------
-
-    if scores["mid"] >= 70:
-
-        reasons.append(
-            "orta vadeli trend güçlü"
-        )
-
-    elif scores["mid"] < 45:
-
-        reasons.append(
-            "orta vadeli trend zayıf"
-        )
-
-    # --------------------------------------------------------
-    # UZUN
-    # --------------------------------------------------------
-
-    if scores["long"] >= 70:
-
-        reasons.append(
-            "uzun vadeli yapı güçlü"
-        )
-
-    elif scores["long"] < 45:
-
-        reasons.append(
-            "uzun vadeli yapı zayıf"
-        )
-
-    # --------------------------------------------------------
-    # FUNDAMENTAL
-    # --------------------------------------------------------
-
-    if fundamental >= 70:
-
-        reasons.append(
-            "temel kalite güçlü"
-        )
-
-    elif fundamental < 45:
-
-        reasons.append(
-            "temel kalite zayıf"
-        )
-
-    # --------------------------------------------------------
-    # FINANCIAL
-    # --------------------------------------------------------
-
-    if financial >= 70:
-
-        reasons.append(
-            "finansal yapı güçlü"
-        )
-
-    elif financial < 45:
-
-        reasons.append(
-            "finansal yapı zayıf"
-        )
-
-    # --------------------------------------------------------
-    # EMA
-    # --------------------------------------------------------
-
-    if (
-        technical["price_above_ema9"]
-        and
-        technical["ema9_above_ema20"]
-    ):
-
-        reasons.append(
-            "EMA9/EMA20 trendi destekliyor"
-        )
-
-    elif not technical[
-        "price_above_ema9"
-    ]:
-
-        reasons.append(
-            "fiyat EMA9 altında"
-        )
-
-    # --------------------------------------------------------
-    # 5 GÜNLÜK KESİŞİM
-    # --------------------------------------------------------
-
-    if technical["cross_up"]:
-
-        reasons.append(
-            "5 günlük ortalama yukarı kesildi"
-        )
-
-    elif technical["cross_down"]:
-
-        reasons.append(
-            "5 günlük ortalama aşağı kesildi"
-        )
-
-    # --------------------------------------------------------
-    # SEKTÖR
-    # --------------------------------------------------------
-
-    if sector >= 70:
-
-        reasons.append(
-            f"{sector_name} sektörü destekleyici"
-        )
-
-    elif sector < 50:
-
-        reasons.append(
-            f"{sector_name} sektörü zayıf"
-        )
-
-    # --------------------------------------------------------
-    # PİYASA
-    # --------------------------------------------------------
-
-    if market >= 65:
-
-        reasons.append(
-            "piyasa koşulları destekleyici"
-        )
-
-    elif market < 45:
-
-        reasons.append(
-            "piyasa koşulları temkinli"
-        )
-
-    # --------------------------------------------------------
-    # AĞIRLIK
-    # --------------------------------------------------------
-
-    if current_weight > target_weight + 3:
-
-        reasons.append(
-            f"mevcut ağırlık %{current_weight:.1f} hedefin üzerinde"
-        )
-
-    elif current_weight < target_weight - 3:
-
-        reasons.append(
-            f"mevcut ağırlık %{current_weight:.1f} hedefin altında"
-        )
-
-    # En fazla 8 gerekçe
-    reason_text = "; ".join(
-        reasons[:8]
-    )
-
-    return (
-        f"{action_reason} "
-        f"Kararın ana vadesi: {decision_horizon}. "
-        f"{reason_text}."
-    )
-
-
-# ============================================================
-# BAŞLIK
-# ============================================================
-
-st.title(
-    "📊 HİSSE BAZLI KARAR SİSTEMİ"
-)
-
-st.caption(
-    "Kısa Vade + Orta Vade + Uzun Vade + "
-    "Temel + Finansal + Teknik + Sektör + Piyasa + "
-    "Portföy Ağırlığı"
-)
-
-
-# ============================================================
-# EXCEL
-# ============================================================
-
-uploaded_file = st.file_uploader(
-    "📁 Portföy Excel dosyasını yükleyin",
-    type=[
-        "xlsx",
-        "xls"
-    ]
-)
-
-
-if uploaded_file is None:
-
     st.info(
-        "Karar sistemini çalıştırmak için "
-        "portföy Excel dosyanızı yükleyin."
+        "Önerilen başlangıç: likidite 30 Mn TL, havuz 58, minimum R/R 1.35. "
+        "Piyasa negatifken sistem otomatik olarak daha seçici davranır."
     )
 
-    st.stop()
-
-
-try:
-
-    portfolio = pd.read_excel(
-        uploaded_file
-    )
-
-except Exception as e:
-
-    st.error(
-        f"Excel okunamadı: {e}"
-    )
-
-    st.stop()
-
-
-portfolio.columns = (
-    portfolio.columns
-    .astype(str)
-    .str.strip()
-)
-
-
-# ============================================================
-# GEREKLİ SÜTUNLAR
-# ============================================================
-
-required_columns = [
-
-    "Hisse",
-    "Kalan Adet",
-    "Ortalama Maliyet",
-    "Güncel Fiyat",
-    "Maliyet Toplamı",
-    "Piyasa Değeri",
-    "Gerç. K/Z",
-    "Getiri %",
-    "Portföy %"
-
-]
-
-
-missing = [
-
-    col
-
-    for col in required_columns
-
-    if col not in portfolio.columns
-
-]
-
-
-if missing:
-
-    st.error(
-        "Excel'de eksik sütunlar: "
-        +
-        ", ".join(missing)
-    )
-
-    st.stop()
-
-
-# ============================================================
-# SAYISAL ALANLAR
-# ============================================================
-
-numeric_columns = [
-
-    "Kalan Adet",
-    "Ortalama Maliyet",
-    "Güncel Fiyat",
-    "Maliyet Toplamı",
-    "Piyasa Değeri",
-    "Gerç. K/Z",
-    "Getiri %",
-    "Portföy %"
-
-]
-
-
-for column in numeric_columns:
-
-    portfolio[column] = (
-        portfolio[column]
-        .apply(parse_number)
-    )
-
-
-portfolio["Portföy %"] = (
-    portfolio["Portföy %"]
-    .apply(
-        normalize_weight
-    )
-)
-
-
-# ============================================================
-# PORTFÖY TOPLAMI
-# ============================================================
-
-portfolio_total_value = (
-    portfolio[
-        "Piyasa Değeri"
-    ]
-    .fillna(0)
-    .sum()
-)
-
-
-if portfolio_total_value <= 0:
-
-    st.error(
-        "Portföy piyasa değeri hesaplanamadı."
-    )
-
-    st.stop()
-
-
-# ============================================================
-# ÜST ÖZET
-# ============================================================
-
-c1, c2, c3, c4 = st.columns(4)
-
-c1.metric(
-    "Portföy Değeri",
-    fmt_money(
-        portfolio_total_value
-    )
-)
-
-c2.metric(
-    "Hisse Sayısı",
-    len(portfolio)
-)
-
-c3.metric(
-    "En Büyük Pozisyon",
-    f"%{portfolio['Portföy %'].max():.1f}"
-)
-
-c4.metric(
-    "Sistem",
-    "Aktif"
-)
-
-
-# ============================================================
-# PİYASA
-# ============================================================
-
-with st.spinner(
-    "🌍 Piyasa koşulları hesaplanıyor..."
-):
-
-    market_score, market_reasons = (
-        market_engine()
-    )
-
-
-st.info(
-    f"🌍 **BIST Piyasa Skoru: "
-    f"{market_score:.1f}/100** — "
-    +
-    (
-        " | ".join(
-            market_reasons
-        )
-        if market_reasons
-        else
-        "Piyasa verisi nötr."
-    )
-)
-
-
-# ============================================================
-# ANALİZ
-# ============================================================
-
-results = []
-
-progress = st.progress(
-    0
-)
-
-total = len(
-    portfolio
-)
-
-
-for index, (_, row) in enumerate(
-    portfolio.iterrows()
-):
-
-    symbol = (
-        str(
-            row["Hisse"]
-        )
-        .upper()
-        .strip()
-    )
-
-    shares = safe_float(
-        row["Kalan Adet"],
-        0
-    )
-
-    excel_price = safe_float(
-        row["Güncel Fiyat"],
-        0
-    )
-
-    current_weight = safe_float(
-        row["Portföy %"],
-        0
-    )
-
-    # --------------------------------------------------------
-    # FİYAT
-    # --------------------------------------------------------
-
-    price_data = (
-        download_price_data(
-            symbol
-        )
-    )
-
-    if price_data is None:
-
-        results.append({
-
-            "Hisse":
-                symbol,
-
-            "Fiyat":
-                excel_price,
-
-            "Günlük %":
-                np.nan,
-
-            "Mevcut %":
-                current_weight,
-
-            "Kısa Vade":
-                np.nan,
-
-            "Orta Vade":
-                np.nan,
-
-            "Uzun Vade":
-                np.nan,
-
-            "Genel Skor":
-                np.nan,
-
-            "Kalite":
-                "⚠️ Veri Yok",
-
-            "Hedef %":
-                np.nan,
-
-            "İşlem %":
-                0,
-
-            "İşlem Lot":
-                "0 lot",
-
-            "İşlem Tutarı":
-                0,
-
-            "Sonraki Lot":
-                shares,
-
-            "Sonraki %":
-                current_weight,
-
-            "Alım Teyidi":
-                "⚪ Veri Yok",
-
-            "Satış Teyidi":
-                "⚪ Veri Yok",
-
-            "Düşüş Sinyali":
-                "⚪ Veri Yok",
-
-            "Teyit Skoru":
-                "-",
-
-            "Karar":
-                "⛔ KARAR YOK",
-
-            "Karar Vadesi":
-                "Veri yok",
-
-            "Güven":
-                "🔴 Veri Yok",
-
-            "Güven Skoru":
-                0,
-
-            "RSI":
-                np.nan,
-
-            "Momentum 20G":
-                np.nan,
-
-            "Momentum 60G":
-                np.nan,
-
-            "Hacim Oranı":
-                np.nan,
-
-            "Fundamental":
-                np.nan,
-
-            "Financial":
-                np.nan,
-
-            "Sektör":
-                np.nan,
-
-            "Piyasa":
-                market_score,
-
-            "Gerekçe":
-                "Teknik veri alınamadı. "
-                "Otomatik işlem önerilmedi."
-
-        })
-
-        progress.progress(
-            int(
-                (
-                    (index + 1)
-                    /
-                    total
-                )
-                * 100
-            )
-        )
-
-        continue
-
-    # --------------------------------------------------------
-    # TEKNİK
-    # --------------------------------------------------------
-
-    technical_df = (
-        build_indicators(
-            price_data
-        )
-    )
-
-    technical = (
-        technical_engine(
-            technical_df
-        )
-    )
-
-    # --------------------------------------------------------
-    # ALIM / SATIŞ TEYİDİ
-    # --------------------------------------------------------
-
-    confirmations = confirmation_engine(
-        technical
-    )
-
-    price = technical[
-        "price"
-    ]
-
-    daily_change = technical[
-        "daily_change"
-    ]
-
-    # --------------------------------------------------------
-    # ŞİRKET BİLGİSİ
-    # --------------------------------------------------------
-
-    info = get_info(
-        symbol
-    )
-
-    # --------------------------------------------------------
-    # FUNDAMENTAL
-    # --------------------------------------------------------
-
-    (
-        fundamental,
-        fundamental_reasons,
-        fundamental_completeness
-
-    ) = fundamental_engine(
-        info
-    )
-
-    # --------------------------------------------------------
-    # FINANCIAL
-    # --------------------------------------------------------
-
-    (
-        financial,
-        financial_reasons,
-        financial_completeness
-
-    ) = financial_engine(
-        info
-    )
-
-    # --------------------------------------------------------
-    # SEKTÖR
-    # --------------------------------------------------------
-
-    (
-        sector,
-        sector_name
-
-    ) = sector_engine(
-        symbol
-    )
-
-    # --------------------------------------------------------
-    # VADE
-    # --------------------------------------------------------
-
-    scores = horizon_engine(
-
-        technical,
-
-        fundamental,
-
-        financial,
-
-        sector,
-
-        market_score
-
-    )
-
-    # --------------------------------------------------------
-    # KALİTE
-    # --------------------------------------------------------
-
-    (
-        quality,
-        quality_reason
-
-    ) = quality_engine(
-
-        scores["long"],
-
-        fundamental,
-
-        financial,
-
-        fundamental_completeness,
-
-        financial_completeness
-
-    )
-
-    # --------------------------------------------------------
-    # HEDEF AĞIRLIK
-    # --------------------------------------------------------
-
-    target_weight = (
-        target_weight_engine(
-
-            scores,
-
-            quality,
-
-            fundamental,
-
-            financial
-
-        )
-    )
-
-    # --------------------------------------------------------
-    # KARAR VADESİ
-    # --------------------------------------------------------
-
-    (
-        decision_horizon,
-        horizon_reason
-
-    ) = determine_decision_horizon(
-
-        scores,
-
-        quality
-
-    )
-
-    # --------------------------------------------------------
-    # KARAR
-    # --------------------------------------------------------
-
-    (
-        decision,
-        trade_pct,
-        action_reason
-
-    ) = action_engine(
-
-        scores,
-
-        fundamental,
-
-        financial,
-
-        current_weight,
-
-        target_weight,
-
-        quality,
-
-        technical,
-
-        confirmations,
-
-        shares > 0
-
-    )
-
-    # --------------------------------------------------------
-    # İŞLEM
-    # --------------------------------------------------------
-
-    trade = calculate_trade(
-
-        decision,
-
-        trade_pct,
-
-        shares,
-
-        price,
-
-        current_weight,
-
-        target_weight,
-
-        portfolio_total_value
-
-    )
-
-    signed_lots = trade[
-        "signed_lots"
-    ]
-
-    actual_trade_pct = trade[
-        "actual_trade_pct"
-    ]
-
-    transaction_value = trade[
-        "transaction_value"
-    ]
-
-    next_lots = trade[
-        "next_lots"
-    ]
-
-    next_weight = trade[
-        "next_weight"
-    ]
-    lot_reason = trade[
-    "lot_reason"
-    ]
-    # --------------------------------------------------------
-    # İŞLEM YAZISI
-    # --------------------------------------------------------
-
-    if signed_lots > 0:
-
-        trade_lot_text = (
-            f"+{signed_lots} lot"
-        )
-
-    elif signed_lots < 0:
-
-        trade_lot_text = (
-            f"{signed_lots} lot"
-        )
-
-    else:
-
-        trade_lot_text = (
-            "0 lot"
-        )
-
-    # --------------------------------------------------------
-    # GÜVEN
-    # --------------------------------------------------------
-
-    (
-        confidence_score,
-        confidence_label
-
-    ) = confidence_engine(
-
-        scores,
-
-        fundamental_completeness,
-
-        financial_completeness
-
-    )
-
-    # --------------------------------------------------------
-    # GEREKÇE
-    # --------------------------------------------------------
-
-    reason = create_reason(
-
-        scores,
-
-        technical,
-
-        fundamental,
-
-        financial,
-
-        sector,
-
-        sector_name,
-
-        market_score,
-
-        current_weight,
-
-        target_weight,
-
-        decision_horizon,
-
-        action_reason
-
-    )
-
-    # --------------------------------------------------------
-    # SONUÇ
-    # --------------------------------------------------------
-
-    results.append({
-
-        "Hisse":
-            symbol,
-
-        "Fiyat":
-            price,
-
-        "Günlük %":
-            daily_change,
-
-        "Mevcut %":
-            current_weight,
-
-        "Kısa Vade":
-            scores["short"],
-
-        "Orta Vade":
-            scores["mid"],
-
-        "Uzun Vade":
-            scores["long"],
-
-        "Genel Skor":
-            scores["general"],
-
-        "Kalite":
-            quality,
-
-        "Hedef %":
-            target_weight,
-
-        "İşlem %":
-            actual_trade_pct,
-
-        "İşlem Lot":
-            trade_lot_text,
-
-        "Lot Kararı / Nedeni":
-            trade["lot_reason"],
-
-        "Lot Kararı / Nedeni":
-            lot_reason,
-
-        "İşlem Tutarı":
-            transaction_value,
-
-        "Sonraki Lot":
-            next_lots,
-
-        "Sonraki %":
-            next_weight,
-
-        "Alım Teyidi":
-            confirmations["buy_text"],
-
-        "Satış Teyidi":
-            confirmations["sell_text"],
-
-        "Düşüş Sinyali":
-            confirmations["decline_text"],
-
-        "Teyit Skoru":
-            f"A{confirmations['buy_count']}/6 - S{confirmations['sell_count']}/6",
-
-        "Karar":
-            decision,
-
-        "Karar Vadesi":
-            decision_horizon,
-
-        "Güven":
-            confidence_label,
-
-        "Güven Skoru":
-            confidence_score,
-
-        "RSI":
-            technical["rsi"],
-
-        "Momentum 20G":
-            technical["mom20"],
-
-        "Momentum 60G":
-            technical["mom60"],
-
-        "Hacim Oranı":
-            technical["volume_ratio"],
-
-        "Fundamental":
-            fundamental,
-
-        "Financial":
-            financial,
-
-        "Sektör":
-            sector,
-
-        "Piyasa":
-            market_score,
-
-        "Gerekçe":
-            reason
-
-    })
-
-    progress.progress(
-        int(
-            (
-                (index + 1)
-                /
-                total
-            )
-            * 100
-        )
-    )
-
-
-progress.empty()
-
-
-# ============================================================
-# SONUÇ DATAFRAME
-# ============================================================
-
-result_df = pd.DataFrame(
-    results
-)
-# ============================================================
-# PORTFÖY İŞLEM ÖZETİ
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "💼 PORTFÖY İŞLEM ÖZETİ"
-)
-
-# ------------------------------------------------------------
-# İŞLEM VERİLERİNİ GÜVENLİ HALE GETİR
-# ------------------------------------------------------------
-
-if not result_df.empty:
-
-    result_df["İşlem %"] = pd.to_numeric(
-        result_df["İşlem %"],
-        errors="coerce"
-    ).fillna(0)
-
-    result_df["İşlem Tutarı"] = pd.to_numeric(
-        result_df["İşlem Tutarı"],
-        errors="coerce"
-    ).fillna(0)
-
-else:
-
-    result_df["İşlem %"] = 0.0
-    result_df["İşlem Tutarı"] = 0.0
-
-
-# ------------------------------------------------------------
-# ALIM / SATIM AYRIMI
-# ------------------------------------------------------------
-
-buy_df = result_df[
-    result_df["İşlem %"] > 0
-].copy()
-
-sell_df = result_df[
-    result_df["İşlem %"] < 0
-].copy()
-
-hold_df = result_df[
-    result_df["İşlem %"] == 0
-].copy()
-
-
-# ------------------------------------------------------------
-# ADET
-# ------------------------------------------------------------
-
-buy_count = len(
-    buy_df
-)
-
-sell_count = len(
-    sell_df
-)
-
-hold_count = len(
-    hold_df
-)
-
-
-# ------------------------------------------------------------
-# TOPLAM ALIM
-# ------------------------------------------------------------
-
-total_buy_value = (
-    buy_df["İşlem Tutarı"]
-    .clip(lower=0)
-    .sum()
-)
-
-
-# ------------------------------------------------------------
-# TOPLAM SATIŞ
-# ------------------------------------------------------------
-
-total_sell_value = (
-    sell_df["İşlem Tutarı"]
-    .abs()
-    .sum()
-)
-
-
-# ------------------------------------------------------------
-# NET NAKİT AKIŞI
-#
-# Satış = + nakit
-# Alış  = - nakit
-#
-# Örneğin:
-# 50.000 TL satış
-# 30.000 TL alış
-# = +20.000 TL net nakit
-# ------------------------------------------------------------
-
-net_cash_flow = (
-    total_sell_value
-    -
-    total_buy_value
-)
-
-
-# ------------------------------------------------------------
-# TOPLAM İŞLEM HACMİ
-# ------------------------------------------------------------
-
-total_transaction_volume = (
-    total_buy_value
-    +
-    total_sell_value
-)
-
-
-# ------------------------------------------------------------
-# PORTFÖYDE GERÇEK İŞLEM VAR MI?
-# ------------------------------------------------------------
-
-has_real_trade = (
-    total_transaction_volume > 0
-)
-
-
-# ============================================================
-# ÜST ÖZET
-# ============================================================
-
-c1, c2, c3, c4 = st.columns(4)
-
-
-c1.metric(
-    "🟢 Toplam Alım",
-    fmt_money(
-        total_buy_value
-    )
-)
-
-
-c2.metric(
-    "🔴 Toplam Satış",
-    fmt_money(
-        total_sell_value
-    )
-)
-
-
-c3.metric(
-    "💰 Net Nakit",
-    fmt_money(
-        net_cash_flow
-    )
-)
-
-
-c4.metric(
-    "🔄 İşlem Hacmi",
-    fmt_money(
-        total_transaction_volume
-    )
-)
-
-
-# ============================================================
-# HİSSE SAYISI ÖZETİ
-# ============================================================
-
-c1, c2, c3 = st.columns(3)
-
-
-c1.metric(
-    "🟢 Artırılacak",
-    f"{buy_count} hisse"
-)
-
-
-c2.metric(
-    "🔴 Azaltılacak",
-    f"{sell_count} hisse"
-)
-
-
-c3.metric(
-    "🟡 Tutulacak",
-    f"{hold_count} hisse"
-)
-
-
-# ============================================================
-# NET NAKİT DURUMU
-# ============================================================
-
-if not has_real_trade:
-
-    st.success(
-        "🟢 Portföyde şu anda uygulanabilir "
-        "gerçek bir işlem bulunmuyor. "
-        "Mevcut pozisyonlar korunuyor."
-    )
-
-elif net_cash_flow > 0:
-
-    st.info(
-        f"💰 İşlemler uygulandığında yaklaşık "
-        f"{fmt_money(net_cash_flow)} "
-        f"net nakit oluşması bekleniyor."
-    )
-
-elif net_cash_flow < 0:
-
-    required_cash = abs(
-        net_cash_flow
-    )
-
-    st.warning(
-        f"💸 İşlemler uygulandığında yaklaşık "
-        f"{fmt_money(required_cash)} "
-        f"net nakit kullanılması gerekiyor."
-    )
-
-else:
-
-    st.info(
-        "⚖️ Alım ve satış işlemleri yaklaşık "
-        "olarak birbirini dengeliyor."
-    )
-
-
-# ============================================================
-# İŞLEM ÖZET TABLOSU
-# ============================================================
-
-if has_real_trade:
-
-    summary_rows = []
-
-    # --------------------------------------------------------
-    # ALIMLAR
-    # --------------------------------------------------------
-
-    for _, row in buy_df.iterrows():
-
-        summary_rows.append({
-
-            "Hisse":
-                row["Hisse"],
-
-            "İşlem":
-                "🟢 ALIM",
-
-            "Mevcut %":
-                row["Mevcut %"],
-
-            "Hedef %":
-                row["Hedef %"],
-
-            "İşlem %":
-                row["İşlem %"],
-
-            "İşlem Lot":
-                row["İşlem Lot"],
-
-            "İşlem Tutarı":
-                abs(
-                    row["İşlem Tutarı"]
-                ),
-
-            "Sonraki %":
-                row["Sonraki %"],
-
-            "Karar":
-                row["Karar"]
-
-        })
-
-
-    # --------------------------------------------------------
-    # SATIŞLAR
-    # --------------------------------------------------------
-
-    for _, row in sell_df.iterrows():
-
-        summary_rows.append({
-
-            "Hisse":
-                row["Hisse"],
-
-            "İşlem":
-                "🔴 SATIŞ",
-
-            "Mevcut %":
-                row["Mevcut %"],
-
-            "Hedef %":
-                row["Hedef %"],
-
-            "İşlem %":
-                row["İşlem %"],
-
-            "İşlem Lot":
-                row["İşlem Lot"],
-
-            "İşlem Tutarı":
-                abs(
-                    row["İşlem Tutarı"]
-                ),
-
-            "Sonraki %":
-                row["Sonraki %"],
-
-            "Karar":
-                row["Karar"]
-
-        })
-
-
-    summary_df = pd.DataFrame(
-        summary_rows
-    )
-
-
-    # --------------------------------------------------------
-    # ÖNCE SATIŞLAR, SONRA ALIMLAR
-    # --------------------------------------------------------
-
-    summary_df["_order"] = (
-        summary_df["İşlem"]
-        .map({
-            "🔴 SATIŞ": 0,
-            "🟢 ALIM": 1
-        })
-        .fillna(9)
-    )
-
-    summary_df = (
-        summary_df
-        .sort_values(
-            [
-                "_order",
-                "İşlem Tutarı"
-            ],
-            ascending=[
-                True,
-                False
-            ]
-        )
-        .drop(
-            columns="_order"
-        )
-    )
-
-
-    # --------------------------------------------------------
-    # GÖSTER
-    # --------------------------------------------------------
-
-    st.dataframe(
-
-        summary_df.style.format(
-
-            {
-
-                "Mevcut %":
-                    "{:.2f}",
-
-                "Hedef %":
-                    "{:.1f}",
-
-                "İşlem %":
-                    "{:+.1f}",
-
-                "İşlem Tutarı":
-                    "{:,.2f}",
-
-                "Sonraki %":
-                    "{:.2f}"
-
-            },
-
-            na_rep="-"
-
-        ),
-
-        use_container_width=True,
-
-        hide_index=True
-
-    )
-
-# ============================================================
-# ANA TABLO
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "📊 HİSSE BAZLI KARAR TABLOSU"
-)
-
-
-main_columns = [
-
-    "Hisse",
-    "Fiyat",
-    "Günlük %",
-    "Mevcut %",
-    "Kısa Vade",
-    "Orta Vade",
-    "Uzun Vade",
-    "Genel Skor",
-    "Kalite",
-    "Hedef %",
-    "İşlem %",
-    "İşlem Lot",
-    "Lot Kararı / Nedeni",
-    "İşlem Tutarı",
-    "Sonraki Lot",
-    "Sonraki %",
-    "Alım Teyidi",
-    "Satış Teyidi",
-    "Düşüş Sinyali",
-    "Teyit Skoru",
-    "Karar",
-    "Karar Vadesi",
-    "Güven"
-
-]
-
-
-display_df = result_df[
-    main_columns
-].copy()
-
-
-format_dict = {
-
-    "Fiyat":
-        "{:.2f}",
-
-    "Günlük %":
-        "{:+.2f}",
-
-    "Mevcut %":
-        "{:.2f}",
-
-    "Kısa Vade":
-        "{:.1f}",
-
-    "Orta Vade":
-        "{:.1f}",
-
-    "Uzun Vade":
-        "{:.1f}",
-
-    "Genel Skor":
-        "{:.1f}",
-
-    "Hedef %":
-        "{:.1f}",
-
-    "İşlem %":
-        "{:+.1f}",
-
-    "İşlem Tutarı":
-        "{:,.2f}",
-
-    "Sonraki Lot":
-        "{:.0f}",
-
-    "Sonraki %":
-        "{:.2f}"
-
-}
-
-
-st.dataframe(
-
-    display_df.style.format(
-        format_dict,
-        na_rep="-"
-    ),
-
+benchmark = download_benchmark()
+regime = market_regime(benchmark)
+
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("BIST Evreni", len(universe))
+m2.metric("Piyasa Rejimi", regime["label"])
+m3.metric("Piyasa Skoru", "—" if not np.isfinite(regime["score"]) else f"{regime['score']:.1f}")
+m4.metric("BIST 20G", "—" if not np.isfinite(regime["ret20"]) else f"%{regime['ret20']:.2f}")
+
+if st.button(
+    "⚡ PROFESYONEL GÜNLÜK TRADE TARAMASINI BAŞLAT",
+    type="primary",
     use_container_width=True,
+    key="trade_v3_start",
+):
+    progress = st.progress(0)
+    status = st.empty()
+    status.info("Günlük fiyat verileri toplu indiriliyor…")
+    daily_map = download_daily(tuple(universe))
+    if not daily_map:
+        st.error("Yahoo Finance günlük verileri alınamadı.")
+        st.stop()
 
-    hide_index=True,
+    counters = {"veri": 0, "fiyat": 0, "likidite": 0, "havuz": 0, "intra": 0}
+    results: list[dict[str, Any]] = []
+    for index, ticker in enumerate(universe, start=1):
+        raw = daily_map.get(yahoo_symbol(ticker))
+        if raw is None:
+            continue
+        counters["veri"] += 1
+        result, reason = analyze_stock(
+            ticker, raw, regime["ret20"], regime,
+            float(min_liquidity), float(min_price), float(minimum_rr)
+        )
+        if result is None:
+            if reason in counters:
+                counters[reason] += 1
+            continue
+        if float(result["Ana Skor"]) >= float(pool_score):
+            results.append(result)
+            counters["havuz"] += 1
+        progress.progress(min(70, int(index / max(len(universe), 1) * 70)))
 
-    height=600
+    if not results:
+        progress.empty()
+        status.empty()
+        st.warning("Seçili eşiklerde trade havuzu oluşmadı. Havuz skorunu 3–5 puan azaltabilirsiniz.")
+        st.stop()
 
-)
+    pool = pd.DataFrame(results).sort_values("Ana Skor", ascending=False).reset_index(drop=True)
+    check_count = min(MAX_INTRADAY_CHECK, len(pool))
+    for count in range(check_count):
+        ticker = str(pool.at[count, "Hisse"])
+        status.info(f"15 dakikalık giriş teyidi: {ticker} ({count + 1}/{check_count})")
+        updated = finalize(pool.loc[count].to_dict(), regime, float(minimum_rr))
+        for column, value in updated.items():
+            pool.at[count, column] = value
+        if pd.notna(updated["15D Skor"]):
+            counters["intra"] += 1
+        progress.progress(70 + int((count + 1) / max(check_count, 1) * 30))
 
+    # 15D kontrol edilmeyenler: ana skora gore izleme karari.
+    for index in range(check_count, len(pool)):
+        score = float(pool.at[index, "Ana Skor"])
+        pool.at[index, "Karar"] = "🔵 C SINIFI / İZLE" if score >= 58 else "⚪ İŞLEM YOK"
 
-# ============================================================
-# UYGULANABİLİR İŞLEMLER
-# ============================================================
+    pool = pool.sort_values(["Final Skor", "R/R"], ascending=[False, False]).reset_index(drop=True)
+    progress.empty()
+    status.empty()
 
-st.divider()
+    a_count = int(pool["Karar"].eq("🟢 A SINIFI TRADE").sum())
+    b_count = int(pool["Karar"].eq("🟡 B SINIFI / TEYİTLE GİR").sum())
+    c_count = int(pool["Karar"].eq("🔵 C SINIFI / İZLE").sum())
+    d1, d2, d3, d4, d5 = st.columns(5)
+    d1.metric("Günlük Veri", counters["veri"])
+    d2.metric("Trade Havuzu", counters["havuz"])
+    d3.metric("🟢 A", a_count)
+    d4.metric("🟡 B", b_count)
+    d5.metric("🔵 C", c_count)
 
-st.subheader(
-    "💰 UYGULANABİLİR İŞLEMLER"
-)
-
-
-trade_df = result_df[
-    result_df[
-        "İşlem %"
-    ].abs() > 0
-].copy()
-
-
-if trade_df.empty:
-
-    st.success(
-        "Şu anda sistem gerçek bir işlem gerektirmiyor."
-    )
-
-else:
-
-    st.dataframe(
-
-        trade_df[
-
-            [
-
-                "Hisse",
-                "Fiyat",
-                "Mevcut %",
-                "Hedef %",
-                "İşlem %",
-                "İşlem Lot",
-                "Lot Kararı / Nedeni",
-                "İşlem Tutarı",
-                "Sonraki Lot",
-                "Sonraki %",
-                "Alım Teyidi",
-                "Satış Teyidi",
-                "Düşüş Sinyali",
-                "Teyit Skoru",
-                "Karar",
-                "Karar Vadesi",
-                "Güven"
-
-            ]
-
-        ].style.format(
-
-            {
-
-                "Fiyat":
-                    "{:.2f}",
-
-                "Mevcut %":
-                    "{:.2f}",
-
-                "Hedef %":
-                    "{:.1f}",
-
-                "İşlem %":
-                    "{:+.1f}",
-
-                "İşlem Tutarı":
-                    "{:,.2f}",
-
-                "Sonraki Lot":
-                    "{:.0f}",
-
-                "Sonraki %":
-                    "{:.2f}"
-
-            },
-
-            na_rep="-"
-
-        ),
-
-        use_container_width=True,
-
-        hide_index=True
-
-    )
-
-
-# ============================================================
-# KARAR GEREKÇELERİ
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "🔎 KARAR GEREKÇELERİ"
-)
-
-
-for _, row in result_df.iterrows():
-
-    symbol = row[
-        "Hisse"
+    st.subheader("🏆 En İyi Trade Adayları")
+    display_columns = [
+        "Hisse", "Fiyat", "Setup", "Final Skor", "Trend", "Göreceli Güç",
+        "RS 20G %", "ADX", "RSI", "Hacim Oranı", "15D Skor", "15D VWAP",
+        "Stop", "Hedef", "R/R", "Risk %", "Karar",
     ]
-
-    decision = row[
-        "Karar"
-    ]
-
-    with st.expander(
-
-        f"{symbol} — "
-        f"{decision} — "
-        f"{row['Karar Vadesi']}"
-
-    ):
-
-        c1, c2, c3, c4, c5 = st.columns(5)
-
-        c1.metric(
-            "Fiyat",
-            f"{row['Fiyat']:.2f}"
-        )
-
-        c2.metric(
-            "Kısa Vade",
-            f"{row['Kısa Vade']:.1f}"
-        )
-
-        c3.metric(
-            "Orta Vade",
-            f"{row['Orta Vade']:.1f}"
-        )
-
-        c4.metric(
-            "Uzun Vade",
-            f"{row['Uzun Vade']:.1f}"
-        )
-
-        c5.metric(
-            "Genel",
-            f"{row['Genel Skor']:.1f}"
-        )
-
-        st.markdown(
-            "### 🛡️ İŞLEM TEYİDİ"
-        )
-
-        tc1, tc2, tc3, tc4 = st.columns(4)
-
-        tc1.metric(
-            "Alım Teyidi",
-            row["Alım Teyidi"]
-        )
-
-        tc2.metric(
-            "Satış Teyidi",
-            row["Satış Teyidi"]
-        )
-
-        tc3.metric(
-            "Düşüş Sinyali",
-            row["Düşüş Sinyali"]
-        )
-
-        tc4.metric(
-            "Teyit",
-            row["Teyit Skoru"]
-        )
-
-        st.markdown(
-            f"### 🎯 {decision}"
-        )
-
-        st.write(
-            f"**Karar vadesi:** "
-            f"{row['Karar Vadesi']}"
-        )
-
-        st.write(
-            f"**Gerekçe:** "
-            f"{row['Gerekçe']}"
-        )
-
-        # ----------------------------------------------------
-        # İŞLEM
-        # ----------------------------------------------------
-
-        st.markdown(
-            "### 💰 İşlem Planı"
-        )
-
-        c1, c2, c3, c4 = st.columns(4)
-
-        c1.metric(
-            "Mevcut Ağırlık",
-            f"%{row['Mevcut %']:.2f}"
-        )
-
-        c2.metric(
-            "Hedef Ağırlık",
-            f"%{row['Hedef %']:.1f}"
-        )
-
-        c3.metric(
-            "Önerilen İşlem",
-            f"%{row['İşlem %']:+.1f}"
-        )
-
-        c4.metric(
-            "İşlem Lot",
-            row["İşlem Lot"]
-        )
-
-        st.write(
-            f"**İşlem fiyatı:** "
-            f"{row['Fiyat']:.2f} TL"
-        )
-
-        st.write(
-            f"**İşlem tutarı:** "
-            f"{row['İşlem Tutarı']:,.2f} TL"
-        )
-
-        st.write(
-            f"**İşlem sonrası lot:** "
-            f"{row['Sonraki Lot']:.0f}"
-        )
-
-        st.write(
-            f"**İşlem sonrası ağırlık:** "
-            f"%{row['Sonraki %']:.2f}"
-        )
-
-        # ----------------------------------------------------
-        # ALT KATMAN
-        # ----------------------------------------------------
-
-        st.markdown(
-            "### 🔬 Analizin Alt Katmanları"
-        )
-
-        c1, c2, c3, c4, c5 = st.columns(5)
-
-        c1.metric(
-            "Fundamental",
-            f"{row['Fundamental']:.1f}"
-        )
-
-        c2.metric(
-            "Financial",
-            f"{row['Financial']:.1f}"
-        )
-
-        c3.metric(
-            "Sektör",
-            f"{row['Sektör']:.1f}"
-        )
-
-        c4.metric(
-            "Piyasa",
-            f"{row['Piyasa']:.1f}"
-        )
-
-        c5.metric(
-            "Güven",
-            f"{row['Güven Skoru']:.1f}"
-        )
-
-        c1, c2, c3 = st.columns(3)
-
-        c1.metric(
-            "RSI",
-            f"{row['RSI']:.1f}"
-        )
-
-        c2.metric(
-            "20G Momentum",
-            f"{row['Momentum 20G']:+.1f}%"
-        )
-
-        c3.metric(
-            "60G Momentum",
-            f"{row['Momentum 60G']:+.1f}%"
-        )
-
-        st.write(
-            f"**Hacim oranı:** "
-            f"{row['Hacim Oranı']:.2f}x"
-        )
-
-
-# ============================================================
-# VADE TABLOLARI
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "📅 VADE BAZLI GÖRÜNÜM"
-)
-
-
-tab1, tab2, tab3 = st.tabs(
-
-    [
-
-        "⚡ Kısa Vade — 1 Hafta",
-
-        "📅 Orta Vade — 1–3 Ay",
-
-        "🏦 Uzun Vade — 6 Ay–3 Yıl"
-
-    ]
-
-)
-
-
-# ============================================================
-# KISA
-# ============================================================
-
-with tab1:
-
     st.dataframe(
-
-        result_df[
-
-            [
-
-                "Hisse",
-                "Fiyat",
-                "Kısa Vade",
-                "RSI",
-                "Momentum 20G",
-                "Hacim Oranı",
-                "Alım Teyidi",
-                "Satış Teyidi",
-                "Düşüş Sinyali",
-                "Karar",
-                "Karar Vadesi"
-
-            ]
-
-        ].sort_values(
-
-            "Kısa Vade",
-
-            ascending=False
-
-        ),
-
+        pool.head(int(max_results))[display_columns],
         use_container_width=True,
-
-        hide_index=True
-
+        hide_index=True,
+        column_config={
+            "Fiyat": st.column_config.NumberColumn(format="%.2f"),
+            "Stop": st.column_config.NumberColumn(format="%.2f"),
+            "Hedef": st.column_config.NumberColumn(format="%.2f"),
+            "Final Skor": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f"),
+            "Trend": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f"),
+            "Göreceli Güç": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f"),
+        },
     )
 
-
-# ============================================================
-# ORTA
-# ============================================================
-
-with tab2:
-
-    st.dataframe(
-
-        result_df[
-
-            [
-
-                "Hisse",
-                "Fiyat",
-                "Orta Vade",
-                "Momentum 60G",
-                "Fundamental",
-                "Financial",
-                "Karar",
-                "Karar Vadesi"
-
-            ]
-
-        ].sort_values(
-
-            "Orta Vade",
-
-            ascending=False
-
-        ),
-
-        use_container_width=True,
-
-        hide_index=True
-
-    )
-
-
-# ============================================================
-# UZUN
-# ============================================================
-
-with tab3:
-
-    st.dataframe(
-
-        result_df[
-
-            [
-
-                "Hisse",
-                "Fiyat",
-                "Uzun Vade",
-                "Fundamental",
-                "Financial",
-                "Sektör",
-                "Kalite",
-                "Karar",
-                "Karar Vadesi"
-
-            ]
-
-        ].sort_values(
-
-            "Uzun Vade",
-
-            ascending=False
-
-        ),
-
-        use_container_width=True,
-
-        hide_index=True
-
-    )
-
-
-# ============================================================
-# PORTFÖY YOĞUNLUK KONTROLÜ
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "⚠️ PORTFÖY YOĞUNLUK KONTROLÜ"
-)
-
-
-if not result_df.empty:
-
-    max_index = (
-        result_df[
-            "Mevcut %"
-        ].idxmax()
-    )
-
-    max_stock = (
-        result_df.loc[
-            max_index,
-            "Hisse"
-        ]
-    )
-
-    max_weight = (
-        result_df.loc[
-            max_index,
-            "Mevcut %"
-        ]
-    )
-
-    if max_weight >= 25:
-
-        st.error(
-            f"🔴 {max_stock} portföyün "
-            f"%{max_weight:.1f}'ini oluşturuyor. "
-            f"Tek hisse yoğunluğu çok yüksek."
-        )
-
-    elif max_weight >= 20:
-
-        st.warning(
-            f"⚠️ {max_stock} portföyün "
-            f"%{max_weight:.1f}'ini oluşturuyor. "
-            f"Tek hisse yoğunluğu yüksek."
-        )
-
-    elif max_weight >= 15:
-
-        st.info(
-            f"ℹ️ En yüksek pozisyon "
-            f"{max_stock}: "
-            f"%{max_weight:.1f}"
-        )
-
+    st.subheader("🟢 İşlem Planı Oluşanlar")
+    actionable = pool[pool["Karar"].isin(["🟢 A SINIFI TRADE", "🟡 B SINIFI / TEYİTLE GİR"])].copy()
+    if actionable.empty:
+        st.info("Bugün A veya B sınıfı işlem planı oluşmadı. İşlem yapmamak da profesyonel bir karardır.")
     else:
-
-        st.success(
-            "✅ Tek hisse yoğunluğu kontrol altında."
+        st.dataframe(
+            actionable.head(int(max_results))[
+                ["Hisse", "Setup", "Fiyat", "Stop", "Hedef", "R/R", "Final Skor", "15D VWAP", "Karar"]
+            ],
+            use_container_width=True,
+            hide_index=True,
         )
 
+    with st.expander("🔬 Ayrıntılı teşhis ve uyarılar"):
+        st.dataframe(
+            pool.head(int(max_results))[
+                ["Hisse", "Ana Skor", "Ceza", "Uyarılar", "ATR %", "EMA9 Uzaklık %", "5G %", "20G %", "Likidite"]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.caption(
+            f"Tarama zamanı: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')} | "
+            f"Gerçek 15D veri: {counters['intra']}/{check_count}. "
+            "15D veri yoksa sisteme yapay 50 puan eklenmez."
+        )
 
-# ============================================================
-# KARAR DAĞILIMI
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "📌 KARAR DAĞILIMI"
+st.warning(
+    "Bu ekran otomatik karar destek aracıdır; yatırım tavsiyesi değildir. "
+    "Emir vermeden önce KAP haberleri, açılış gap'i, devre kesici ve güncel kademe kontrol edilmelidir."
 )
-
-
-decision_counts = (
-    result_df[
-        "Karar"
-    ]
-    .value_counts()
-)
-
-
-st.dataframe(
-    decision_counts
-    .rename(
-        "Adet"
-    )
-    .to_frame(),
-    use_container_width=True
-)
-
-
-# ============================================================
-# CSV
-# ============================================================
-
-st.divider()
-
-csv_data = (
-    result_df
-    .to_csv(
-        index=False
-    )
-    .encode(
-        "utf-8-sig"
-    )
-)
-
-
-st.download_button(
-
-    "⬇️ Karar Raporunu CSV Olarak İndir",
-
-    data=csv_data,
-
-    file_name=(
-        "BIST_AI_PRO_Hisse_Bazli_Karar.csv"
-    ),
-
-    mime="text/csv"
-
-)
-
-
-# ============================================================
-# TEYİT MANTIĞI NOTU
-# ============================================================
-
-with st.expander(
-    "🛡️ Alım / Satış teyidi nasıl çalışıyor?"
-):
-
-    st.markdown(
-        """
-### 🟢 Alım Teyidi
-
-Alım teyidi 6 teknik koşul üzerinden hesaplanır. En az 4 koşul
-sağlanmalı ve kısa/orta vade skorları da yeterli seviyede olmalıdır.
-
-### 🔴 Düşüş Sinyali
-
-Düşüş sinyali satış teyidinden daha erken çalışan bir uyarıdır.
-En az 3 teknik bozulma veya teknik breakdown skoru 3 ve üzeri olduğunda
-sistem uyarı verir. Bu durum **tek başına satış emri değildir**.
-
-### 🔴 Satış Teyidi
-
-6 teknik satış koşulundan en az 4'ünün aynı anda oluşması ve kısa/orta
-vade yapısının da zayıflaması gerekir. Satış işlemleri esas olarak bu
-teyide bağlanmıştır.
-
-### ⛔ Portföyde olmayan hisse
-
-Düşüş sinyali bulunan ve portföyde olmayan hisse için sistem yeni alım
-yaptırmaz. Önce düşüş sinyalinin ortadan kalkması ve alım teyidinin\noluşması beklenir.
-
-### 🟢 A kalite şirket
-
-A kalite bir şirkette kısa vadeli düşüş tek başına satış gerekçesi
-değildir. Satış teyidi oluşmadıkça sistem öncelikle **TUT / TEYİT BEKLE**
-uygulamasını kullanır.
-
-### %100 ÇIKIŞ
-
-%100 çıkış için uzun vadeli, temel, finansal ve teknik yapının ciddi
-biçimde bozulmasına ek olarak satış teyidi de zorunludur.
-"""
-    )
-
-
-# ============================================================
-# SİSTEM MANTIĞI
-# ============================================================
-
-with st.expander(
-    "ℹ️ Karar sisteminin çalışma mantığı"
-):
-
-    st.markdown(
-        """
-## ⚡ Kısa Vade — 1 Hafta
-
-Kullanılan ana kriterler:
-
-- EMA9
-- EMA20
-- MA5
-- RSI
-- 5G momentum
-- 20G momentum
-- Hacim oranı
-- 5 günlük yukarı/aşağı kesişim
-
-**Amaç:** Alım/satım zamanlamasını belirlemek.
-
-Kısa vade güçlü olduğunda bu tek başına
-uzun vadeli bir şirketi satma gerekçesi değildir.
-
----
-
-## 📅 Orta Vade — 1–3 Ay
-
-Kullanılan kriterler:
-
-- MA20
-- MA50
-- MA100
-- EMA trendi
-- 20G momentum
-- 60G momentum
-- Fundamental
-- Financial
-- Sektör
-- Piyasa
-
-**Amaç:** Pozisyonun korunması veya kademeli değiştirilmesi.
-
----
-
-## 🏦 Uzun Vade — 6 Ay–3 Yıl
-
-Kullanılan kriterler:
-
-- Fundamental
-- Financial
-- MA50
-- MA100
-- MA200
-- 60G momentum
-- 120G momentum
-- Sektör
-- Piyasa
-
-**Amaç:** Şirketin yatırım kalitesini belirlemek.
-
----
-
-## 🛡️ Kaliteli Şirket Koruması
-
-A kalite şirketlerde:
-
-- kısa vadeli düşüş = otomatik satış değildir
-- RSI zayıflığı = otomatik satış değildir
-- tek bir teknik sinyal = çıkış değildir
-
-Uzun vadeli yapı güçlü kaldığı sürece
-sistem önce **TUT / TEYİT BEKLE** yaklaşımını kullanır.
-
----
-
-## 🔴 %100 ÇIKIŞ
-
-%100 çıkış yalnızca:
-
-- uzun vadeli yapı ciddi bozulmuş
-- temel yapı ciddi bozulmuş
-- finansal yapı ciddi bozulmuş
-- teknik yapı da ciddi bozulmuş
-
-olduğunda devreye girer.
-
-Yani yalnızca fiyat düştü diye
-sistem bir hisseyi %100 satmaz.
-
----
-
-## 💰 İşlem %
-
-İşlem % artık hedef ağırlık ile doğrudan
-karıştırılmamaktadır.
-
-Örneğin:
-
-600 EREGL
-
-ve sistem:
-
-**%10 azalt**
-
-derse:
-
-600 × %10 =
-
-**60 lot satış**
-
-önerilir.
-
----
-
-## 📌 Önemli
-
-**Hedef %**, hissenin portföyde bulunmasını
-istediğimiz yaklaşık uzun vadeli ağırlıktır.
-
-**İşlem %**, şu anda yapılması önerilen
-işlemdir.
-
-İkisi aynı şey değildir.
-
-Bu ayrım özellikle kaliteli şirketlerde
-gereksiz büyük satışları önlemek için
-bilinçli olarak yapılmıştır.
-"""
-    )

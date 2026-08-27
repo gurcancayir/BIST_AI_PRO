@@ -4,11 +4,16 @@
 #
 # TEK KRİPTO ANALİZ MOTORU
 #
-# VERİ KAYNAĞI:
-#   Binance TR
+# VERİ KAYNAKLARI:
+#   1. Binance TR
+#   2. Binance Global Spot
 #
-# PARİTE:
-#   TRY
+# PARİTELER:
+#   Binance TR  -> TRY
+#   Binance     -> USDT
+#
+# GLOBAL USDT COINLER:
+#   TRY karşılığı USDT/TRY kuru ile hesaplanır.
 #
 # TIMEFRAME:
 #   15m
@@ -32,6 +37,7 @@
 import requests
 import pandas as pd
 import numpy as np
+
 from datetime import datetime
 
 
@@ -39,20 +45,54 @@ from datetime import datetime
 # AYARLAR
 # ============================================================
 
+# ------------------------------------------------------------
+# BINANCE TR
+# ------------------------------------------------------------
+
 BINANCE_TR_BASE_URL = "https://www.binance.tr"
 
-# Market data için
 BINANCE_TR_API_URL = "https://api.binance.me"
+
+
+# ------------------------------------------------------------
+# BINANCE GLOBAL
+# ------------------------------------------------------------
+
+BINANCE_GLOBAL_API_URL = "https://api.binance.com"
+
+
+# ------------------------------------------------------------
+# GENEL
+# ------------------------------------------------------------
 
 INTERVAL = "15m"
 
 KLINE_LIMIT = 200
 
-# Minimum 24 saatlik TRY hacmi
+
+# ============================================================
+# LİKİDİTE
+# ============================================================
+
 MIN_VOLUME_TRY = 20_000_000
 
-# Analiz edilecek maksimum coin
+
+# ============================================================
+# ANALİZ LİMİTİ
+# ============================================================
+
 MAX_ANALYSIS_COINS = 80
+
+
+# ============================================================
+# GLOBAL COINLERDE ÖNCELİK VERİLECEKLER
+# ============================================================
+
+PRIORITY_GLOBAL_COINS = {
+
+    "TUT",
+
+}
 
 
 # ============================================================
@@ -60,6 +100,7 @@ MAX_ANALYSIS_COINS = 80
 # ============================================================
 
 EXCLUDED_COINS = {
+
     "USDT",
     "USDC",
     "FDUSD",
@@ -67,6 +108,7 @@ EXCLUDED_COINS = {
     "DAI",
     "EUR",
     "TRY",
+
 }
 
 
@@ -77,8 +119,13 @@ EXCLUDED_COINS = {
 SESSION = requests.Session()
 
 SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json",
+
+    "User-Agent":
+        "Mozilla/5.0 Crypto AI PRO",
+
+    "Accept":
+        "application/json",
+
 })
 
 
@@ -86,13 +133,17 @@ SESSION.headers.update({
 # SAFE FLOAT
 # ============================================================
 
-def safe_float(value, default=0.0):
+def safe_float(
+    value,
+    default=0.0
+):
 
     try:
 
         value = float(value)
 
         if np.isnan(value) or np.isinf(value):
+
             return default
 
         return value
@@ -106,16 +157,32 @@ def safe_float(value, default=0.0):
 # SYMBOL NORMALIZE
 # ============================================================
 
-def normalize_symbol(symbol):
+def normalize_symbol(
+    symbol
+):
 
     if symbol is None:
+
         return ""
 
-    symbol = str(symbol).upper().strip()
+    symbol = str(
+        symbol
+    ).upper().strip()
 
-    symbol = symbol.replace("/", "")
-    symbol = symbol.replace("_", "")
-    symbol = symbol.replace("-", "")
+    symbol = symbol.replace(
+        "/",
+        ""
+    )
+
+    symbol = symbol.replace(
+        "_",
+        ""
+    )
+
+    symbol = symbol.replace(
+        "-",
+        ""
+    )
 
     return symbol
 
@@ -124,33 +191,40 @@ def normalize_symbol(symbol):
 # BASE ASSET
 # ============================================================
 
-def get_base_asset(symbol):
+def get_base_asset(
+    symbol
+):
 
-    symbol = normalize_symbol(symbol)
+    symbol = normalize_symbol(
+        symbol
+    )
 
     if symbol.endswith("TRY"):
 
         return symbol[:-3]
 
+    if symbol.endswith("USDT"):
+
+        return symbol[:-4]
+
     return ""
 
 
 # ============================================================
-# BINANCE TR - MARKET TICKER
+# USDT / TRY KURU
 # ============================================================
 
-def get_24h_ticker():
+def get_usdt_try_rate():
 
     """
-    Binance TR market verilerini alır.
-
-    TRY paritelerini döndürür.
+    USDT/TRY kurunu Binance TR'den almaya çalışır.
 
     Öncelik:
-        /api/v3/ticker/24hr
+        USDTTRY
 
-    Gerekirse:
-        /api/v1/ticker/24hr
+    Bulunamazsa:
+        47.0 gibi sabit değer KULLANILMAZ.
+        0 döndürülür.
     """
 
     endpoints = [
@@ -174,36 +248,168 @@ def get_24h_ticker():
                 timeout=15
             )
 
-            # ------------------------------------------------
-            # HTTP
-            # ------------------------------------------------
+            if response.status_code != 200:
+
+                continue
+
+            payload = response.json()
+
+            if isinstance(
+                payload,
+                dict
+            ):
+
+                data = payload.get(
+                    "data",
+                    payload
+                )
+
+            else:
+
+                data = payload
+
+            if isinstance(
+                data,
+                dict
+            ):
+
+                data = [data]
+
+            if not isinstance(
+                data,
+                list
+            ):
+
+                continue
+
+            for item in data:
+
+                if not isinstance(
+                    item,
+                    dict
+                ):
+
+                    continue
+
+                raw_symbol = (
+
+                    item.get(
+                        "symbol"
+                    )
+
+                    or item.get(
+                        "s"
+                    )
+
+                    or ""
+
+                )
+
+                symbol = normalize_symbol(
+                    raw_symbol
+                )
+
+                if symbol != "USDTTRY":
+
+                    continue
+
+                price = safe_float(
+
+                    item.get(
+                        "lastPrice",
+                        item.get(
+                            "last",
+                            item.get(
+                                "c",
+                                0
+                            )
+                        )
+                    )
+
+                )
+
+                if price > 0:
+
+                    print(
+                        f"USDT/TRY kuru: {price:.4f}"
+                    )
+
+                    return price
+
+        except Exception as e:
+
+            print(
+                "USDT/TRY hata:",
+                e
+            )
+
+            continue
+
+    print(
+        "USDT/TRY kuru alınamadı."
+    )
+
+    return 0.0
+
+
+# ============================================================
+# BINANCE TR - MARKET TICKER
+# ============================================================
+
+def get_24h_ticker():
+
+    """
+    Binance TR market verilerini alır.
+
+    TRY paritelerini döndürür.
+    """
+
+    endpoints = [
+
+        f"{BINANCE_TR_API_URL}/api/v3/ticker/24hr",
+
+        f"{BINANCE_TR_API_URL}/api/v1/ticker/24hr",
+
+        f"{BINANCE_TR_BASE_URL}/api/v3/ticker/24hr",
+
+        f"{BINANCE_TR_BASE_URL}/api/v1/ticker/24hr",
+
+    ]
+
+    for url in endpoints:
+
+        try:
+
+            response = SESSION.get(
+                url,
+                timeout=15
+            )
 
             if response.status_code != 200:
 
                 print(
-                    f"Ticker HTTP {response.status_code}: "
-                    f"{url}"
+                    f"TR Ticker HTTP "
+                    f"{response.status_code}"
                 )
 
                 continue
 
             payload = response.json()
 
-            # ------------------------------------------------
-            # RESPONSE FORMAT
-            # ------------------------------------------------
+            if isinstance(
+                payload,
+                dict
+            ):
 
-            if isinstance(payload, dict):
+                code = payload.get(
+                    "code"
+                )
 
-                code = payload.get("code")
-
-                if code not in (None, 0, "0"):
-
-                    print(
-                        "Ticker API hatası:",
-                        code,
-                        payload.get("msg")
-                    )
+                if code not in (
+                    None,
+                    0,
+                    "0"
+                ):
 
                     continue
 
@@ -216,15 +422,17 @@ def get_24h_ticker():
 
                 data = payload
 
-            # ------------------------------------------------
-            # LIST
-            # ------------------------------------------------
-
-            if isinstance(data, dict):
+            if isinstance(
+                data,
+                dict
+            ):
 
                 data = [data]
 
-            if not isinstance(data, list):
+            if not isinstance(
+                data,
+                list
+            ):
 
                 continue
 
@@ -232,24 +440,35 @@ def get_24h_ticker():
 
             for item in data:
 
-                if not isinstance(item, dict):
+                if not isinstance(
+                    item,
+                    dict
+                ):
+
                     continue
 
-                # --------------------------------------------
-                # SYMBOL
-                # --------------------------------------------
-
                 raw_symbol = (
-                    item.get("symbol")
-                    or item.get("s")
+
+                    item.get(
+                        "symbol"
+                    )
+
+                    or item.get(
+                        "s"
+                    )
+
                     or ""
+
                 )
 
                 symbol = normalize_symbol(
                     raw_symbol
                 )
 
-                if not symbol.endswith("TRY"):
+                if not symbol.endswith(
+                    "TRY"
+                ):
+
                     continue
 
                 base_asset = get_base_asset(
@@ -257,120 +476,155 @@ def get_24h_ticker():
                 )
 
                 if not base_asset:
+
                     continue
 
                 if base_asset in EXCLUDED_COINS:
+
                     continue
 
-                # --------------------------------------------
-                # PRICE
-                # --------------------------------------------
-
                 price = safe_float(
+
                     item.get(
                         "lastPrice",
                         item.get(
                             "last",
-                            item.get("c", 0)
+                            item.get(
+                                "c",
+                                0
+                            )
                         )
                     )
+
                 )
 
-                # --------------------------------------------
-                # CHANGE
-                # --------------------------------------------
-
                 change = safe_float(
+
                     item.get(
                         "priceChangePercent",
                         item.get(
                             "priceChangePercentage",
-                            item.get("P", 0)
+                            item.get(
+                                "P",
+                                0
+                            )
                         )
                     )
+
                 )
 
-                # --------------------------------------------
-                # VOLUME
-                # --------------------------------------------
-
                 volume_base = safe_float(
+
                     item.get(
                         "volume",
-                        item.get("v", 0)
+                        item.get(
+                            "v",
+                            0
+                        )
                     )
+
                 )
 
                 quote_volume = safe_float(
+
                     item.get(
                         "quoteVolume",
-                        item.get("q", 0)
+                        item.get(
+                            "q",
+                            0
+                        )
                     )
-                )
 
-                # --------------------------------------------
-                # TRY HACİM
-                # --------------------------------------------
+                )
 
                 volume_try = quote_volume
 
                 if volume_try <= 0:
 
                     volume_try = (
-                        volume_base * price
+                        volume_base *
+                        price
                     )
-
-                # --------------------------------------------
-                # HIGH / LOW
-                # --------------------------------------------
 
                 high = safe_float(
+
                     item.get(
                         "highPrice",
-                        item.get("h", 0)
+                        item.get(
+                            "h",
+                            0
+                        )
                     )
+
                 )
 
                 low = safe_float(
+
                     item.get(
                         "lowPrice",
-                        item.get("l", 0)
+                        item.get(
+                            "l",
+                            0
+                        )
                     )
+
                 )
 
                 rows.append({
 
-                    "symbol": symbol,
+                    "symbol":
+                        symbol,
 
-                    "base_asset": base_asset,
+                    "base_asset":
+                        base_asset,
 
-                    "price_try": price,
+                    "price_try":
+                        price,
 
-                    "change_24h": change,
+                    "change_24h":
+                        change,
 
-                    "volume_try": volume_try,
+                    "volume_try":
+                        volume_try,
 
-                    "high_24h": high,
+                    "high_24h":
+                        high,
 
-                    "low_24h": low,
+                    "low_24h":
+                        low,
+
+                    "source":
+                        "BINANCE_TR",
+
+                    "analysis_symbol":
+                        symbol,
+
+                    "quote_asset":
+                        "TRY",
 
                 })
 
             if rows:
 
-                df = pd.DataFrame(rows)
+                df = pd.DataFrame(
+                    rows
+                )
 
                 df = (
                     df
                     .drop_duplicates(
-                        subset=["symbol"]
+                        subset=[
+                            "base_asset"
+                        ]
                     )
-                    .reset_index(drop=True)
+                    .reset_index(
+                        drop=True
+                    )
                 )
 
                 print(
-                    f"Binance TR ticker başarılı: "
-                    f"{len(df)} TRY parite"
+                    "Binance TR ticker "
+                    f"başarılı: {len(df)} coin"
                 )
 
                 return df
@@ -378,70 +632,628 @@ def get_24h_ticker():
         except Exception as e:
 
             print(
-                f"Ticker endpoint hatası: "
-                f"{url} -> {e}"
+                "TR ticker endpoint "
+                f"hatası: {e}"
             )
 
             continue
 
     print(
-        "Binance TR'den TRY piyasa verisi alınamadı."
+        "Binance TR market verisi alınamadı."
     )
 
     return pd.DataFrame()
 
 
 # ============================================================
-# BINANCE TR - TRY EVRENİ
+# BINANCE GLOBAL - EXCHANGE INFO
+# ============================================================
+
+def get_global_spot_symbols():
+
+    """
+    Binance Global Spot'taki aktif USDT
+    paritelerini bulur.
+    """
+
+    url = (
+        f"{BINANCE_GLOBAL_API_URL}"
+        "/api/v3/exchangeInfo"
+    )
+
+    try:
+
+        response = SESSION.get(
+            url,
+            timeout=20
+        )
+
+        if response.status_code != 200:
+
+            print(
+                "Global exchangeInfo HTTP:",
+                response.status_code
+            )
+
+            return []
+
+        payload = response.json()
+
+        symbols = payload.get(
+            "symbols",
+            []
+        )
+
+        result = []
+
+        for item in symbols:
+
+            if not isinstance(
+                item,
+                dict
+            ):
+
+                continue
+
+            symbol = normalize_symbol(
+                item.get(
+                    "symbol"
+                )
+            )
+
+            status = str(
+                item.get(
+                    "status",
+                    ""
+                )
+            ).upper()
+
+            quote_asset = str(
+                item.get(
+                    "quoteAsset",
+                    ""
+                )
+            ).upper()
+
+            base_asset = str(
+                item.get(
+                    "baseAsset",
+                    ""
+                )
+            ).upper()
+
+            if status != "TRADING":
+
+                continue
+
+            if quote_asset != "USDT":
+
+                continue
+
+            if not symbol.endswith(
+                "USDT"
+            ):
+
+                continue
+
+            if base_asset in EXCLUDED_COINS:
+
+                continue
+
+            result.append({
+
+                "symbol":
+                    symbol,
+
+                "base_asset":
+                    base_asset,
+
+                "quote_asset":
+                    "USDT",
+
+            })
+
+        print(
+            "Binance Global aktif USDT "
+            f"parite: {len(result)}"
+        )
+
+        return result
+
+    except Exception as e:
+
+        print(
+            "Global exchangeInfo hata:",
+            e
+        )
+
+        return []
+
+
+# ============================================================
+# BINANCE GLOBAL - 24H TICKER
+# ============================================================
+
+def get_global_24h_ticker():
+
+    """
+    Binance Global USDT ticker verilerini alır.
+    """
+
+    url = (
+        f"{BINANCE_GLOBAL_API_URL}"
+        "/api/v3/ticker/24hr"
+    )
+
+    try:
+
+        response = SESSION.get(
+            url,
+            timeout=20
+        )
+
+        if response.status_code != 200:
+
+            print(
+                "Global ticker HTTP:",
+                response.status_code
+            )
+
+            return pd.DataFrame()
+
+        payload = response.json()
+
+        if not isinstance(
+            payload,
+            list
+        ):
+
+            return pd.DataFrame()
+
+        rows = []
+
+        for item in payload:
+
+            if not isinstance(
+                item,
+                dict
+            ):
+
+                continue
+
+            symbol = normalize_symbol(
+                item.get(
+                    "symbol",
+                    ""
+                )
+            )
+
+            if not symbol.endswith(
+                "USDT"
+            ):
+
+                continue
+
+            base_asset = get_base_asset(
+                symbol
+            )
+
+            if not base_asset:
+
+                continue
+
+            if base_asset in EXCLUDED_COINS:
+
+                continue
+
+            price_usdt = safe_float(
+
+                item.get(
+                    "lastPrice",
+                    0
+                )
+
+            )
+
+            if price_usdt <= 0:
+
+                continue
+
+            change = safe_float(
+
+                item.get(
+                    "priceChangePercent",
+                    0
+                )
+
+            )
+
+            volume_usdt = safe_float(
+
+                item.get(
+                    "quoteVolume",
+                    0
+                )
+
+            )
+
+            high_usdt = safe_float(
+
+                item.get(
+                    "highPrice",
+                    0
+                )
+
+            )
+
+            low_usdt = safe_float(
+
+                item.get(
+                    "lowPrice",
+                    0
+                )
+
+            )
+
+            rows.append({
+
+                "symbol":
+                    f"{base_asset}TRY",
+
+                "analysis_symbol":
+                    symbol,
+
+                "base_asset":
+                    base_asset,
+
+                "price_usdt":
+                    price_usdt,
+
+                "change_24h":
+                    change,
+
+                "volume_usdt":
+                    volume_usdt,
+
+                "high_usdt":
+                    high_usdt,
+
+                "low_usdt":
+                    low_usdt,
+
+                "source":
+                    "BINANCE_GLOBAL",
+
+                "quote_asset":
+                    "USDT",
+
+            })
+
+        if not rows:
+
+            return pd.DataFrame()
+
+        df = pd.DataFrame(
+            rows
+        )
+
+        return df
+
+    except Exception as e:
+
+        print(
+            "Global ticker hata:",
+            e
+        )
+
+        return pd.DataFrame()
+
+
+# ============================================================
+# GLOBAL COINLERİ TRY'YE ÇEVİR
+# ============================================================
+
+def convert_global_to_try(
+    df,
+    usdt_try
+):
+
+    if df is None:
+
+        return pd.DataFrame()
+
+    if df.empty:
+
+        return pd.DataFrame()
+
+    if usdt_try <= 0:
+
+        print(
+            "Global coinler TRY'ye "
+            "çevrilemedi: USDT/TRY yok."
+        )
+
+        return pd.DataFrame()
+
+    result = df.copy()
+
+    result["price_try"] = (
+
+        pd.to_numeric(
+            result["price_usdt"],
+            errors="coerce"
+        )
+        .fillna(0)
+        *
+        usdt_try
+
+    )
+
+    result["volume_try"] = (
+
+        pd.to_numeric(
+            result["volume_usdt"],
+            errors="coerce"
+        )
+        .fillna(0)
+        *
+        usdt_try
+
+    )
+
+    result["high_24h"] = (
+
+        pd.to_numeric(
+            result["high_usdt"],
+            errors="coerce"
+        )
+        .fillna(0)
+        *
+        usdt_try
+
+    )
+
+    result["low_24h"] = (
+
+        pd.to_numeric(
+            result["low_usdt"],
+            errors="coerce"
+        )
+        .fillna(0)
+        *
+        usdt_try
+
+    )
+
+    return result[[
+        "symbol",
+        "analysis_symbol",
+        "base_asset",
+        "price_try",
+        "change_24h",
+        "volume_try",
+        "high_24h",
+        "low_24h",
+        "source",
+        "quote_asset",
+    ]].copy()
+
+
+# ============================================================
+# BİRLEŞİK KRİPTO EVRENİ
+# ============================================================
+
+def get_all_crypto_universe():
+
+    """
+    Binance TR + Binance Global birleşik evren.
+
+    Öncelik:
+        1. Binance TR TRY
+        2. Global USDT
+
+    Aynı coin her iki yerde varsa
+    Binance TR tercih edilir.
+    """
+
+    print()
+    print(
+        "=========================================="
+    )
+    print(
+        "CRYPTO AI PRO - BİRLEŞİK EVREN"
+    )
+    print(
+        "=========================================="
+    )
+
+    # --------------------------------------------------------
+    # TR
+    # --------------------------------------------------------
+
+    tr_df = get_24h_ticker()
+
+    # --------------------------------------------------------
+    # USDT/TRY
+    # --------------------------------------------------------
+
+    usdt_try = get_usdt_try_rate()
+
+    # --------------------------------------------------------
+    # GLOBAL
+    # --------------------------------------------------------
+
+    global_df = get_global_24h_ticker()
+
+    global_try = convert_global_to_try(
+        global_df,
+        usdt_try
+    )
+
+    # --------------------------------------------------------
+    # GLOBAL + TR
+    # --------------------------------------------------------
+
+    frames = []
+
+    if not tr_df.empty:
+
+        frames.append(
+            tr_df
+        )
+
+    if not global_try.empty:
+
+        frames.append(
+            global_try
+        )
+
+    if not frames:
+
+        print(
+            "Birleşik evren boş."
+        )
+
+        return pd.DataFrame()
+
+    combined = pd.concat(
+        frames,
+        ignore_index=True
+    )
+
+    # --------------------------------------------------------
+    # TR ÖNCELİKLİ
+    # --------------------------------------------------------
+
+    combined["_source_priority"] = (
+        combined["source"]
+        .map({
+            "BINANCE_TR": 0,
+            "BINANCE_GLOBAL": 1,
+        })
+        .fillna(9)
+    )
+
+    combined = (
+
+        combined
+        .sort_values(
+            [
+                "base_asset",
+                "_source_priority",
+                "volume_try",
+            ],
+            ascending=[
+                True,
+                True,
+                False,
+            ]
+        )
+
+    )
+
+    # Aynı coin varsa TR kalır.
+    combined = (
+
+        combined
+        .drop_duplicates(
+            subset=[
+                "base_asset"
+            ],
+            keep="first"
+        )
+
+        .drop(
+            columns=[
+                "_source_priority"
+            ],
+            errors="ignore"
+        )
+
+        .sort_values(
+            "volume_try",
+            ascending=False
+        )
+
+        .reset_index(
+            drop=True
+        )
+
+    )
+
+    print(
+        f"TR coin sayısı: "
+        f"{len(tr_df)}"
+    )
+
+    print(
+        f"Global coin sayısı: "
+        f"{len(global_try)}"
+    )
+
+    print(
+        f"Birleşik coin sayısı: "
+        f"{len(combined)}"
+    )
+
+    # --------------------------------------------------------
+    # TUT KONTROL
+    # --------------------------------------------------------
+
+    tut = combined[
+        combined["base_asset"]
+        == "TUT"
+    ]
+
+    if not tut.empty:
+
+        print(
+            "✅ TUT birleşik evrende bulundu."
+        )
+
+        print(
+            tut[
+                [
+                    "base_asset",
+                    "price_try",
+                    "change_24h",
+                    "volume_try",
+                    "source",
+                    "analysis_symbol",
+                ]
+            ]
+            .to_string(
+                index=False
+            )
+        )
+
+    else:
+
+        print(
+            "⚠️ TUT birleşik evrende bulunamadı."
+        )
+
+    return combined
+
+
+# ============================================================
+# GERİYE DÖNÜK UYUMLULUK
 # ============================================================
 
 def get_all_try_universe():
 
     """
-    TRY evrenini doğrudan ticker verisinden oluşturur.
+    Eski fonksiyon adı korunuyor.
 
-    Böylece /common/symbols endpointine
-    bağımlılık ortadan kaldırılır.
+    Artık:
+        Binance TR TRY
+        +
+        Binance Global USDT -> TRY
+
+    birleşik evren döndürür.
     """
 
-    ticker = get_24h_ticker()
-
-    if ticker.empty:
-
-        print(
-            "Binance TR TRY evreni oluşturulamadı."
-        )
-
-        return pd.DataFrame()
-
-    df = ticker.copy()
-
-    df = df[
-        df["symbol"]
-        .astype(str)
-        .str.endswith("TRY")
-    ].copy()
-
-    df = df[
-        ~df["base_asset"]
-        .isin(EXCLUDED_COINS)
-    ].copy()
-
-    df = (
-        df
-        .sort_values(
-            "volume_try",
-            ascending=False
-        )
-        .reset_index(drop=True)
-    )
-
-    print(
-        f"Binance TR TRY evreni: "
-        f"{len(df)} parite"
-    )
-
-    return df
+    return get_all_crypto_universe()
 
 
 # ============================================================
@@ -452,22 +1264,23 @@ def get_trade_universe(
     min_volume=MIN_VOLUME_TRY
 ):
 
-    df = get_all_try_universe()
+    df = get_all_crypto_universe()
 
     if df.empty:
 
         return pd.DataFrame()
+
+    df["volume_try"] = pd.to_numeric(
+        df["volume_try"],
+        errors="coerce"
+    ).fillna(0)
 
     # --------------------------------------------------------
     # HACİM FİLTRESİ
     # --------------------------------------------------------
 
     df = df[
-        pd.to_numeric(
-            df["volume_try"],
-            errors="coerce"
-        )
-        .fillna(0)
+        df["volume_try"]
         >= min_volume
     ].copy()
 
@@ -481,38 +1294,58 @@ def get_trade_universe(
             "volume_try",
             ascending=False
         )
-        .reset_index(drop=True)
+        .reset_index(
+            drop=True
+        )
     )
 
     print(
         f"Likidite filtresi sonrası: "
-        f"{len(df)} parite"
+        f"{len(df)} coin"
     )
+
+    # --------------------------------------------------------
+    # TUT KONTROL
+    # --------------------------------------------------------
+
+    tut = df[
+        df["base_asset"]
+        == "TUT"
+    ]
+
+    if not tut.empty:
+
+        print(
+            "✅ TUT likidite filtresini geçti."
+        )
+
+    else:
+
+        print(
+            "ℹ️ TUT likidite filtresini "
+            "geçemedi veya bulunamadı."
+        )
 
     return df
 
 
 # ============================================================
-# KLINE
+# KLINE - BINANCE TR
 # ============================================================
 
-def get_klines(
+def get_klines_tr(
     symbol,
     interval=INTERVAL,
     limit=KLINE_LIMIT
 ):
 
-    """
-    Binance TR 15 dakika mum verisi.
-
-    Birden fazla endpoint denenir.
-    """
-
     symbol = normalize_symbol(
         symbol
     )
 
-    if not symbol.endswith("TRY"):
+    if not symbol.endswith(
+        "TRY"
+    ):
 
         return pd.DataFrame()
 
@@ -530,11 +1363,14 @@ def get_klines(
 
     params = {
 
-        "symbol": symbol,
+        "symbol":
+            symbol,
 
-        "interval": interval,
+        "interval":
+            interval,
 
-        "limit": limit,
+        "limit":
+            limit,
 
     }
 
@@ -554,13 +1390,14 @@ def get_klines(
 
             payload = response.json()
 
-            # ------------------------------------------------
-            # RESPONSE
-            # ------------------------------------------------
+            if isinstance(
+                payload,
+                dict
+            ):
 
-            if isinstance(payload, dict):
-
-                code = payload.get("code")
+                code = payload.get(
+                    "code"
+                )
 
                 if code not in (
                     None,
@@ -579,7 +1416,10 @@ def get_klines(
 
                 data = payload
 
-            if not isinstance(data, list):
+            if not isinstance(
+                data,
+                list
+            ):
 
                 continue
 
@@ -587,29 +1427,28 @@ def get_klines(
 
                 continue
 
-            # ------------------------------------------------
-            # DATAFRAME
-            # ------------------------------------------------
-
             rows = []
 
             for item in data:
 
-                if not isinstance(item, (list, tuple)):
+                if not isinstance(
+                    item,
+                    (list, tuple)
+                ):
+
                     continue
 
                 if len(item) < 6:
+
                     continue
 
-                rows.append(item)
+                rows.append(
+                    item
+                )
 
             if not rows:
 
                 continue
-
-            # ------------------------------------------------
-            # COLUMNS
-            # ------------------------------------------------
 
             columns = [
 
@@ -628,27 +1467,29 @@ def get_klines(
 
             ]
 
-            # Binance farklı format döndürürse
-            # ilk 6 alanı kullanmak yeterlidir.
-
             max_cols = min(
                 len(rows[0]),
                 len(columns)
             )
 
             rows = [
-                list(row[:max_cols])
+
+                list(
+                    row[:max_cols]
+                )
+
                 for row in rows
+
             ]
 
             df = pd.DataFrame(
-                rows,
-                columns=columns[:max_cols]
-            )
 
-            # ------------------------------------------------
-            # GEREKLİ KOLON KONTROL
-            # ------------------------------------------------
+                rows,
+
+                columns=
+                    columns[:max_cols]
+
+            )
 
             required = [
 
@@ -667,10 +1508,6 @@ def get_klines(
             ):
 
                 continue
-
-            # ------------------------------------------------
-            # NUMERIC
-            # ------------------------------------------------
 
             numeric_cols = [
 
@@ -695,33 +1532,32 @@ def get_klines(
                         errors="coerce"
                     )
 
-            # ------------------------------------------------
-            # DATETIME
-            # ------------------------------------------------
-
             df["open_time"] = pd.to_datetime(
+
                 pd.to_numeric(
                     df["open_time"],
                     errors="coerce"
                 ),
+
                 unit="ms"
+
             )
 
             if "close_time" in df.columns:
 
                 df["close_time"] = pd.to_datetime(
+
                     pd.to_numeric(
                         df["close_time"],
                         errors="coerce"
                     ),
+
                     unit="ms"
+
                 )
 
-            # ------------------------------------------------
-            # TEMİZLE
-            # ------------------------------------------------
-
             df = df.dropna(
+
                 subset=[
                     "open",
                     "high",
@@ -729,15 +1565,24 @@ def get_klines(
                     "close",
                     "volume"
                 ]
+
             )
 
             df = (
+
                 df
-                .sort_values("open_time")
-                .drop_duplicates(
-                    subset=["open_time"]
+                .sort_values(
+                    "open_time"
                 )
-                .reset_index(drop=True)
+                .drop_duplicates(
+                    subset=[
+                        "open_time"
+                    ]
+                )
+                .reset_index(
+                    drop=True
+                )
+
             )
 
             if len(df) < 10:
@@ -749,15 +1594,338 @@ def get_klines(
         except Exception as e:
 
             print(
-                f"{symbol} kline endpoint hatası: "
+                f"{symbol} TR kline hata: "
                 f"{e}"
             )
 
             continue
 
-    print(
-        f"{symbol} için 15m kline alınamadı."
+    return pd.DataFrame()
+
+
+# ============================================================
+# KLINE - BINANCE GLOBAL
+# ============================================================
+
+def get_klines_global(
+    symbol,
+    interval=INTERVAL,
+    limit=KLINE_LIMIT
+):
+
+    symbol = normalize_symbol(
+        symbol
     )
+
+    if not symbol.endswith(
+        "USDT"
+    ):
+
+        return pd.DataFrame()
+
+    url = (
+        f"{BINANCE_GLOBAL_API_URL}"
+        "/api/v3/klines"
+    )
+
+    params = {
+
+        "symbol":
+            symbol,
+
+        "interval":
+            interval,
+
+        "limit":
+            limit,
+
+    }
+
+    try:
+
+        response = SESSION.get(
+            url,
+            params=params,
+            timeout=20
+        )
+
+        if response.status_code != 200:
+
+            print(
+                f"{symbol} Global HTTP "
+                f"{response.status_code}"
+            )
+
+            return pd.DataFrame()
+
+        data = response.json()
+
+        if not isinstance(
+            data,
+            list
+        ):
+
+            return pd.DataFrame()
+
+        rows = []
+
+        for item in data:
+
+            if not isinstance(
+                item,
+                (list, tuple)
+            ):
+
+                continue
+
+            if len(item) < 6:
+
+                continue
+
+            rows.append(
+                item
+            )
+
+        if not rows:
+
+            return pd.DataFrame()
+
+        columns = [
+
+            "open_time",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "close_time",
+            "quote_volume",
+            "trades",
+            "taker_buy_base",
+            "taker_buy_quote",
+            "ignore"
+
+        ]
+
+        max_cols = min(
+            len(rows[0]),
+            len(columns)
+        )
+
+        rows = [
+
+            list(
+                row[:max_cols]
+            )
+
+            for row in rows
+
+        ]
+
+        df = pd.DataFrame(
+
+            rows,
+
+            columns=
+                columns[:max_cols]
+
+        )
+
+        numeric_cols = [
+
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "quote_volume",
+            "trades",
+            "taker_buy_base",
+            "taker_buy_quote",
+
+        ]
+
+        for col in numeric_cols:
+
+            if col in df.columns:
+
+                df[col] = pd.to_numeric(
+                    df[col],
+                    errors="coerce"
+                )
+
+        df["open_time"] = pd.to_datetime(
+
+            pd.to_numeric(
+                df["open_time"],
+                errors="coerce"
+            ),
+
+            unit="ms"
+
+        )
+
+        if "close_time" in df.columns:
+
+            df["close_time"] = pd.to_datetime(
+
+                pd.to_numeric(
+                    df["close_time"],
+                    errors="coerce"
+                ),
+
+                unit="ms"
+
+            )
+
+        df = df.dropna(
+
+            subset=[
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume"
+            ]
+
+        )
+
+        df = (
+
+            df
+            .sort_values(
+                "open_time"
+            )
+            .drop_duplicates(
+                subset=[
+                    "open_time"
+                ]
+            )
+            .reset_index(
+                drop=True
+            )
+
+        )
+
+        if len(df) < 10:
+
+            return pd.DataFrame()
+
+        return df
+
+    except Exception as e:
+
+        print(
+            f"{symbol} Global kline hata: "
+            f"{e}"
+        )
+
+        return pd.DataFrame()
+
+
+# ============================================================
+# GENEL KLINE
+# ============================================================
+
+def get_klines(
+    symbol,
+    interval=INTERVAL,
+    limit=KLINE_LIMIT,
+    source=None
+):
+
+    """
+    Hem Binance TR hem Binance Global destekler.
+
+    TUTTRY gibi sentetik TRY sembolü gelirse
+    globalde TUTUSDT aranır.
+    """
+
+    symbol = normalize_symbol(
+        symbol
+    )
+
+    # --------------------------------------------------------
+    # SOURCE BELİRTİLMİŞSE
+    # --------------------------------------------------------
+
+    if source == "BINANCE_TR":
+
+        return get_klines_tr(
+            symbol,
+            interval,
+            limit
+        )
+
+    if source == "BINANCE_GLOBAL":
+
+        base = get_base_asset(
+            symbol
+        )
+
+        if not base:
+
+            return pd.DataFrame()
+
+        global_symbol = (
+            f"{base}USDT"
+        )
+
+        return get_klines_global(
+            global_symbol,
+            interval,
+            limit
+        )
+
+    # --------------------------------------------------------
+    # NORMAL TRY
+    # --------------------------------------------------------
+
+    if symbol.endswith(
+        "TRY"
+    ):
+
+        df = get_klines_tr(
+            symbol,
+            interval,
+            limit
+        )
+
+        if not df.empty:
+
+            return df
+
+        # TR'de yoksa Global dene
+
+        base = get_base_asset(
+            symbol
+        )
+
+        if base:
+
+            return get_klines_global(
+
+                f"{base}USDT",
+
+                interval,
+
+                limit
+
+            )
+
+    # --------------------------------------------------------
+    # USDT
+    # --------------------------------------------------------
+
+    if symbol.endswith(
+        "USDT"
+    ):
+
+        return get_klines_global(
+            symbol,
+            interval,
+            limit
+        )
 
     return pd.DataFrame()
 
@@ -772,12 +1940,14 @@ def calculate_ema(
 ):
 
     return (
+
         df["close"]
         .ewm(
             span=period,
             adjust=False
         )
         .mean()
+
     )
 
 
@@ -801,38 +1971,55 @@ def calculate_rsi(
     )
 
     avg_gain = gain.ewm(
+
         alpha=1 / period,
+
         adjust=False
+
     ).mean()
 
     avg_loss = loss.ewm(
+
         alpha=1 / period,
+
         adjust=False
+
     ).mean()
 
     rs = (
+
         avg_gain /
+
         avg_loss.replace(
             0,
             np.nan
         )
+
     )
 
     rsi = (
+
         100 -
+
         (
             100 /
             (1 + rs)
         )
+
     )
 
     return (
+
         rsi
         .replace(
-            [np.inf, -np.inf],
+            [
+                np.inf,
+                -np.inf
+            ],
             np.nan
         )
         .fillna(50)
+
     )
 
 
@@ -840,30 +2027,41 @@ def calculate_rsi(
 # VWAP
 # ============================================================
 
-def calculate_vwap(df):
+def calculate_vwap(
+    df
+):
 
     typical_price = (
+
         df["high"] +
         df["low"] +
         df["close"]
+
     ) / 3
 
     cumulative_volume = (
+
         df["volume"]
         .cumsum()
+
     )
 
     cumulative_pv = (
+
         typical_price *
         df["volume"]
+
     ).cumsum()
 
     return (
+
         cumulative_pv /
+
         cumulative_volume.replace(
             0,
             np.nan
         )
+
     )
 
 
@@ -877,17 +2075,24 @@ def calculate_volume_ratio(
 ):
 
     avg_volume = (
+
         df["volume"]
-        .rolling(period)
+        .rolling(
+            period
+        )
         .mean()
+
     )
 
     return (
+
         df["volume"] /
+
         avg_volume.replace(
             0,
             np.nan
         )
+
     )
 
 
@@ -945,10 +2150,12 @@ def calculate_momentum(
         return 0.0
 
     return (
+
         (
             current /
             previous
         ) - 1
+
     ) * 100
 
 
@@ -966,15 +2173,19 @@ def calculate_trend_score(
     score = 0
 
     if price > ema9:
+
         score += 20
 
     if ema9 > ema20:
+
         score += 25
 
     if ema20 > ema50:
+
         score += 25
 
     if price > ema50:
+
         score += 30
 
     return min(
@@ -997,21 +2208,27 @@ def calculate_rsi_score(
     )
 
     if 50 <= rsi <= 65:
+
         return 100
 
     if 45 <= rsi < 50:
+
         return 75
 
     if 65 < rsi <= 70:
+
         return 70
 
     if 40 <= rsi < 45:
+
         return 55
 
     if 70 < rsi <= 75:
+
         return 40
 
     if rsi > 75:
+
         return 15
 
     return 30
@@ -1030,18 +2247,23 @@ def calculate_volume_score(
     )
 
     if volume_ratio >= 2.0:
+
         return 100
 
     if volume_ratio >= 1.5:
+
         return 90
 
     if volume_ratio >= 1.2:
+
         return 75
 
     if volume_ratio >= 1.0:
+
         return 60
 
     if volume_ratio >= 0.8:
+
         return 40
 
     return 20
@@ -1106,12 +2328,15 @@ def calculate_rr(
     )
 
     if price <= 0:
+
         return 0.0
 
     if support <= 0:
+
         return 0.0
 
     if resistance <= 0:
+
         return 0.0
 
     if price <= support:
@@ -1123,9 +2348,11 @@ def calculate_rr(
     reward = resistance - price
 
     if risk <= 0:
+
         return 0.0
 
     if reward <= 0:
+
         return 0.0
 
     return reward / risk
@@ -1144,18 +2371,23 @@ def calculate_momentum_score(
     )
 
     if momentum >= 10:
+
         return 100
 
     if momentum >= 5:
+
         return 90
 
     if momentum >= 2:
+
         return 75
 
     if momentum >= 0:
+
         return 60
 
     if momentum >= -3:
+
         return 40
 
     return 20
@@ -1174,15 +2406,19 @@ def calculate_rr_score(
     )
 
     if rr >= 3:
+
         return 100
 
     if rr >= 2:
+
         return 90
 
     if rr >= 1.5:
+
         return 75
 
     if rr >= 1:
+
         return 55
 
     return 20
@@ -1230,6 +2466,7 @@ def calculate_trade_score(
     )
 
     return round(
+
         min(
             max(
                 score,
@@ -1237,7 +2474,9 @@ def calculate_trade_score(
             ),
             100
         ),
+
         2
+
     )
 
 
@@ -1310,10 +2549,6 @@ def trade_decision(
         volume_ratio
     )
 
-    # ========================================================
-    # GÜÇLÜ TRADE
-    # ========================================================
-
     if (
 
         score >= 80
@@ -1332,10 +2567,6 @@ def trade_decision(
 
         return "🟢 GÜÇLÜ TRADE"
 
-    # ========================================================
-    # TRADE ADAYI
-    # ========================================================
-
     if (
 
         score >= 65
@@ -1349,10 +2580,6 @@ def trade_decision(
     ):
 
         return "🟡 TRADE ADAYI"
-
-    # ========================================================
-    # İZLE
-    # ========================================================
 
     if score >= 50:
 
@@ -1371,28 +2598,18 @@ def analyze_coin(
 ):
 
     """
-    Tek TRY paritesini analiz eder.
+    Tek coin analiz eder.
+
+    Hem Binance TR hem Global desteklenir.
     """
 
     symbol = normalize_symbol(
         symbol
     )
 
-    if not symbol.endswith("TRY"):
-
-        return None
-
-    base_asset = get_base_asset(
-        symbol
-    )
-
-    if base_asset in EXCLUDED_COINS:
-
-        return None
-
-    # ========================================================
-    # MARKET DATA
-    # ========================================================
+    # --------------------------------------------------------
+    # MARKET DATA BUL
+    # --------------------------------------------------------
 
     market = {}
 
@@ -1403,13 +2620,44 @@ def analyze_coin(
             pd.DataFrame
         ):
 
-            if "symbol" in market_data.columns:
+            if "base_asset" in market_data.columns:
+
+                base_for_search = (
+                    get_base_asset(symbol)
+                )
 
                 match = market_data[
-                    market_data["symbol"]
+
+                    market_data[
+                        "base_asset"
+                    ]
                     .astype(str)
-                    .map(normalize_symbol)
+                    .str.upper()
+                    == base_for_search
+
+                ]
+
+                if not match.empty:
+
+                    market = (
+                        match
+                        .iloc[0]
+                        .to_dict()
+                    )
+
+            elif "symbol" in market_data.columns:
+
+                match = market_data[
+
+                    market_data[
+                        "symbol"
+                    ]
+                    .astype(str)
+                    .map(
+                        normalize_symbol
+                    )
                     == symbol
+
                 ]
 
                 if not match.empty:
@@ -1427,9 +2675,46 @@ def analyze_coin(
 
             market = market_data
 
-    # ========================================================
-    # VOLUME
-    # ========================================================
+    # --------------------------------------------------------
+    # BASE
+    # --------------------------------------------------------
+
+    base_asset = (
+
+        market.get(
+            "base_asset"
+        )
+
+        or get_base_asset(
+            symbol
+        )
+
+    )
+
+    base_asset = str(
+        base_asset
+    ).upper()
+
+    if not base_asset:
+
+        return None
+
+    if base_asset in EXCLUDED_COINS:
+
+        return None
+
+    # --------------------------------------------------------
+    # MARKET SOURCE
+    # --------------------------------------------------------
+
+    source = market.get(
+        "source",
+        None
+    )
+
+    # --------------------------------------------------------
+    # HACİM
+    # --------------------------------------------------------
 
     volume_try = safe_float(
         market.get(
@@ -1448,13 +2733,42 @@ def analyze_coin(
 
         return None
 
-    # ========================================================
+    # --------------------------------------------------------
     # KLINE
-    # ========================================================
+    # --------------------------------------------------------
 
-    df = get_klines(
-        symbol
-    )
+    if source == "BINANCE_GLOBAL":
+
+        analysis_symbol = market.get(
+            "analysis_symbol"
+        )
+
+        if not analysis_symbol:
+
+            analysis_symbol = (
+                f"{base_asset}USDT"
+            )
+
+        df = get_klines_global(
+            analysis_symbol
+        )
+
+    else:
+
+        analysis_symbol = market.get(
+            "analysis_symbol"
+        )
+
+        if not analysis_symbol:
+
+            analysis_symbol = (
+                f"{base_asset}TRY"
+            )
+
+        df = get_klines(
+            analysis_symbol,
+            source=source
+        )
 
     if df.empty:
 
@@ -1464,9 +2778,9 @@ def analyze_coin(
 
         return None
 
-    # ========================================================
+    # --------------------------------------------------------
     # INDICATORS
-    # ========================================================
+    # --------------------------------------------------------
 
     df["ema9"] = calculate_ema(
         df,
@@ -1497,13 +2811,13 @@ def analyze_coin(
         )
     )
 
-    # ========================================================
-    # CURRENT ROW
-    # ========================================================
+    # --------------------------------------------------------
+    # CURRENT
+    # --------------------------------------------------------
 
     row = df.iloc[-1]
 
-    price = safe_float(
+    price_market = safe_float(
         row["close"]
     )
 
@@ -1524,7 +2838,7 @@ def analyze_coin(
         50
     )
 
-    vwap = safe_float(
+    vwap_market = safe_float(
         row["vwap"]
     )
 
@@ -1533,28 +2847,76 @@ def analyze_coin(
         0
     )
 
-    # ========================================================
+    # --------------------------------------------------------
+    # TRY DÖNÜŞÜMÜ
+    # --------------------------------------------------------
+
+    if source == "BINANCE_GLOBAL":
+
+        usdt_try = get_usdt_try_rate()
+
+        if usdt_try <= 0:
+
+            return None
+
+        price = (
+            price_market *
+            usdt_try
+        )
+
+        vwap = (
+            vwap_market *
+            usdt_try
+        )
+
+    else:
+
+        price = price_market
+
+        vwap = vwap_market
+
+    # --------------------------------------------------------
     # MOMENTUM
-    # ========================================================
+    # --------------------------------------------------------
 
     momentum = calculate_momentum(
         df
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # SUPPORT / RESISTANCE
-    # ========================================================
+    # --------------------------------------------------------
 
-    support, resistance = (
+    support_market, resistance_market = (
+
         calculate_support_resistance(
             df,
             lookback=50
         )
+
     )
 
-    # ========================================================
+    if source == "BINANCE_GLOBAL":
+
+        support = (
+            support_market *
+            usdt_try
+        )
+
+        resistance = (
+            resistance_market *
+            usdt_try
+        )
+
+    else:
+
+        support = support_market
+
+        resistance = resistance_market
+
+    # --------------------------------------------------------
     # R/R
-    # ========================================================
+    # --------------------------------------------------------
 
     rr = calculate_rr(
         price,
@@ -1562,13 +2924,13 @@ def analyze_coin(
         resistance
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # SCORES
-    # ========================================================
+    # --------------------------------------------------------
 
     trend_score = (
         calculate_trend_score(
-            price,
+            price_market,
             ema9,
             ema20,
             ema50
@@ -1589,8 +2951,8 @@ def analyze_coin(
 
     vwap_score = (
         calculate_vwap_score(
-            price,
-            vwap
+            price_market,
+            vwap_market
         )
     )
 
@@ -1605,17 +2967,9 @@ def analyze_coin(
         )
     )
 
-    # ========================================================
-    # CLASS
-    # ========================================================
-
     classification = classify_trade(
         trade_score
     )
-
-    # ========================================================
-    # DECISION
-    # ========================================================
 
     decision = trade_decision(
         trade_score,
@@ -1627,9 +2981,9 @@ def analyze_coin(
         volume_ratio
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # 15M CHANGE
-    # ========================================================
+    # --------------------------------------------------------
 
     change_15m = 0.0
 
@@ -1642,121 +2996,159 @@ def analyze_coin(
         if previous > 0:
 
             change_15m = (
+
                 (
-                    price /
+                    price_market /
                     previous
                 ) - 1
+
             ) * 100
 
-    # ========================================================
+    # --------------------------------------------------------
     # RESULT
-    # ========================================================
+    # --------------------------------------------------------
 
     return {
 
-        "symbol": base_asset,
+        "symbol":
+            base_asset,
 
-        "pair": symbol,
-
-        "price": price,
-
-        "change_15m": round(
-            change_15m,
-            2
-        ),
-
-        "change_24h": round(
-            safe_float(
-                market.get(
-                    "change_24h",
-                    0
-                )
+        "pair":
+            market.get(
+                "symbol",
+                f"{base_asset}TRY"
             ),
-            2
-        ),
 
-        "volume_try": round(
-            volume_try,
-            2
-        ),
+        "analysis_symbol":
+            analysis_symbol,
 
-        "momentum": round(
-            momentum,
-            2
-        ),
+        "source":
+            source,
 
-        "ema9": round(
-            ema9,
-            8
-        ),
+        "price":
+            round(
+                price,
+                8
+            ),
 
-        "ema20": round(
-            ema20,
-            8
-        ),
+        "change_15m":
+            round(
+                change_15m,
+                2
+            ),
 
-        "ema50": round(
-            ema50,
-            8
-        ),
+        "change_24h":
+            round(
+                safe_float(
+                    market.get(
+                        "change_24h",
+                        0
+                    )
+                ),
+                2
+            ),
 
-        "rsi": round(
-            rsi,
-            2
-        ),
+        "volume_try":
+            round(
+                volume_try,
+                2
+            ),
 
-        "vwap": round(
-            vwap,
-            8
-        ),
+        "momentum":
+            round(
+                momentum,
+                2
+            ),
 
-        "volume_ratio": round(
-            volume_ratio,
-            2
-        ),
+        "ema9":
+            round(
+                ema9,
+                8
+            ),
 
-        "support": round(
-            support,
-            8
-        ),
+        "ema20":
+            round(
+                ema20,
+                8
+            ),
 
-        "resistance": round(
-            resistance,
-            8
-        ),
+        "ema50":
+            round(
+                ema50,
+                8
+            ),
 
-        "rr": round(
-            rr,
-            2
-        ),
+        "rsi":
+            round(
+                rsi,
+                2
+            ),
 
-        "trend_score": round(
-            trend_score,
-            2
-        ),
+        "vwap":
+            round(
+                vwap,
+                8
+            ),
 
-        "rsi_score": round(
-            rsi_score,
-            2
-        ),
+        "volume_ratio":
+            round(
+                volume_ratio,
+                2
+            ),
 
-        "volume_score": round(
-            volume_score,
-            2
-        ),
+        "support":
+            round(
+                support,
+                8
+            ),
 
-        "vwap_score": round(
-            vwap_score,
-            2
-        ),
+        "resistance":
+            round(
+                resistance,
+                8
+            ),
 
-        "trade_score": trade_score,
+        "rr":
+            round(
+                rr,
+                2
+            ),
 
-        "class": classification,
+        "trend_score":
+            round(
+                trend_score,
+                2
+            ),
 
-        "decision": decision,
+        "rsi_score":
+            round(
+                rsi_score,
+                2
+            ),
 
-        "analysis_time": datetime.now(),
+        "volume_score":
+            round(
+                volume_score,
+                2
+            ),
+
+        "vwap_score":
+            round(
+                vwap_score,
+                2
+            ),
+
+        "trade_score":
+            trade_score,
+
+        "class":
+            classification,
+
+        "decision":
+            decision,
+
+        "analysis_time":
+            datetime.now(),
 
     }
 
@@ -1771,13 +3163,9 @@ def rank_coins(
 ):
 
     """
-    Binance TR TRY evrenini tarar.
-    Trade Score'a göre sıralar.
+    Binance TR + Binance Global
+    birleşik evreni tarar.
     """
-
-    # ========================================================
-    # MARKET
-    # ========================================================
 
     market_df = get_trade_universe(
         min_volume=min_volume
@@ -1791,88 +3179,166 @@ def rank_coins(
 
         return pd.DataFrame()
 
-    # ========================================================
+    # --------------------------------------------------------
     # SYMBOL LIST
-    # ========================================================
+    # --------------------------------------------------------
 
     if symbols is None:
 
-        symbols = (
+        market_symbols = (
+
             market_df[
-                "symbol"
+                "base_asset"
             ]
             .dropna()
+            .astype(str)
+            .str.upper()
+            .drop_duplicates()
             .tolist()
+
         )
 
     else:
 
-        symbols = [
+        market_symbols = [
 
-            normalize_symbol(s)
+            str(s)
+            .upper()
+            .strip()
 
             for s in symbols
 
-            if normalize_symbol(s)
+            if str(s).strip()
 
         ]
 
-    # ========================================================
-    # HACME GÖRE SINIRLA
-    # ========================================================
+        # Base asset veya parite kabul et
 
-    if len(symbols) > MAX_ANALYSIS_COINS:
+        normalized = []
 
-        market_symbols = (
-            market_df[
-                "symbol"
-            ]
-            .tolist()
+        for s in market_symbols:
+
+            if s.endswith("TRY"):
+
+                normalized.append(
+                    s[:-3]
+                )
+
+            elif s.endswith("USDT"):
+
+                normalized.append(
+                    s[:-4]
+                )
+
+            else:
+
+                normalized.append(
+                    s
+                )
+
+        market_symbols = list(
+            dict.fromkeys(
+                normalized
+            )
         )
 
-        symbols = [
-            s
-            for s in market_symbols
-            if s in symbols
-        ][:MAX_ANALYSIS_COINS]
+    # --------------------------------------------------------
+    # MAX ANALYSIS
+    # --------------------------------------------------------
 
-    # ========================================================
+    # Önce priority coinler
+    priority = [
+
+        coin
+
+        for coin
+        in PRIORITY_GLOBAL_COINS
+
+        if coin in market_symbols
+
+    ]
+
+    normal = [
+
+        coin
+
+        for coin in market_symbols
+
+        if coin not in priority
+
+    ]
+
+    normal = normal[
+        :MAX_ANALYSIS_COINS
+    ]
+
+    symbols = priority + normal
+
+    # --------------------------------------------------------
     # ANALİZ
-    # ========================================================
+    # --------------------------------------------------------
 
     results = []
 
-    total = len(symbols)
+    total = len(
+        symbols
+    )
 
+    print()
     print(
         "=========================================="
     )
-
     print(
         "CRYPTO AI PRO TARAMA"
     )
-
     print(
-        f"Analiz edilecek parite: {total}"
+        f"Analiz edilecek coin: {total}"
     )
-
     print(
         "=========================================="
     )
 
-    for i, symbol in enumerate(
+    for i, base in enumerate(
         symbols,
         start=1
     ):
 
         print(
-            f"[{i}/{total}] {symbol}"
+            f"[{i}/{total}] {base}"
+        )
+
+        # ----------------------------------------------------
+        # Market satırı
+        # ----------------------------------------------------
+
+        match = market_df[
+
+            market_df[
+                "base_asset"
+            ]
+            .astype(str)
+            .str.upper()
+            == base
+
+        ]
+
+        if match.empty:
+
+            continue
+
+        market_row = (
+            match
+            .iloc[0]
+            .to_dict()
         )
 
         try:
 
             result = analyze_coin(
-                symbol,
+                market_row.get(
+                    "symbol",
+                    f"{base}TRY"
+                ),
                 market_data=market_df
             )
 
@@ -1885,15 +3351,15 @@ def rank_coins(
         except Exception as e:
 
             print(
-                f"{symbol} analiz hatası: "
+                f"{base} analiz hatası: "
                 f"{e}"
             )
 
             continue
 
-    # ========================================================
+    # --------------------------------------------------------
     # SONUÇ
-    # ========================================================
+    # --------------------------------------------------------
 
     if not results:
 
@@ -1907,42 +3373,85 @@ def rank_coins(
         results
     )
 
-    # ========================================================
-    # SORT
-    # ========================================================
-
     result_df = (
+
         result_df
+
         .sort_values(
             [
                 "trade_score",
                 "volume_try"
             ],
+
             ascending=[
                 False,
                 False
             ]
+
         )
+
         .reset_index(
             drop=True
         )
+
     )
 
+    print()
     print(
         "=========================================="
     )
-
     print(
         "CRYPTO AI TARAMA TAMAMLANDI"
     )
-
     print(
         f"{len(result_df)} coin analiz edildi"
     )
-
     print(
         "=========================================="
     )
+
+    # --------------------------------------------------------
+    # TUT SONUÇ
+    # --------------------------------------------------------
+
+    tut_result = result_df[
+        result_df["symbol"]
+        == "TUT"
+    ]
+
+    if not tut_result.empty:
+
+        print()
+        print(
+            "=========================================="
+        )
+        print(
+            "✅ TUT ANALİZ SONUCU"
+        )
+        print(
+            "=========================================="
+        )
+
+        print(
+            tut_result[
+                [
+                    "symbol",
+                    "price",
+                    "change_24h",
+                    "rsi",
+                    "volume_ratio",
+                    "rr",
+                    "trend_score",
+                    "trade_score",
+                    "class",
+                    "decision",
+                    "source",
+                ]
+            ]
+            .to_string(
+                index=False
+            )
+        )
 
     return result_df
 
@@ -1968,8 +3477,12 @@ def get_trade_candidates(
     ].copy()
 
     return (
+
         candidates
-        .reset_index(drop=True)
+        .reset_index(
+            drop=True
+        )
+
     )
 
 
@@ -1990,19 +3503,29 @@ def get_a_trades(
         return df
 
     result = df[
+
         (
-            df["trade_score"] >= 80
+            df["trade_score"]
+            >= 80
         )
+
         &
+
         (
             df["decision"]
-            == "🟢 GÜÇLÜ TRADE"
+            ==
+            "🟢 GÜÇLÜ TRADE"
         )
+
     ].copy()
 
     return (
+
         result
-        .reset_index(drop=True)
+        .reset_index(
+            drop=True
+        )
+
     )
 
 
@@ -2024,9 +3547,13 @@ def get_top_trades(
         return df
 
     return (
+
         df
         .head(n)
-        .reset_index(drop=True)
+        .reset_index(
+            drop=True
+        )
+
     )
 
 
@@ -2047,13 +3574,20 @@ def get_strong_trades(
         return df
 
     result = df[
+
         df["decision"]
-        == "🟢 GÜÇLÜ TRADE"
+        ==
+        "🟢 GÜÇLÜ TRADE"
+
     ].copy()
 
     return (
+
         result
-        .reset_index(drop=True)
+        .reset_index(
+            drop=True
+        )
+
     )
 
 
@@ -2069,18 +3603,26 @@ def get_market_summary():
 
         return {
 
-            "total_pairs": 0,
+            "total_pairs":
+                0,
 
-            "liquid_pairs": 0,
+            "liquid_pairs":
+                0,
 
-            "total_volume_try": 0,
+            "total_volume_try":
+                0,
 
-            "top_coin": None
+            "top_coin":
+                None,
 
         }
 
     total_volume = safe_float(
-        df["volume_try"].sum()
+
+        df[
+            "volume_try"
+        ].sum()
+
     )
 
     top_coin = None
@@ -2088,23 +3630,92 @@ def get_market_summary():
     if not df.empty:
 
         top_coin = (
+
             df.iloc[0]
             ["base_asset"]
+
         )
 
     return {
 
-        "total_pairs": len(df),
+        "total_pairs":
+            len(df),
 
-        "liquid_pairs": len(df),
+        "liquid_pairs":
+            len(df),
 
         "total_volume_try":
             total_volume,
 
         "top_coin":
-            top_coin
+            top_coin,
 
     }
+
+
+# ============================================================
+# TUT KONTROL
+# ============================================================
+
+def check_tut():
+
+    """
+    TUT coinini özel olarak kontrol eder.
+
+    Sonuç:
+        True / False
+    """
+
+    df = get_all_crypto_universe()
+
+    if df.empty:
+
+        return False
+
+    tut = df[
+        df["base_asset"]
+        == "TUT"
+    ]
+
+    if tut.empty:
+
+        print(
+            "❌ TUT bulunamadı."
+        )
+
+        return False
+
+    print()
+    print(
+        "=========================================="
+    )
+    print(
+        "✅ TUT BULUNDU"
+    )
+    print(
+        "=========================================="
+    )
+
+    print(
+
+        tut[
+            [
+                "base_asset",
+                "symbol",
+                "analysis_symbol",
+                "price_try",
+                "change_24h",
+                "volume_try",
+                "source",
+            ]
+        ]
+        .to_string(
+            index=False
+        )
+
+    )
+
+    return True
 
 
 # ============================================================
@@ -2113,33 +3724,31 @@ def get_market_summary():
 
 def test_binance_tr():
 
-    """
-    Binance TR bağlantısını test eder.
-    """
-
     print()
     print(
         "=========================================="
     )
     print(
-        "BINANCE TR BAĞLANTI TESTİ"
+        "BINANCE TR / GLOBAL BAĞLANTI TESTİ"
     )
     print(
         "=========================================="
     )
 
-    df = get_24h_ticker()
+    df = get_all_crypto_universe()
 
     if df.empty:
 
         print(
-            "❌ Binance TR'den veri alınamadı."
+            "❌ Veri alınamadı."
         )
 
         return False
 
+    print()
     print(
-        f"✅ Toplam TRY parite: {len(df)}"
+        f"✅ Birleşik coin sayısı: "
+        f"{len(df)}"
     )
 
     print()
@@ -2147,13 +3756,14 @@ def test_binance_tr():
     print(
         df[
             [
-                "symbol",
+                "base_asset",
                 "price_try",
                 "change_24h",
-                "volume_try"
+                "volume_try",
+                "source",
             ]
         ]
-        .head(10)
+        .head(15)
         .to_string(
             index=False
         )
@@ -2161,8 +3771,11 @@ def test_binance_tr():
 
     print()
 
+    check_tut()
+
+    print()
     print(
-        "✅ Binance TR bağlantısı çalışıyor."
+        "✅ Bağlantı sistemi çalışıyor."
     )
 
     return True
@@ -2191,12 +3804,11 @@ if __name__ == "__main__":
     print()
 
     # --------------------------------------------------------
-    # 1. API TEST
+    # 1. BAĞLANTI
     # --------------------------------------------------------
 
     if not test_binance_tr():
 
-        print()
         print(
             "API testi başarısız."
         )
@@ -2212,38 +3824,17 @@ if __name__ == "__main__":
     print()
 
     print(
-        f"TRY likit evreni: "
+        f"Likidite evreni: "
         f"{len(market)}"
     )
 
     # --------------------------------------------------------
-    # 3. MARKET LIST
+    # 3. TUT
     # --------------------------------------------------------
 
-    if not market.empty:
+    print()
 
-        print()
-
-        print(
-            "En yüksek hacimli 10 TRY paritesi:"
-        )
-
-        print()
-
-        print(
-            market[
-                [
-                    "symbol",
-                    "price_try",
-                    "change_24h",
-                    "volume_try"
-                ]
-            ]
-            .head(10)
-            .to_string(
-                index=False
-            )
-        )
+    check_tut()
 
     # --------------------------------------------------------
     # 4. TOP TRADES
@@ -2264,22 +3855,19 @@ if __name__ == "__main__":
     else:
 
         print()
-
         print(
             "=========================================="
         )
-
         print(
             "TOP 10 CRYPTO TRADE"
         )
-
         print(
             "=========================================="
         )
-
         print()
 
         print(
+
             top[
                 [
                     "symbol",
@@ -2291,10 +3879,12 @@ if __name__ == "__main__":
                     "trend_score",
                     "trade_score",
                     "class",
-                    "decision"
+                    "decision",
+                    "source",
                 ]
             ]
             .to_string(
                 index=False
             )
+
         )

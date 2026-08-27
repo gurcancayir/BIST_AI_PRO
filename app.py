@@ -64,7 +64,7 @@ bilancolar = st.Page(
 
 altin_coin = st.Page(
     "pages/06_Altin_Coin.py",
-    title="Altın & Coin",
+    title="Altın, Gümüş & Döviz",
     icon="🪙",
 )
 
@@ -73,10 +73,26 @@ bloomberg_haberleri = st.Page(
     title="Bloomberg HT",
     icon="📰",
 )
-bist500_test = st.Page(
-    "pages/99_BIST500_Test.py",
-    title="Deneme",
-    icon="🧪",
+
+gunluk_trade_v4 = st.Page(
+    "pages/05_Gunluk_Trade_PRO_V4.py",
+    title="Günlük Trade PRO V4",
+    icon="⚡",
+)
+varant_bilgi = st.Page(
+    "pages/09_Varant_Bilgi_Merkezi.py",
+    title="Varant Merkezi",
+    icon="🎓",
+)
+yatirim_projeksiyonu = st.Page(
+    "pages/13_Yatirim_Projeksiyonu.py",
+    title="Yatırım Projeksiyonu",
+    icon="🧭",
+)
+kurumsal_ortak_portfoy = st.Page(
+    "pages/15_Kurumsal_Ortak_Portfoy.py",
+    title="Kurumsal Ortak Portföy",
+    icon="🏦",
 )
 # ==================================================
 # CRYPTO AI PRO SAYFALARI
@@ -130,7 +146,11 @@ crypto_portfoy_pro = st.Page(
     icon="💼",
 )
 
-
+gunluk_trade_pro_v3 = st.Page(
+    "pages/05_Gunluk_Trade_PRO_V3.py",
+    title="Günlük Trade PRO V3",
+    icon="🚀",
+)
 
 
 # ==================================================
@@ -148,14 +168,18 @@ pg = st.navigation(
             portfoy,
             portfoy_yonetim,
             gunluk_trade,
+            gunluk_trade_pro_v3,
+            gunluk_trade_v4,
+            yatirim_projeksiyonu,
             hisse_analiz,
             tarama,
             bilancolar,
-            dinamik_portfoy,
+            dinamik_portfoy, 
             firsat_merkezi,
+            kurumsal_ortak_portfoy,
             altin_coin,
             bloomberg_haberleri,
-            bist500_test,
+            varant_bilgi,
         ],
 
         # --------------------------------------------------

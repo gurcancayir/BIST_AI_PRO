@@ -1,22 +1,44 @@
 [
-    {
-        "coin": "PUMP",
-        "quantity": 4742.0,
-        "cost": 0.2058
-    },
-    {
-        "coin": "ENA",
-        "quantity": 109.0,
-        "cost": 7.32
-    },
-    {
-        "coin": "ACE",
-        "quantity": 53.0,
-        "cost": 12.22
-    },
-    {
-        "coin": "SANTOS",
-        "quantity": 16.0,
-        "cost": 26.27
-    }
+  {
+    "coin": "RE",
+    "quantity": 3.5,
+    "cost": 25.85,
+    "updated_at": "23.08.2026 13:54:56"
+  },
+  {
+    "coin": "BTC",
+    "quantity": 0.0001522,
+    "cost": 3690596.55,
+    "updated_at": "24.08.2026 08:02:02"
+  },
+  {
+    "coin": "STX",
+    "quantity": 15.9,
+    "cost": 11.73,
+    "updated_at": "24.08.2026 16:42:44"
+  },
+  {
+    "coin": "ETH",
+    "quantity": 0.00616619,
+    "cost": 117957.0,
+    "updated_at": "24.08.2026 16:43:58"
+  },
+  {
+    "coin": "FLOKI",
+    "quantity": 210.256,
+    "cost": 0.001328,
+    "updated_at": "24.08.2026 18:02:22"
+  },
+  {
+    "coin": "PEPE",
+    "quantity": 2509.099,
+    "cost": 0.00019865,
+    "updated_at": "24.08.2026 18:02:56"
+  },
+  {
+    "coin": "COTI",
+    "quantity": 1278.0,
+    "cost": 0.59913972,
+    "updated_at": "24.08.2026 18:03:32"
+  }
 ]

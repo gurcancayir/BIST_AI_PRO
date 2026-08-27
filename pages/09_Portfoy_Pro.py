@@ -1561,6 +1561,110 @@ if submit:
 # PORTFÖY BOŞSA
 # ============================================================
 
+# ============================================================
+# PORTFÖYDEN HİSSE ÇIKAR / ADET AZALT
+#
+# Bu bölüm analizden ÖNCE yer alır. Böylece Yahoo Finance verisi
+# alınamasa veya analiz üretilemese bile portföy düzenlenebilir.
+# ============================================================
+
+st.divider()
+st.subheader("🗑️ Portföyden Hisse Çıkar / Adet Azalt")
+
+if not portfolio.empty:
+
+    position_map = {
+        str(row["symbol"]): safe_float(row["quantity"])
+        for _, row in portfolio.iterrows()
+    }
+
+    remove_symbol = st.selectbox(
+        "İşlem yapılacak hisse",
+        options=list(position_map.keys()),
+        key="portfolio_remove_symbol"
+    )
+
+    current_quantity = position_map[remove_symbol]
+
+    st.caption(
+        f"{remove_symbol} mevcut adet: {current_quantity:g}"
+    )
+
+    remove_mode = st.radio(
+        "İşlem türü",
+        options=["Adet azalt", "Hisseyi tamamen çıkar"],
+        horizontal=True,
+        key="portfolio_remove_mode"
+    )
+
+    if remove_mode == "Adet azalt":
+
+        reduce_quantity = st.number_input(
+            "Çıkarılacak adet",
+            min_value=0.0,
+            max_value=float(current_quantity),
+            value=0.0,
+            step=1.0,
+            key="portfolio_reduce_quantity"
+        )
+
+        if st.button(
+            "➖ Seçili Adedi Portföyden Çıkar",
+            use_container_width=True,
+            key="portfolio_reduce_button"
+        ):
+
+            if reduce_quantity <= 0:
+                st.warning("Çıkarılacak adet 0'dan büyük olmalıdır.")
+
+            elif reduce_quantity >= current_quantity:
+                delete_position(remove_symbol)
+                st.success(f"{remove_symbol} portföyden tamamen çıkarıldı.")
+                st.rerun()
+
+            else:
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                remaining_quantity = current_quantity - reduce_quantity
+
+                conn = get_connection()
+                conn.execute(
+                    """
+                    UPDATE portfolio
+                    SET quantity = ?, updated_at = ?
+                    WHERE symbol = ?
+                    """,
+                    (remaining_quantity, now, remove_symbol)
+                )
+                conn.commit()
+                conn.close()
+
+                st.success(
+                    f"{remove_symbol}: {reduce_quantity:g} adet çıkarıldı. "
+                    f"Kalan adet: {remaining_quantity:g}"
+                )
+                st.rerun()
+
+    else:
+
+        confirm_remove = st.checkbox(
+            f"{remove_symbol} hissesini tamamen çıkarmayı onaylıyorum",
+            key="portfolio_remove_confirm"
+        )
+
+        if st.button(
+            "🗑️ Hisseyi Portföyden Tamamen Çıkar",
+            type="primary",
+            use_container_width=True,
+            disabled=not confirm_remove,
+            key="portfolio_remove_button"
+        ):
+            delete_position(remove_symbol)
+            st.success(f"{remove_symbol} portföyden tamamen çıkarıldı.")
+            st.rerun()
+
+else:
+    st.info("Portföy boş olduğu için çıkarılacak hisse bulunmuyor.")
+
 if portfolio.empty:
 
     st.info(
@@ -2240,40 +2344,6 @@ st.markdown(
 st.success(
     selected["comment"]
 )
-
-
-# ============================================================
-# PORTFÖYDEN HİSSE SİL
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "🗑️ Portföy Yönetimi"
-)
-
-
-delete_symbol = st.selectbox(
-    "Portföyden çıkarılacak hisse",
-    portfolio["symbol"].tolist(),
-    key="delete_symbol_pro"
-)
-
-
-if st.button(
-    "🗑️ Seçili Hisseyi Portföyden Çıkar",
-    use_container_width=True
-):
-
-    delete_position(
-        delete_symbol
-    )
-
-    st.success(
-        f"{delete_symbol} portföyden çıkarıldı."
-    )
-
-    st.rerun()
 
 
 # ============================================================
