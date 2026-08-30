@@ -26,8 +26,8 @@ st.set_page_config(
 st.title("📈 HİSSE ANALİZ MERKEZİ")
 
 st.caption(
-    "Teknik + Fundamental + KAP Financial + "
-    "Sektör + Piyasa + Alım/Satış Teyidi"
+    "PRO V2 • Şirket Kalitesi + KAP Bilanço Kalitesi + "
+    "Vade Bazlı Teknik Zamanlama + Finansal Risk Kapıları"
 )
 
 
@@ -520,6 +520,108 @@ def _score_operating_cash_flow(value, net_profit):
     return 20.0
 
 
+def _score_equity_ratio(value):
+    value = safe_float(value, np.nan)
+    if np.isnan(value):
+        return None
+    if value >= 0.60:
+        return 100.0
+    if value >= 0.45:
+        return 90.0
+    if value >= 0.30:
+        return 75.0
+    if value >= 0.20:
+        return 55.0
+    if value >= 0.10:
+        return 35.0
+    return 15.0
+
+
+def _score_interest_coverage(value):
+    value = safe_float(value, np.nan)
+    if np.isnan(value):
+        return None
+    if value >= 6:
+        return 100.0
+    if value >= 4:
+        return 90.0
+    if value >= 2.5:
+        return 75.0
+    if value >= 1.5:
+        return 55.0
+    if value >= 1.0:
+        return 35.0
+    return 10.0
+
+
+def _score_growth(value):
+    value = safe_float(value, np.nan)
+    if np.isnan(value):
+        return None
+    if value >= 25:
+        return 100.0
+    if value >= 15:
+        return 90.0
+    if value >= 5:
+        return 75.0
+    if value >= 0:
+        return 60.0
+    if value >= -10:
+        return 40.0
+    if value >= -25:
+        return 25.0
+    return 10.0
+
+
+def _score_days(value, excellent, good, acceptable, weak):
+    value = safe_float(value, np.nan)
+    if np.isnan(value) or value < 0:
+        return None
+    if value <= excellent:
+        return 100.0
+    if value <= good:
+        return 85.0
+    if value <= acceptable:
+        return 70.0
+    if value <= weak:
+        return 45.0
+    return 20.0
+
+
+def _score_net_debt_ebitda(value):
+    value = safe_float(value, np.nan)
+    if np.isnan(value):
+        return None
+    if value <= 0:
+        return 100.0
+    if value <= 1:
+        return 90.0
+    if value <= 2:
+        return 80.0
+    if value <= 3:
+        return 65.0
+    if value <= 4:
+        return 45.0
+    if value <= 5:
+        return 30.0
+    return 10.0
+
+
+FINANCIAL_WEIGHTS = {
+    "Net Kâr Marjı": 0.12,
+    "Net Borç / FAVÖK": 0.12,
+    "Faaliyet Nakit Akışı": 0.15,
+    "Cari Oran": 0.08,
+    "Özkaynak / Varlık": 0.08,
+    "Faiz Karşılama": 0.10,
+    "Alacak Tahsil Süresi": 0.06,
+    "Stok Devir Süresi": 0.06,
+    "Net Nakit / Özkaynak": 0.08,
+    "Ciro Büyümesi": 0.10,
+    "Son Çeyrek İvmesi": 0.05,
+}
+
+
 def get_financial_health(symbol):
     """financial_statements tablosundaki en güncel KAP döneminden
     mevcut finansal sağlık skorunu üretir.
@@ -533,6 +635,7 @@ def get_financial_health(symbol):
         "signal": "VERİ YOK",
         "latest": None,
         "valid_metrics": 0,
+        "total_metrics": len(FINANCIAL_WEIGHTS),
         "metrics": {},
         "missing": [],
         "message": "financial_statements tablosunda kullanılabilir finansal veri bulunamadı.",
@@ -567,24 +670,62 @@ def get_financial_health(symbol):
             return result
 
         df["period_end"] = pd.to_datetime(df["period_end"], errors="coerce")
-        df = df.dropna(subset=["period_end"]).sort_values("period_end")
+        df = df.dropna(subset=["period_end"])
+        if "updated_at" in df.columns:
+            df["updated_at"] = pd.to_datetime(df["updated_at"], errors="coerce")
+            df = df.sort_values(["period_end", "updated_at"])
+        else:
+            df = df.sort_values("period_end")
+        df = df.drop_duplicates(subset=["period_end"], keep="last")
         if df.empty:
             result["message"] = f"{symbol} için geçerli dönem tarihi bulunamadı."
             return result
 
         latest = df.iloc[-1].copy()
+        previous_rows = df[df["period_end"] < latest["period_end"]]
+        previous = previous_rows.iloc[-1].copy() if not previous_rows.empty else None
+        latest_date = latest["period_end"]
+        yoy_rows = df[
+            (df["period_end"].dt.year == latest_date.year - 1)
+            & (df["period_end"].dt.month == latest_date.month)
+        ]
+        previous_year = yoy_rows.iloc[-1].copy() if not yoy_rows.empty else None
         result["latest"] = latest
 
-        def val(col):
-            return safe_float(latest.get(col), np.nan)
+        def first_value(row, *columns):
+            if row is None:
+                return np.nan
+            for col in columns:
+                if col in row.index:
+                    value = safe_float(row.get(col), np.nan)
+                    if not np.isnan(value):
+                        return value
+            return np.nan
+
+        def val(*columns):
+            return first_value(latest, *columns)
+
+        def prev(*columns):
+            return first_value(previous, *columns)
+
+        def yoy(*columns):
+            return first_value(previous_year, *columns)
 
         current_assets = val("current_assets")
         current_liabilities = val("current_liabilities")
-        equity = val("equity")
-        net_profit = val("net_profit")
-        revenue = val("revenue")
+        total_assets = val("total_assets", "assets")
+        equity = val("equity", "total_equity")
+        net_profit = val("net_profit", "period_profit")
+        revenue = val("revenue", "sales")
         cash = val("cash")
-        ocf = val("operating_cash_flow")
+        ocf = val("operating_cash_flow", "cash_flow_from_operations")
+        operating_profit = val("operating_profit", "ebit", "main_operating_profit")
+        finance_expense = abs(val("finance_expense", "financial_expense"))
+        ebitda = val("ebitda", "favok")
+        depreciation = val("depreciation_amortization", "depreciation")
+        receivables = val("trade_receivables", "receivables")
+        inventory = val("inventories", "inventory", "stocks")
+        cost_of_sales = abs(val("cost_of_sales", "cost_of_revenue"))
 
         debt_parts = []
         for col in [
@@ -624,12 +765,68 @@ def get_financial_health(symbol):
             else np.nan
         )
 
+        if np.isnan(ebitda) and not np.isnan(operating_profit) and not np.isnan(depreciation):
+            ebitda = operating_profit + depreciation
+
+        net_debt = -net_cash if not np.isnan(net_cash) else np.nan
+        net_debt_ebitda = (
+            net_debt / ebitda
+            if not np.isnan(net_debt) and not np.isnan(ebitda) and ebitda > 0
+            else np.nan
+        )
+        equity_ratio = (
+            equity / total_assets
+            if not np.isnan(equity) and not np.isnan(total_assets) and total_assets != 0
+            else np.nan
+        )
+        interest_coverage = (
+            operating_profit / finance_expense
+            if not np.isnan(operating_profit) and not np.isnan(finance_expense) and finance_expense > 0
+            else np.nan
+        )
+
+        revenue_growth = val("revenue_growth_yoy", "sales_growth_yoy")
+        previous_revenue = yoy("revenue", "sales")
+        if np.isnan(revenue_growth):
+            revenue_growth = (
+            (revenue / previous_revenue - 1) * 100
+            if not np.isnan(revenue) and not np.isnan(previous_revenue) and previous_revenue > 0
+            else np.nan
+            )
+        profit_growth = val(
+            "quarterly_profit_growth",
+            "net_profit_quarterly_growth",
+            "quarter_momentum",
+        )
+        day_factor = {
+            3: 90.0,
+            6: 181.0,
+            9: 273.0,
+            12: 365.0,
+        }.get(int(latest_date.month), 365.0)
+        receivable_days = (
+            receivables / revenue * day_factor
+            if not np.isnan(receivables) and not np.isnan(revenue) and revenue > 0
+            else np.nan
+        )
+        inventory_days = (
+            inventory / cost_of_sales * day_factor
+            if not np.isnan(inventory) and not np.isnan(cost_of_sales) and cost_of_sales > 0
+            else np.nan
+        )
+
         metrics = {
-            "Cari Oran": _score_current_ratio(current_ratio),
-            "Borç/Özkaynak": _score_debt_equity(debt_equity),
             "Net Kâr Marjı": _score_net_margin(net_margin),
-            "Net Nakit / Özkaynak": _score_cash_to_debt(net_cash, equity),
+            "Net Borç / FAVÖK": _score_net_debt_ebitda(net_debt_ebitda),
             "Faaliyet Nakit Akışı": _score_operating_cash_flow(ocf, net_profit),
+            "Cari Oran": _score_current_ratio(current_ratio),
+            "Özkaynak / Varlık": _score_equity_ratio(equity_ratio),
+            "Faiz Karşılama": _score_interest_coverage(interest_coverage),
+            "Alacak Tahsil Süresi": _score_days(receivable_days, 45, 75, 105, 150),
+            "Stok Devir Süresi": _score_days(inventory_days, 45, 75, 120, 180),
+            "Net Nakit / Özkaynak": _score_cash_to_debt(net_cash, equity),
+            "Ciro Büyümesi": _score_growth(revenue_growth),
+            "Son Çeyrek İvmesi": _score_growth(profit_growth),
         }
 
         result["raw"] = {
@@ -643,6 +840,17 @@ def get_financial_health(symbol):
             "net_profit": net_profit,
             "revenue": revenue,
             "operating_cash_flow": ocf,
+            "total_assets": total_assets,
+            "equity_ratio": equity_ratio,
+            "operating_profit": operating_profit,
+            "finance_expense": finance_expense,
+            "interest_coverage": interest_coverage,
+            "ebitda": ebitda,
+            "net_debt_ebitda": net_debt_ebitda,
+            "receivable_days": receivable_days,
+            "inventory_days": inventory_days,
+            "revenue_growth": revenue_growth,
+            "profit_growth": profit_growth,
         }
 
         valid = {k: v for k, v in metrics.items() if v is not None and pd.notna(v)}
@@ -651,16 +859,20 @@ def get_financial_health(symbol):
 
         result["missing"] = [k for k in metrics if k not in valid]
 
-        # En az 3 bağımsız finansal göstergenin hesaplanabilmesi,
+        # En az 4 bağımsız finansal göstergenin hesaplanabilmesi,
         # Financial Skor'u "gerçek skor" olarak göstermek için alt sınırdır.
-        if len(valid) < 3:
+        if len(valid) < 4:
             result["message"] = (
-                f"{symbol} son KAP döneminde yalnızca {len(valid)}/5 "
+                f"{symbol} son KAP döneminde yalnızca {len(valid)}/{len(metrics)} "
                 "Financial göstergesi hesaplanabildi; skor güvenilir kabul edilmedi."
             )
             return result
 
-        score = sum(valid.values()) / len(valid)
+        used_weight = sum(FINANCIAL_WEIGHTS[k] for k in valid)
+        score = (
+            sum(valid[k] * FINANCIAL_WEIGHTS[k] for k in valid) / used_weight
+            if used_weight > 0 else 50.0
+        )
         result["score"] = round(clamp(score), 1)
         result["available"] = True
 
@@ -679,7 +891,7 @@ def get_financial_health(symbol):
             date_text = date_text.strftime("%d.%m.%Y")
         result["message"] = (
             f"Son finansal dönem: {period or '-'} / {date_text}. "
-            f"{len(valid)}/5 Financial göstergesi kullanılabildi."
+            f"{len(valid)}/{len(metrics)} Financial göstergesi kullanılabildi."
         )
         return result
 
@@ -712,6 +924,18 @@ SECTOR_MAP = {
     "KCHOL": "Holding",
 
     "MOBTL": "Teknoloji",
+
+    "OYAKC": "Çimento",
+    "CIMSA": "Çimento",
+    "AKCNS": "Çimento",
+    "NUHCM": "Çimento",
+    "LMKDC": "Çimento",
+    "BUCIM": "Çimento",
+    "BTCIM": "Çimento",
+    "BSOKE": "Çimento",
+    "GOLTS": "Çimento",
+    "KONYA": "Çimento",
+    "AFYON": "Çimento",
 }
 
 
@@ -725,6 +949,7 @@ SECTOR_BASE = {
     "Holding/İnşaat": 60,
     "Holding": 70,
     "Teknoloji": 60,
+    "Çimento": 60,
     "Diğer": 55,
 }
 
@@ -754,6 +979,31 @@ def sector_engine(
         float(score),
         sector_name,
     )
+
+
+def financial_risk_engine(financial_data):
+    if not financial_data.get("available"):
+        return {"level": "unknown", "flags": [], "block_new_position": False}
+
+    raw = financial_data.get("raw", {})
+    flags = []
+    if safe_float(raw.get("current_ratio"), np.nan) < 1:
+        flags.append("cari oran 1'in altında")
+    if safe_float(raw.get("interest_coverage"), np.nan) < 1:
+        flags.append("faiz karşılama 1'in altında")
+    if safe_float(raw.get("net_debt_ebitda"), np.nan) > 4:
+        flags.append("net borç/FAVÖK 4'ün üzerinde")
+    if safe_float(raw.get("operating_cash_flow"), np.nan) < 0:
+        flags.append("işletme nakit akışı negatif")
+    if safe_float(raw.get("operating_profit"), np.nan) < 0:
+        flags.append("esas faaliyet sonucu negatif")
+
+    severe = len(flags) >= 2 or any("faiz karşılama" in x for x in flags)
+    return {
+        "level": "high" if severe else ("medium" if flags else "low"),
+        "flags": flags,
+        "block_new_position": severe,
+    }
 
 
 # ============================================================
@@ -1666,10 +1916,13 @@ def weighted_score(
 
 def calculate_horizon_scores(
     technical,
+    technical_score,
     fundamental,
     financial,
     sector,
     market,
+    horizon,
+    fundamental_available=True,
     financial_available=True,
 ):
 
@@ -1682,7 +1935,13 @@ def calculate_horizon_scores(
 
             (
                 technical["short"],
-                0.60,
+                0.45,
+                True,
+            ),
+
+            (
+                technical_score,
+                0.15,
                 True,
             ),
 
@@ -1707,7 +1966,7 @@ def calculate_horizon_scores(
             (
                 fundamental,
                 0.05,
-                True,
+                fundamental_available,
             ),
 
             (
@@ -1727,14 +1986,20 @@ def calculate_horizon_scores(
 
             (
                 technical["mid"],
-                0.30,
+                0.20,
+                True,
+            ),
+
+            (
+                technical_score,
+                0.10,
                 True,
             ),
 
             (
                 fundamental,
                 0.20,
-                True,
+                fundamental_available,
             ),
 
             (
@@ -1767,7 +2032,7 @@ def calculate_horizon_scores(
             (
                 fundamental,
                 0.25,
-                True,
+                fundamental_available,
             ),
 
             (
@@ -1800,17 +2065,17 @@ def calculate_horizon_scores(
     # GENEL SKOR
     # --------------------------------------------------------
 
+    if str(horizon).startswith("⚡"):
+        horizon_weights = (0.60, 0.25, 0.15)
+    elif str(horizon).startswith("📅"):
+        horizon_weights = (0.25, 0.50, 0.25)
+    else:
+        horizon_weights = (0.10, 0.25, 0.65)
+
     general = (
-
-        short * SHORT_WEIGHT
-
-        +
-
-        mid * MID_WEIGHT
-
-        +
-
-        long * LONG_WEIGHT
+        short * horizon_weights[0]
+        + mid * horizon_weights[1]
+        + long * horizon_weights[2]
     )
 
     return {
@@ -1940,6 +2205,7 @@ def automatic_action_engine(
     entry_quality,
     in_portfolio,
     resistance,
+    financial_risk=None,
 ):
     """
     Nihai kullanıcı aksiyonunu belirler.
@@ -2010,6 +2276,8 @@ def automatic_action_engine(
             False,
         )
     )
+
+    financial_risk = financial_risk or {}
 
     # --------------------------------------------------------
     # DİRENÇ MESAFESİ
@@ -2085,6 +2353,15 @@ def automatic_action_engine(
                 "Yeni pozisyon açılmamalı. "
                 "Teknik yapının toparlanması beklenmeli.",
             "status": "danger",
+        }
+
+    if financial_risk.get("block_new_position"):
+        flags = ", ".join(financial_risk.get("flags", [])[:3])
+        return {
+            "action": "🟠 FİNANSAL RİSK / BEKLE",
+            "short_action": "BİLANÇO RİSK KAPISI",
+            "message": f"Yeni giriş finansal risk kapısı nedeniyle bekletildi: {flags}.",
+            "status": "warning",
         }
 
     # ========================================================
@@ -2192,9 +2469,11 @@ def decision_engine(
     in_portfolio,
     entry_quality,
     horizon,
+    financial_risk=None,
 ):
 
     general = scores["general"]
+    financial_risk = financial_risk or {}
 
     long_score = scores["long"]
 
@@ -2225,6 +2504,14 @@ def decision_engine(
     # ========================================================
 
     if not in_portfolio:
+
+        if financial_risk.get("block_new_position"):
+            return (
+                "🟠 FİNANSAL RİSK / BEKLE",
+                "Bilanço risk kapısı yeni pozisyonu engelliyor: "
+                + ", ".join(financial_risk.get("flags", [])[:3])
+                + ".",
+            )
 
         # ----------------------------------------------------
         # Önce ciddi düşüş sinyali
@@ -2399,8 +2686,8 @@ def decision_engine(
 
 def confidence_engine(
     scores,
-    fundamental,
-    financial,
+    data_completeness,
+    fundamental_available=True,
     financial_available=True,
 ):
 
@@ -2429,27 +2716,11 @@ def confidence_engine(
         30,
     )
 
-    data_quality_values = [
-        fundamental,
-    ]
+    data_quality = clamp(data_completeness)
+    confidence -= (100 - data_quality) * 0.35
 
-    if financial_available:
-        data_quality_values.append(
-            financial
-        )
-
-
-    data_quality = (
-        sum(data_quality_values)
-        /
-        len(data_quality_values)
-    )
-
-    confidence -= (
-        100
-        -
-        data_quality
-    ) * 0.18
+    if not fundamental_available:
+        confidence -= 10
 
     # Finansal veri eksikliği güveni ayrıca düşürür.
     if not financial_available:
@@ -2789,12 +3060,15 @@ try:
         0,
         100,
     )
+    fundamental_available = bool(fundamental_data)
 
-except Exception:
+except Exception as exc:
 
     fundamental_data = {}
 
     fundamental_score = 50.0
+    fundamental_available = False
+    fundamental_error = str(exc)
 
 
 # ============================================================
@@ -2827,6 +3101,11 @@ financial_valid_metrics = int(
     financial_data.get("valid_metrics", 0) or 0
 )
 
+financial_total_metrics = int(
+    financial_data.get("total_metrics", len(FINANCIAL_WEIGHTS))
+    or len(FINANCIAL_WEIGHTS)
+)
+
 financial_missing = financial_data.get(
     "missing",
     [],
@@ -2836,6 +3115,8 @@ financial_message = financial_data.get(
     "message",
     "Financial veri durumu alınamadı.",
 )
+
+financial_risk = financial_risk_engine(financial_data)
 
 
 # ============================================================
@@ -2939,10 +3220,14 @@ confirmation = (
 
 scores = calculate_horizon_scores(
     technical,
+    technical_score,
     fundamental_score,
     financial_score,
     sector_score,
     market_score,
+    vade,
+    fundamental_available=
+        fundamental_available,
     financial_available=
         financial_available,
 )
@@ -2953,13 +3238,20 @@ scores = calculate_horizon_scores(
 # ============================================================
 
 # Financial göstergelerinin doluluk oranı veri kalitesine doğrudan yansıtılır.
+price_completeness = min(len(indicator_df) / 200.0, 1.0) * 20.0
+fundamental_completeness = 25.0 if fundamental_available else 0.0
 financial_completeness = (
-    financial_valid_metrics / 5 * 25
+    financial_valid_metrics / max(financial_total_metrics, 1) * 40.0
 )
+market_completeness = 10.0 if market_reasons is not None else 0.0
+sector_completeness = 5.0 if sector_name != "Diğer" else 2.0
 
 data_completeness = clamp(
-    75.0
+    price_completeness
+    + fundamental_completeness
     + financial_completeness
+    + market_completeness
+    + sector_completeness
 )
 
 
@@ -3000,6 +3292,7 @@ decision, action_reason = (
         in_portfolio,
         entry_quality,
         vade,
+        financial_risk,
     )
 )
 # ============================================================
@@ -3013,6 +3306,7 @@ automatic_action = automatic_action_engine(
     entry_quality=entry_quality,
     in_portfolio=in_portfolio,
     resistance=resistance,
+    financial_risk=financial_risk,
 )
 
 # ============================================================
@@ -3022,9 +3316,9 @@ automatic_action = automatic_action_engine(
 confidence_score, confidence_label = (
     confidence_engine(
         scores,
-        fundamental_score,
-        financial_score,
-        financial_available,
+        data_completeness,
+        fundamental_available=fundamental_available,
+        financial_available=financial_available,
     )
 )
 
@@ -3538,7 +3832,7 @@ if not financial_available:
 
 {financial_message}
 
-Kullanılabilen Financial göstergesi: **{financial_valid_metrics}/5**.
+Kullanılabilen Financial göstergesi: **{financial_valid_metrics}/{financial_total_metrics}**.
 
 Eksik göstergeler: **{', '.join(financial_missing) if financial_missing else 'Yok'}**
 
@@ -3547,16 +3841,23 @@ yedek değerdir; **gerçek Financial Skor olarak kabul edilmez.**
 """
         )
 
-elif financial_valid_metrics < 5:
+elif financial_valid_metrics < financial_total_metrics:
 
     with st.expander(
         "ℹ️ Veri Kalitesi Bilgisi"
     ):
         st.info(
-            f"Financial Skor üretildi ancak {financial_valid_metrics}/5 "
+            f"Financial Skor üretildi ancak {financial_valid_metrics}/{financial_total_metrics} "
             f"gösterge kullanılabildi. Eksik: "
             f"{', '.join(financial_missing) if financial_missing else '-'}"
         )
+
+if financial_risk.get("flags"):
+    risk_text = "; ".join(financial_risk["flags"])
+    if financial_risk.get("level") == "high":
+        st.error(f"🚨 Finansal risk kapısı: {risk_text}")
+    else:
+        st.warning(f"⚠️ Finansal izleme notu: {risk_text}")
 
 
 # ============================================================
@@ -3870,7 +4171,7 @@ fc2.metric(
 
 
 st.caption(
-    f"KAP Financial veri kapsamı: **{financial_valid_metrics}/5 gösterge** | "
+    f"KAP Financial veri kapsamı: **{financial_valid_metrics}/{financial_total_metrics} gösterge** | "
     f"{financial_message}"
 )
 

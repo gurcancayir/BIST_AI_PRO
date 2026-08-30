@@ -44,8 +44,13 @@
 from __future__ import annotations
 
 import os
+import io
+import json
+import re
 import sqlite3
 import warnings
+from datetime import date, datetime
+from urllib.request import Request, urlopen
 from typing import Any, Dict, Optional, Tuple, List
 
 import numpy as np
@@ -71,6 +76,20 @@ DEFAULT_MIN_DYNAMIC = 45.0
 DEFAULT_MIN_SECTOR = 35.0
 DEFAULT_MIN_TECHNICAL = 35.0
 DEFAULT_MIN_LIQUIDITY = 5_000_000
+
+# Varant verisi bulunamazsa mevcut hisse analizi aynen devam eder.
+# Kaynak listesi resmi/kurumsal izleme sayfalarıyla sınırlıdır.
+WARRANT_SOURCE_URLS = [
+    "https://www.garantibbvayatirim.com.tr/varant/varant-izleme-listesi",
+]
+
+WARRANT_TABLE_CANDIDATES = [
+    "warrants",
+    "warrant_data",
+    "varantlar",
+    "varant_data",
+    "varant_cache",
+]
 
 # ============================================================
 # FIRSAT SKOR AĞIRLIKLARI
@@ -285,6 +304,328 @@ def read_table(
     except Exception:
 
         return pd.DataFrame()
+
+
+# ============================================================
+# VARANT VERİSİ VE PUANLAMA
+# ============================================================
+
+def _plain_column(value: Any) -> str:
+    """Kolon adını farklı kaynaklarla eşleşebilir hale getirir."""
+
+    text = str(value).strip().lower()
+    translation = str.maketrans(
+        "çğıöşüÇĞİÖŞÜ",
+        "cgiosuCGIOSU",
+    )
+    text = text.translate(translation)
+    return re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+
+
+def _first_matching_column(
+    df: pd.DataFrame,
+    candidates: List[str],
+) -> Optional[str]:
+
+    lookup = {
+        _plain_column(col): col
+        for col in df.columns
+    }
+
+    for candidate in candidates:
+        found = lookup.get(_plain_column(candidate))
+        if found is not None:
+            return found
+
+    return None
+
+
+def _numeric_series(series: pd.Series) -> pd.Series:
+    """Türkçe ondalık ve yüzde gösterimlerini sayıya çevirir."""
+
+    if pd.api.types.is_numeric_dtype(series):
+        return pd.to_numeric(series, errors="coerce")
+
+    values = series.astype(str).str.strip()
+    values = values.str.replace("%", "", regex=False)
+    values = values.str.replace(" ", "", regex=False)
+
+    # 1.234,56 ve 12,5 biçimlerini destekle.
+    both = values.str.contains(",", regex=False) & values.str.contains(".", regex=False)
+    values.loc[both] = (
+        values.loc[both]
+        .str.replace(".", "", regex=False)
+        .str.replace(",", ".", regex=False)
+    )
+    comma_only = values.str.contains(",", regex=False) & ~values.str.contains(".", regex=False)
+    values.loc[comma_only] = values.loc[comma_only].str.replace(",", ".", regex=False)
+
+    return pd.to_numeric(values, errors="coerce")
+
+
+def _parse_expiry(value: Any) -> pd.Timestamp:
+
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return pd.NaT
+
+    return pd.to_datetime(value, dayfirst=True, errors="coerce")
+
+
+def normalize_warrant_data(raw: pd.DataFrame) -> pd.DataFrame:
+    """Farklı varant kaynaklarını tek bir güvenli şemaya dönüştürür."""
+
+    if raw is None or raw.empty:
+        return pd.DataFrame()
+
+    df = raw.copy()
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [
+            "_".join(str(x) for x in col if str(x) != "nan")
+            for col in df.columns
+        ]
+
+    aliases = {
+        "warrant_code": ["warrant_code", "varant", "varant_kodu", "kisa_kod", "kod", "symbol"],
+        "underlying": ["underlying", "dayanak", "dayanak_varlik", "dayanak_kodu", "hisse", "underlying_code"],
+        "type": ["type", "tur", "varant_tipi", "tip", "call_put", "alim_satim"],
+        "expiry": ["expiry", "vade", "vade_tarihi", "maturity", "maturity_date"],
+        "strike": ["strike", "kullanim_fiyati", "kullanim", "exercise_price"],
+        "bid": ["bid", "alis", "p_y_alis", "piyasa_yapici_alis"],
+        "ask": ["ask", "satis", "p_y_satis", "piyasa_yapici_satis"],
+        "last": ["last", "son", "son_fiyat", "fiyat", "last_price"],
+        "effective_leverage": ["effective_leverage", "etkin_kaldirac", "etkin_ayarlama", "kaldirac"],
+        "delta": ["delta"],
+        "volume": ["volume", "hacim", "islem_hacmi", "volume_tl"],
+        "issuer": ["issuer", "ihracci", "piyasa_yapici"],
+        "conversion_ratio": ["conversion_ratio", "donusum_orani", "parite"],
+    }
+
+    result = pd.DataFrame(index=df.index)
+    for target, candidates in aliases.items():
+        source = _first_matching_column(df, candidates)
+        result[target] = df[source] if source is not None else np.nan
+
+    result["warrant_code"] = result["warrant_code"].fillna("").astype(str).str.upper().str.strip()
+    result["underlying"] = result["underlying"].apply(clean_symbol)
+    result["type"] = result["type"].fillna("").astype(str).str.upper().str.strip()
+    result["type"] = result["type"].replace({
+        "CALL": "ALIM", "C": "ALIM", "ALIS": "ALIM", "ALIŞ": "ALIM",
+        "PUT": "SATIM", "P": "SATIM", "SATIS": "SATIM", "SATIŞ": "SATIM",
+    })
+
+    for col in [
+        "strike", "bid", "ask", "last", "effective_leverage",
+        "delta", "volume", "conversion_ratio",
+    ]:
+        result[col] = _numeric_series(result[col])
+
+    result["expiry"] = result["expiry"].apply(_parse_expiry)
+    today = pd.Timestamp(date.today())
+    result["days_to_expiry"] = (result["expiry"] - today).dt.days
+
+    mid = (result["bid"] + result["ask"]) / 2
+    result["spread_pct"] = np.where(
+        (mid > 0) & result["bid"].notna() & result["ask"].notna(),
+        (result["ask"] - result["bid"]) / mid * 100,
+        np.nan,
+    )
+
+    result = result[
+        (result["warrant_code"] != "")
+        & (result["underlying"] != "")
+    ].copy()
+
+    return result.drop_duplicates("warrant_code", keep="last").reset_index(drop=True)
+
+
+def _extract_html_tables(url: str) -> List[pd.DataFrame]:
+
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
+        },
+    )
+    with urlopen(request, timeout=12) as response:
+        payload = response.read()
+
+    return pd.read_html(io.BytesIO(payload))
+
+
+def load_warrant_universe(
+    db_path: Optional[str] = None,
+    uploaded_df: Optional[pd.DataFrame] = None,
+) -> Tuple[pd.DataFrame, List[str]]:
+    """DB, kullanıcı dosyası ve erişilebilen kurumsal sayfalardaki varantları birleştirir."""
+
+    frames: List[pd.DataFrame] = []
+    sources: List[str] = []
+
+    if uploaded_df is not None and not uploaded_df.empty:
+        normalized = normalize_warrant_data(uploaded_df)
+        if not normalized.empty:
+            frames.append(normalized)
+            sources.append("Yüklenen dosya")
+
+    for table_name in WARRANT_TABLE_CANDIDATES:
+        table = read_table(table_name, db_path)
+        normalized = normalize_warrant_data(table)
+        if not normalized.empty:
+            frames.append(normalized)
+            sources.append(f"Veritabanı/{table_name}")
+
+    for url in WARRANT_SOURCE_URLS:
+        try:
+            tables = _extract_html_tables(url)
+        except Exception:
+            continue
+
+        count_before = len(frames)
+        for table in tables:
+            normalized = normalize_warrant_data(table)
+            if not normalized.empty:
+                frames.append(normalized)
+        if len(frames) > count_before:
+            sources.append("Garanti BBVA Yatırım")
+
+    if not frames:
+        return pd.DataFrame(), sources
+
+    result = pd.concat(frames, ignore_index=True, sort=False)
+    result = result.drop_duplicates("warrant_code", keep="first")
+    return result.reset_index(drop=True), sources
+
+
+def score_warrants(warrants: pd.DataFrame) -> pd.DataFrame:
+    """Hisse skoruna dokunmadan, varantları kendi risk/işlem kalitesiyle sıralar."""
+
+    if warrants is None or warrants.empty:
+        return pd.DataFrame()
+
+    result = warrants.copy()
+    scores = []
+    labels = []
+
+    for _, row in result.iterrows():
+        score = 0.0
+        days = safe_float(row.get("days_to_expiry"), -1)
+        spread = safe_float(row.get("spread_pct"), 999)
+        leverage = abs(safe_float(row.get("effective_leverage"), 0))
+        delta = abs(safe_float(row.get("delta"), 0))
+        volume = safe_float(row.get("volume"), 0)
+        bid = safe_float(row.get("bid"), 0)
+        ask = safe_float(row.get("ask"), 0)
+
+        # Yükseliş fırsatlarında yönle uyumlu ALIM varantı aranır.
+        if str(row.get("type", "")).upper() == "ALIM":
+            score += 25
+        else:
+            score -= 30
+
+        if 45 <= days <= 120:
+            score += 25
+        elif 30 <= days <= 180:
+            score += 18
+        elif 15 <= days < 30:
+            score += 7
+        elif days < 15 or days > 270:
+            score -= 15
+
+        if spread <= 1.0:
+            score += 20
+        elif spread <= 2.0:
+            score += 15
+        elif spread <= 4.0:
+            score += 8
+        elif spread > 8.0:
+            score -= 15
+
+        if 2.0 <= leverage <= 6.0:
+            score += 18
+        elif 1.0 <= leverage <= 8.0:
+            score += 12
+        elif leverage > 12:
+            score -= 12
+
+        if delta > 0:
+            if 0.30 <= delta <= 0.70:
+                score += 8
+            elif delta < 0.10:
+                score -= 6
+        else:
+            score += 4  # Veri yok diye varantı tamamen eleme.
+
+        if volume > 0:
+            score += min(4.0, np.log10(max(volume, 1)))
+        if bid > 0 and ask > 0:
+            score += 4
+
+        final_score = round(clamp(score), 1)
+        scores.append(final_score)
+        if final_score >= 80:
+            labels.append("🟢 UYGUN ADAY")
+        elif final_score >= 65:
+            labels.append("🟡 DEĞERLENDİR")
+        elif final_score >= 50:
+            labels.append("🟠 YÜKSEK RİSK")
+        else:
+            labels.append("🔴 UYGUN DEĞİL")
+
+    result["warrant_score"] = scores
+    result["warrant_label"] = labels
+    return result.sort_values(
+        ["warrant_score", "spread_pct", "days_to_expiry"],
+        ascending=[False, True, False],
+        na_position="last",
+    ).reset_index(drop=True)
+
+
+def attach_warrant_results(
+    opportunities: pd.DataFrame,
+    warrants: pd.DataFrame,
+    max_per_stock: int = 3,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Her fırsata en iyi varant özetini ekler; detay tablosunu ayrıca döndürür."""
+
+    if opportunities is None or opportunities.empty:
+        return opportunities, pd.DataFrame()
+
+    output = opportunities.copy()
+    output["warrant_count"] = 0
+    output["best_warrant"] = "—"
+    output["best_warrant_score"] = np.nan
+    output["best_warrant_label"] = "Varant bulunamadı"
+
+    scored = score_warrants(warrants)
+    if scored.empty:
+        return output, scored
+
+    symbols = set(output["symbol"].astype(str).map(clean_symbol))
+    details = scored[
+        scored["underlying"].isin(symbols)
+        & (scored["type"] == "ALIM")
+        & (scored["days_to_expiry"].fillna(-1) >= 15)
+    ].copy()
+
+    if details.empty:
+        return output, details
+
+    details["rank"] = details.groupby("underlying")["warrant_score"].rank(
+        method="first", ascending=False
+    )
+    details = details[details["rank"] <= max_per_stock].copy()
+
+    for symbol, group in details.groupby("underlying", sort=False):
+        group = group.sort_values("warrant_score", ascending=False)
+        best = group.iloc[0]
+        mask = output["symbol"].astype(str).map(clean_symbol) == symbol
+        output.loc[mask, "warrant_count"] = len(group)
+        output.loc[mask, "best_warrant"] = best["warrant_code"]
+        output.loc[mask, "best_warrant_score"] = best["warrant_score"]
+        output.loc[mask, "best_warrant_label"] = best["warrant_label"]
+
+    return output, details.reset_index(drop=True)
 
 
 # ============================================================
@@ -3539,6 +3880,18 @@ def prepare_opportunity_table(
 
         "confidence":
             "Güven",
+
+        "warrant_count":
+            "Varant Sayısı",
+
+        "best_warrant":
+            "En Uygun Varant",
+
+        "best_warrant_score":
+            "Varant Skoru",
+
+        "best_warrant_label":
+            "Varant Kararı",
     }
 
     # ========================================================
@@ -3705,6 +4058,31 @@ def run_opportunity_center(
         5,
     )
 
+    warrant_file = st.sidebar.file_uploader(
+        "Varant dosyası (isteğe bağlı)",
+        type=["csv", "xlsx", "xls"],
+        help=(
+            "Otomatik kaynaklara ek olarak aracı kurumdan alınan "
+            "CSV/Excel varant listesini de tarar."
+        ),
+    )
+
+    uploaded_warrants = pd.DataFrame()
+
+    if warrant_file is not None:
+        try:
+            filename = warrant_file.name.lower()
+            if filename.endswith((".xlsx", ".xls")):
+                uploaded_warrants = pd.read_excel(warrant_file)
+            else:
+                try:
+                    uploaded_warrants = pd.read_csv(warrant_file, sep=None, engine="python")
+                except Exception:
+                    warrant_file.seek(0)
+                    uploaded_warrants = pd.read_csv(warrant_file, sep=";")
+        except Exception as exc:
+            st.sidebar.warning(f"Varant dosyası okunamadı: {exc}")
+
     # ========================================================
     # FİYAT VERİLERİ
     # ========================================================
@@ -3858,6 +4236,36 @@ def run_opportunity_center(
 
         include_c=include_c,
     )
+
+    # ========================================================
+    # VARANT EŞLEŞTİRME
+    # Mevcut fırsat skoru ve A/B/C sınıfları değiştirilmez.
+    # ========================================================
+
+    with st.spinner("Uygun varantlar aranıyor..."):
+        warrant_universe, warrant_sources = load_warrant_universe(
+            db_path=db_path,
+            uploaded_df=uploaded_warrants,
+        )
+
+    pool, warrant_details = attach_warrant_results(
+        pool,
+        warrant_universe,
+        max_per_stock=3,
+    )
+
+    if not warrant_universe.empty:
+        source_text = ", ".join(dict.fromkeys(warrant_sources)) or "mevcut kaynaklar"
+        matched_count = int((pool["warrant_count"] > 0).sum()) if not pool.empty else 0
+        st.caption(
+            f"🎟️ {len(warrant_universe):,} varant tarandı; "
+            f"{matched_count:,} fırsat hissesiyle eşleşti. Kaynak: {source_text}."
+        )
+    else:
+        st.caption(
+            "🎟️ Erişilebilir kaynaklarda varant verisi bulunamadı; "
+            "hisse sonuçları mevcut kriterlerle üretildi."
+        )
 
     # ========================================================
     # ÖZET
@@ -4040,6 +4448,10 @@ def run_opportunity_center(
             "trade_score",
             "rr",
             "confidence",
+            "warrant_count",
+            "best_warrant",
+            "best_warrant_score",
+            "best_warrant_label",
         ]
 
         cols = [
@@ -4052,6 +4464,65 @@ def run_opportunity_center(
             top_df[cols],
             use_container_width=True,
             hide_index=True,
+        )
+
+    # ========================================================
+    # VARANT ADAYLARI
+    # ========================================================
+
+    st.subheader(
+        "🎟️ Fırsat Hisseleriyle Eşleşen Varantlar"
+    )
+
+    if warrant_details.empty:
+
+        st.info(
+            "Fırsat havuzundaki hisseler için kriterlere uyan ALIM varantı bulunamadı."
+        )
+
+    else:
+
+        warrant_columns = {
+            "underlying": "Hisse",
+            "warrant_code": "Varant",
+            "type": "Tür",
+            "expiry": "Vade",
+            "days_to_expiry": "Kalan Gün",
+            "strike": "Kullanım Fiyatı",
+            "bid": "Alış",
+            "ask": "Satış",
+            "spread_pct": "Spread %",
+            "effective_leverage": "Etkin Kaldıraç",
+            "delta": "Delta",
+            "volume": "Hacim",
+            "issuer": "İhraççı",
+            "warrant_score": "Varant Skoru",
+            "warrant_label": "Karar",
+        }
+
+        available_warrant_columns = [
+            col for col in warrant_columns
+            if col in warrant_details.columns
+        ]
+
+        warrant_table = warrant_details[available_warrant_columns].rename(
+            columns=warrant_columns
+        )
+
+        if "Vade" in warrant_table.columns:
+            warrant_table["Vade"] = pd.to_datetime(
+                warrant_table["Vade"], errors="coerce"
+            ).dt.strftime("%d.%m.%Y")
+
+        st.dataframe(
+            warrant_table,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.caption(
+            "Varant skoru hisse fırsat skoruna eklenmez. Sıralama; yön uyumu, "
+            "kalan vade, spread, etkin kaldıraç, delta ve mevcut likidite verisine göre yapılır."
         )
 
     # ========================================================
@@ -4115,6 +4586,16 @@ def run_opportunity_center(
                 "rr"
             ],
         )
+
+        if selected_row.get("best_warrant", "—") != "—":
+            st.write(
+                "### 🎟️ En Uygun Varant"
+            )
+            st.write(
+                f"**{selected_row['best_warrant']}** — "
+                f"{selected_row['best_warrant_label']} "
+                f"(Skor: {safe_float(selected_row['best_warrant_score'], 0):.1f})"
+            )
 
         st.write(
             "### 📌 Analiz"
