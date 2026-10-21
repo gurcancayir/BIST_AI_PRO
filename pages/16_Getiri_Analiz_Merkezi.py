@@ -48,10 +48,20 @@ with st.expander("Hesaplama yöntemi ve veri koşulları", expanded=False):
         """
     )
 
+if not DB_PATH.exists():
+    st.error(
+        f"Veritabanı bulunamadı: {DB_PATH}. "
+        "Bu sayfayı BIST AI PRO ana klasörüne ve mevcut borsa.db dosyanın yanına yerleştir."
+    )
+    st.stop()
+
 conn = None
 try:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     universe = load_universe(conn)
+except Exception as exc:
+    st.error(f"Hisse evreni okunamadı: {exc}")
+    st.stop()
 finally:
     if conn is not None:
         conn.close()
