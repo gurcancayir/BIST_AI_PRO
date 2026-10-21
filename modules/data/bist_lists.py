@@ -177,6 +177,7 @@ SECTOR_MAP: Dict[str, List[str]] = {
         "AYEN",
         "CWENE",
         "ENJSA",
+        "ENERY",
         "EUPWR",
         "GESAN",
         "GWIND",
