@@ -306,10 +306,22 @@ TICKER_SECTOR_OVERRIDES = {
     # -----------------------------
     # ENERJİ / ELEKTRİK
     # -----------------------------
+    "AHGAZ": "Enerji",
+    "AKENR": "Enerji",
     "AKSEN": "Enerji",
     "AKFYE": "Enerji",
+    "AKSUE": "Enerji",
+    "ARASE": "Enerji",
+    "AYDEM": "Enerji",
+    "AYEN": "Enerji",
+    "CANTE": "Enerji",
+    "CATES": "Enerji",
+    "CONSE": "Enerji",
+    "ENERY": "Enerji",
     "ENJSA": "Enerji",
+    "ESEN": "Enerji",
     "GWIND": "Enerji",
+    "ALFAS": "Elektrik",
     "GESAN": "Elektrik",
     "EUPWR": "Elektrik",
     "ASTOR": "Elektrik",
@@ -354,6 +366,16 @@ TICKER_SECTOR_OVERRIDES = {
     "TATGD": "Gıda",
     "PNSUT": "Gıda",
     "PETUN": "Gıda",
+    "ATAKP": "Gıda",
+    "AVOD": "Gıda",
+    "BANVT": "Gıda",
+    "BORSK": "Gıda",
+    "DARDL": "Gıda",
+    "DMRGD": "Gıda",
+    "DURKN": "Gıda",
+    "EKSUN": "Gıda",
+    "ELITE": "Gıda",
+    "FRIGO": "Gıda",
 
     # -----------------------------
     # ULAŞTIRMA
@@ -387,6 +409,9 @@ TICKER_SECTOR_OVERRIDES = {
     "SRVGY": "GYO",
     "OZKGY": "GYO",
     "PEKGY": "GYO",
+    "ADGYO": "GYO",
+    "AKFGY": "GYO",
+    "AKMGY": "GYO",
 }
 
 # Holding adı DB'de sektör olarak "ticaret", "sanayi" vb. gelirse
