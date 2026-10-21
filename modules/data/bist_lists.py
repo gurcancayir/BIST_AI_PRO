@@ -984,21 +984,24 @@ BIST500 = fetch_bist500()
 # ============================================================
 
 EXTRA_TRACKED_STOCKS = [
-    # Enerji / elektrik
-    "AHGAZ", "AKENR", "AKFYE", "AKSEN", "AKSUE", "ALFAS",
-    "ARASE", "AYDEM", "AYEN", "CANTE", "CATES", "CONSE",
-    "ENERY", "ENJSA", "ESEN", "GWIND",
+    # Enerji ve elektrik ekipmanları — web modülünde takip
+    "AHGAZ", "AKENR", "AKFYE", "AKSEN", "AKSUE", "ALFAS", "ARASE",
+    "AYDEM", "AYEN", "CANTE", "CATES", "CONSE", "CWENE", "ENDAE",
+    "ENERY", "ENJSA", "ESEN", "EUPWR", "GESAN", "GWIND", "HUNER",
+    "IZENR", "KONTR", "MAGEN", "MOGAN", "NATEN", "NTGAZ", "ODAS",
+    "PAMEL", "SMRTG", "TATEN", "TRENJ", "YEOTK", "ZOREN",
     # GYO / Gayrimenkul Yatırım Ortaklıkları
-    "ADGYO", "AKFGY", "AKMGY", "AKSGY", "ALGYO",
-    "ASGYO", "ATAGY", "AVPGY", "BEGYO", "DAPGM",
-    "DGGYO", "DZGYO", "EKGYO", "EYGYO", "FZLGY",
-    "HLGYO", "ISGYO", "KGYO", "KLGYO", "MHRGY",
-    "MSGYO", "NUGYO", "OZKGY", "OZGYO", "PAGYO",
-    "PEKGY", "PSGYO", "RGYAS", "RYGYO", "SRVGY",
-    "SURGY", "TDGYO", "TRGYO", "VKGYO", "YGGYO", "ZGYO",
+    "ADGYO", "AKFGY", "AKMGY", "AKSGY", "ALGYO", "ASGYO", "ATAGY",
+    "AVPGY", "BEGYO", "DAPGM", "DGGYO", "DZGYO", "EKGYO", "EYGYO",
+    "FZLGY", "HLGYO", "ISGYO", "KGYO", "KLGYO", "MHRGY", "MSGYO",
+    "NUGYO", "OZKGY", "OZGYO", "PAGYO", "PEKGY", "PSGYO", "RGYAS",
+    "RYGYO", "SRVGY", "SURGY", "TDGYO", "TRGYO", "VKGYO", "YGGYO", "ZGYO",
     # Gıda
-    "ATAKP", "AVOD", "BANVT", "BORSK", "DARDL",
-    "DMRGD", "DURKN", "EKSUN", "ELITE", "FRIGO",
+    "AEFES", "ATAKP", "AVOD", "BANVT", "BORSK", "CCOLA", "DARDL",
+    "DMRGD", "DURKN", "EKSUN", "ELITE", "ERSU", "FADE", "FRIGO",
+    "GOKNR", "KAYSE", "KNFRT", "KRVGD", "OBAMS", "OFSYM", "OZSUB",
+    "PENGD", "PNSUT", "SOKE", "TATGD", "TUKAS", "ULKER", "ULUUN",
+    "YAYLA", "YYLGD",
 ]
 
 
