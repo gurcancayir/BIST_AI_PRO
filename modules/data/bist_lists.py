@@ -464,7 +464,7 @@ SECTOR_MAP.update({
     ],
     "Telekom": ["ALCTL", "KAREL", "NETAS", "TCELL", "TTKOM"],
     "GMYO": [
-        "ADGYO", "AKFGY", "AKMGY", "AKSGY", "ALGYO", "ASGYO", "AVPGY", "BEGYO",
+        "ADGYO", "AKFGY", "AKMGY", "AKSGY", "ALGYO", "ASGYO", "ATAGY", "AVPGY", "BEGYO",
         "DAPGM", "DGGYO", "DZGYO", "EKGYO", "EYGYO", "FZLGY", "HLGYO", "ISGYO",
         "KGYO", "KLGYO", "MHRGY", "MSGYO", "NUGYO", "OZKGY", "OZGYO", "PAGYO",
         "PEKGY", "PSGYO", "RGYAS", "RYGYO", "SRVGY", "SURGY", "TDGYO", "TRGYO",
