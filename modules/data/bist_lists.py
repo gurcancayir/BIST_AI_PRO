@@ -169,17 +169,21 @@ SECTOR_MAP: Dict[str, List[str]] = {
     # --------------------------------------------------------
 
     "Enerji": [
+        "AHGAZ",
+        "AKENR",
         "AKFYE",
         "AKSEN",
-        "ALFAS",
-        "ASTOR",
+        "AKSUE",
+        "ARASE",
         "AYDEM",
         "AYEN",
+        "CANTE",
+        "CATES",
+        "CONSE",
         "CWENE",
-        "ENJSA",
         "ENERY",
-        "EUPWR",
-        "GESAN",
+        "ENJSA",
+        "ESEN",
         "GWIND",
         "KONTR",
         "MAGEN",
@@ -188,6 +192,13 @@ SECTOR_MAP: Dict[str, List[str]] = {
         "SMRTG",
         "YEOTK",
         "ZOREN",
+    ],
+
+    "Elektrik Ekipmanları": [
+        "ALFAS",
+        "ASTOR",
+        "EUPWR",
+        "GESAN",
     ],
 
     # --------------------------------------------------------
@@ -282,14 +293,22 @@ SECTOR_MAP: Dict[str, List[str]] = {
 
     "Gıda": [
         "AEFES",
-        "CCOLA",
-        "ULKER",
-        "TATGD",
-        "TUKAS",
+        "ATAKP",
+        "AVOD",
         "BANVT",
+        "BORSK",
+        "CCOLA",
+        "DARDL",
+        "DMRGD",
+        "DURKN",
+        "EKSUN",
+        "ELITE",
+        "FRIGO",
         "KERVT",
         "PNSUT",
-        "SOKM",
+        "TATGD",
+        "TUKAS",
+        "ULKER",
     ],
 
     # --------------------------------------------------------
@@ -346,12 +365,42 @@ SECTOR_MAP: Dict[str, List[str]] = {
     # --------------------------------------------------------
 
     "GMYO": [
+        "ADGYO",
         "AKFGY",
+        "AKMGY",
+        "AKSGY",
+        "ALGYO",
+        "ASGYO",
+        "ATAGY",
         "AVPGY",
+        "BEGYO",
+        "DAPGM",
+        "DGGYO",
+        "DZGYO",
         "EKGYO",
-        "TRGYO",
+        "EYGYO",
+        "FZLGY",
+        "HLGYO",
         "ISGYO",
-        "SISE",
+        "KGYO",
+        "KLGYO",
+        "MHRGY",
+        "MSGYO",
+        "NUGYO",
+        "OZKGY",
+        "OZGYO",
+        "PAGYO",
+        "PEKGY",
+        "PSGYO",
+        "RGYAS",
+        "RYGYO",
+        "SRVGY",
+        "SURGY",
+        "TDGYO",
+        "TRGYO",
+        "VKGYO",
+        "YGGYO",
+        "ZGYO",
     ],
 
     # --------------------------------------------------------
@@ -935,6 +984,10 @@ BIST500 = fetch_bist500()
 # ============================================================
 
 EXTRA_TRACKED_STOCKS = [
+    # Enerji / elektrik
+    "AHGAZ", "AKENR", "AKFYE", "AKSEN", "AKSUE", "ALFAS",
+    "ARASE", "AYDEM", "AYEN", "CANTE", "CATES", "CONSE",
+    "ENERY", "ENJSA", "ESEN", "GWIND",
     # GYO / Gayrimenkul Yatırım Ortaklıkları
     "ADGYO", "AKFGY", "AKMGY", "AKSGY", "ALGYO",
     "ASGYO", "ATAGY", "AVPGY", "BEGYO", "DAPGM",
