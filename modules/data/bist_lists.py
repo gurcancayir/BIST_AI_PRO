@@ -935,6 +935,11 @@ BIST500 = fetch_bist500()
 # ============================================================
 
 EXTRA_TRACKED_STOCKS = [
+    # GYO / Gayrimenkul Yatırım Ortaklıkları
+    "ADGYO", "AKFGY", "AKMGY", "AKSGY", "ALGYO",
+    "ASGYO", "ATAGY", "AVPGY", "BEGYO", "DGGYO",
+    "DZGYO", "EKGYO", "EYGYO", "FZLGY", "HLGYO",
+    # Gıda
     "ATAKP", "AVOD", "BANVT", "BORSK", "DARDL",
     "DMRGD", "DURKN", "EKSUN", "ELITE", "FRIGO",
 ]
