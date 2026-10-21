@@ -69,6 +69,18 @@ def load_universe(conn: sqlite3.Connection) -> pd.DataFrame:
         STOCK_TO_SECTOR
     ).fillna("")
 
+    # Merkezi BIST sektör haritasındaki semboller de analiz evrenine eklenir.
+    # Veritabanında bulunan satırlar önceliklidir; var olan şirket/sektör bilgileri
+    # ve aktiflik durumu değiştirilmez. Yeni satırlar yalnızca sektör haritasında
+    # tanımlı semboller içindir; indirilemeyen geçmişler denetim tablosunda görünür.
+    mapped_symbols = pd.DataFrame({
+        "symbol": list(STOCK_TO_SECTOR.keys()),
+        "company": "",
+        "sector": [STOCK_TO_SECTOR[s] for s in STOCK_TO_SECTOR],
+    })
+    universe = pd.concat([universe, mapped_symbols], ignore_index=True)
+    universe = universe.drop_duplicates("symbol", keep="first")
+
     return universe.reset_index(drop=True)
 
 
