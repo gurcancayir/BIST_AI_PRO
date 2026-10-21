@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from modules.data.bist_lists import STOCK_TO_SECTOR
+
 PERIODS = (1, 2, 3, 4, 5)
 BENCHMARK_TICKERS = ("XU100_CFNNTLTL.IS", "XU100_CFNNTLTL")
 
@@ -55,8 +57,18 @@ def load_universe(conn: sqlite3.Connection) -> pd.DataFrame:
             universe[col] = ""
     universe["symbol"] = universe["symbol"].map(normalize_symbol)
     universe = universe[universe["symbol"].ne("")].drop_duplicates("symbol")
-    universe["company"] = universe["company"].fillna("")
-    universe["sector"] = universe["sector"].fillna("")
+    universe["company"] = universe["company"].fillna("").astype(str).str.strip()
+    universe["sector"] = universe["sector"].fillna("").astype(str).str.strip()
+
+    # Merkezi sektör haritası yalnızca DB'de sektör bilgisi boş olan satırları tamamlar.
+    # Mevcut ve kullanıcı tarafından tanımlanmış sektör değerleri ezilmez.
+    blank_sector = universe["sector"].eq("") | universe["sector"].str.lower().isin(
+        {"nan", "none", "null", "bilinmiyor"}
+    )
+    universe.loc[blank_sector, "sector"] = universe.loc[blank_sector, "symbol"].map(
+        STOCK_TO_SECTOR
+    ).fillna("")
+
     return universe.reset_index(drop=True)
 
 
