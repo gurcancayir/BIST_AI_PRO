@@ -157,24 +157,46 @@ def download_adjusted_closes(
 
 
 def download_return_benchmark() -> tuple[Optional[pd.Series], Optional[str]]:
-    """BIST 100 RETURN endeksini dener; XU100 fiyat endeksine fallback yapmaz."""
+    """BIST 100 RETURN endeksini dener; XU100 fiyat endeksine fallback yapmaz.
+
+    Bazı Yahoo sembollerinde 5y isteği kısmi geçmiş döndürebildiğinden önce
+    max geçmiş denenir. Kullanılabilir veri aralığı hesaplama ekranında ayrıca
+    denetlenir; kısa seri 5 yıllık karşılaştırma varmış gibi kabul edilmez.
+    """
     for ticker in BENCHMARK_TICKERS:
-        try:
-            frame = yf.download(
-                ticker, period="5y", auto_adjust=False, progress=False, threads=False, timeout=20
-            )
-            if frame is None or frame.empty:
+        for period in ("max", "5y"):
+            try:
+                frame = yf.download(
+                    ticker, period=period, auto_adjust=False,
+                    progress=False, threads=False, timeout=30
+                )
+                if frame is None or frame.empty:
+                    continue
+                series = _extract_adjusted_close(frame, ticker)
+                if series is None:
+                    # Index feed may expose only Close; source remains the RETURN index.
+                    if isinstance(frame.columns, pd.MultiIndex):
+                        for level in (0, 1):
+                            if "Close" in frame.columns.get_level_values(level):
+                                close = frame.xs("Close", axis=1, level=level)
+                                if isinstance(close, pd.DataFrame):
+                                    if ticker in close.columns:
+                                        close = close[ticker]
+                                    elif close.shape[1] == 1:
+                                        close = close.iloc[:, 0]
+                                if isinstance(close, pd.Series):
+                                    series = close.dropna().astype(float)
+                                    break
+                    elif "Close" in frame.columns:
+                        series = frame["Close"].dropna().astype(float)
+                if series is not None and not series.empty:
+                    series = series.dropna().astype(float)
+                    series.index = pd.to_datetime(series.index).tz_localize(None)
+                    series = series[~series.index.duplicated(keep="last")].sort_index()
+                    if not series.empty:
+                        return series, ticker
+            except Exception:
                 continue
-            series = _extract_adjusted_close(frame, ticker)
-            if series is None:
-                # Index feed may expose only Close; the source is still the RETURN index.
-                if "Close" in frame.columns:
-                    series = frame["Close"].dropna().astype(float)
-            if series is not None and not series.empty:
-                series.index = pd.to_datetime(series.index).tz_localize(None)
-                return series.sort_index(), ticker
-        except Exception:
-            continue
     return None, None
 
 
@@ -263,6 +285,7 @@ def calculate_period_tables(
         raise RuntimeError("BIST 100 RETURN endeks serisi boş.")
     benchmark_series = benchmark_series.dropna().sort_index()
     as_of = pd.Timestamp(benchmark_series.index[-1]).normalize()
+    benchmark_first_date = pd.Timestamp(benchmark_series.index[0]).normalize()
     tables: dict[int, pd.DataFrame] = {}
     full_rows = []
 
@@ -288,6 +311,9 @@ def calculate_period_tables(
                 "Sektör": item.get("sector", ""),
                 "Hisse Toplam Getiri (%)": round(stock_return, 2) if valid else np.nan,
                 "BIST 100 Toplam Getiri (%)": round(benchmark_return, 2) if benchmark_return is not None else np.nan,
+                "Endeks Başlangıç": benchmark_start.strftime("%Y-%m-%d") if benchmark_start is not None else "",
+                "Endeks Bitiş": benchmark_end.strftime("%Y-%m-%d") if benchmark_end is not None else "",
+                "Endeks Geçmişi İlk Tarih": benchmark_first_date.strftime("%Y-%m-%d"),
                 "Endeks Farkı (yp)": round(stock_return - benchmark_return, 2) if valid else np.nan,
                 "Yıllıklandırılmış Getiri (%)": round(((1 + stock_return / 100) ** (1 / years) - 1) * 100, 2)
                     if valid and stock_return > -100 else (-100.0 if valid else np.nan),
