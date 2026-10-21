@@ -94,6 +94,12 @@ kurumsal_ortak_portfoy = st.Page(
     title="Kurumsal Ortak Portföy",
     icon="🏦",
 )
+
+getiri_analiz_merkezi = st.Page(
+    "pages/16_Getiri_Analiz_Merkezi.py",
+    title="Getiri Analiz Merkezi",
+    icon="📈",
+)
 # ==================================================
 # CRYPTO AI PRO SAYFALARI
 # ==================================================
@@ -177,6 +183,7 @@ pg = st.navigation(
             dinamik_portfoy, 
             firsat_merkezi,
             kurumsal_ortak_portfoy,
+            getiri_analiz_merkezi,
             altin_coin,
             bloomberg_haberleri,
             varant_bilgi,
