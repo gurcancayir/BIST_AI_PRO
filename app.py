@@ -62,6 +62,12 @@ bilancolar = st.Page(
     icon="📑",
 )
 
+getiri_analiz = st.Page(
+    "pages/16_Getiri_Analiz_Merkezi.py",
+    title="Getiri Analiz Merkezi",
+    icon="📈",
+)
+
 altin_coin = st.Page(
     "pages/06_Altin_Coin.py",
     title="Altın, Gümüş & Döviz",
@@ -174,6 +180,7 @@ pg = st.navigation(
             hisse_analiz,
             tarama,
             bilancolar,
+            getiri_analiz,
             dinamik_portfoy, 
             firsat_merkezi,
             kurumsal_ortak_portfoy,
