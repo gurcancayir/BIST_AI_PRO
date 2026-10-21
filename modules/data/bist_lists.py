@@ -407,6 +407,89 @@ SECTOR_MAP: Dict[str, List[str]] = {
 
 
 # ============================================================
+# EK SEKTÖR EŞLEŞTİRMELERİ
+#
+# Ana liste korunarak, kullanıcı tarafından sağlanan evren listesindeki
+# eksik/yenilenmiş semboller tamamlanır. Aşağıdaki gruplar mevcut sektör
+# adlandırmasını kullanır; birden fazla faaliyet alanı olan şirketlerde
+# radar için ana faaliyet sektörü tercih edilmiştir.
+# ============================================================
+
+SECTOR_MAP.update({
+    "Banka": ["ALBRK", "ICBCT", "ISATR", "ISBTR", "ISCTR", "KLNMA", "QNBTR", "VAKBN", "YKBNK"],
+    "Sigorta": ["AGESA", "AKGRT", "ANHYT", "ANSGR", "RAYSG", "TURSG"],
+    "Enerji": [
+        "AHGAZ", "AKENR", "AKFYE", "AKSEN", "AKSUE", "ALFAS", "ARASE", "AYDEM",
+        "AYEN", "CANTE", "CATES", "CONSE", "CWENE", "ENDAE", "ENERY", "ENJSA",
+        "ESEN", "EUPWR", "GESAN", "GWIND", "HUNER", "IZENR", "KONTR", "MAGEN",
+        "MOGAN", "NATEN", "NTGAZ", "ODAS", "PAMEL", "SMRTG", "TATEN", "TRENJ",
+        "YEOTK", "ZOREN"
+    ],
+    "Petrol": ["AYGAZ", "CASA", "MEPET", "PETKM", "TRCAS", "TUPRS"],
+    "Savunma": ["ASELS", "ALTNY", "FORTE", "KATMR", "PAPIL", "SDTTR", "OTKAR"],
+    "Havacılık": ["CLEBI", "DOCO", "PGSUS", "TAVHL", "THYAO"],
+    "Otomotiv": [
+        "ASUZU", "BALAT", "BFREN", "BRISA", "DOAS", "EGEEN", "ESCAR", "FMIZP",
+        "FROTO", "JANTS", "KARSN", "OTKAR", "PAR SN", "TOASO", "TMSN", "TTRAK"
+    ],
+    "Demir Çelik": [
+        "BRSAN", "CEMTS", "DMSAS", "ERCB", "EREGL", "ISDMR", "IZMDC", "KCAER",
+        "KOCMT", "KRDMA", "KRDMB", "KRDMD", "MEGMT", "SARKY", "TUCLK", "YKSLN"
+    ],
+    "Çimento": [
+        "AFYON", "AKCNS", "BASCM", "BSOKE", "BTCIM", "BUCIM", "CIMSA", "CMENT",
+        "GOLTS", "LMKDC", "NUHCM", "OYAKC"
+    ],
+    "Kimya": [
+        "ACSEL", "AKSA", "ALKIM", "BRKSN", "DEVA", "HEKTS", "KLKIM", "KMPUR",
+        "MERCN", "MRSHL", "PETKM", "POLHO", "SASA", "SISE", "TARKM"
+    ],
+    "Gıda": [
+        "AEFES", "ATAKP", "AVOD", "BANVT", "BORSK", "CCOLA", "DMRGD", "EKSUN",
+        "ELITE", "ERSU", "FADE", "FRIGO", "GOKNR", "KAYSE", "KNFRT", "KRVGD",
+        "MGROS", "OBAMS", "OFSYM", "OZSUB", "PENGD", "PNSUT", "SOKE", "TATGD",
+        "TUKAS", "ULKER", "ULUUN", "YAYLA", "YYLGD"
+    ],
+    "Perakende": ["BIMAS", "BIZIM", "CRFSA", "EBEBK", "GMTAS", "MGROS", "SOKM", "TABGD", "TKNSA"],
+    "Holding": [
+        "AGHOL", "AKYHO", "ALARK", "BERA", "BINHO", "BRYAT", "COSMO", "DOHOL",
+        "ECZYT", "GLYHO", "GSDHO", "HEDEF", "IHLAS", "INVEO", "INVES", "KCHOL",
+        "KLRHO", "METRO", "NTHOL", "POLHO", "SAHOL", "TKFEN", "UFUK", "YESIL"
+    ],
+    "Teknoloji": [
+        "AGROT", "ALCTL", "ARDYZ", "ARENA", "ATATP", "AZTEK", "DGATE", "EDATA",
+        "ESCOM", "FORTE", "HTTBT", "INDES", "INGRM", "KFEIN", "KRONT", "LINK",
+        "LOGO", "MIATK", "MTRKS", "NETAS", "OBASE", "PAPIL", "PATEK", "PENTA",
+        "PKART", "REEDR", "SMART", "VBTYZ"
+    ],
+    "Telekom": ["ALCTL", "KAREL", "NETAS", "TCELL", "TTKOM"],
+    "GMYO": [
+        "ADGYO", "AKFGY", "AKMGY", "AKSGY", "ALGYO", "ASGYO", "AVPGY", "BEGYO",
+        "DAPGM", "DGGYO", "DZGYO", "EKGYO", "EYGYO", "FZLGY", "HLGYO", "ISGYO",
+        "KGYO", "KLGYO", "MHRGY", "MSGYO", "NUGYO", "OZKGY", "OZGYO", "PAGYO",
+        "PEKGY", "PSGYO", "RGYAS", "RYGYO", "SRVGY", "SURGY", "TDGYO", "TRGYO",
+        "VKGYO", "YGGYO", "ZGYO"
+    ],
+    "İnşaat": [
+        "AFYON", "AKCNS", "BOBET", "CMBTN", "CUSAN", "EGPRO", "EGSER", "ENKAI",
+        "INTEM", "KLSER", "KBORU", "PNLSN", "QUAGR", "USAK"
+    ],
+    "Madencilik": ["CVKMD", "MARBL", "PRKME", "TRALT"],
+    "Turizm": ["AYCES", "GZNMI", "KSTUR", "MAALT", "MERIT", "PKENT", "TEKTU", "ULAS"],
+    "Mobilya": ["DGNMO", "GENTS", "KLSYN", "ORMA", "YATAS", "YONGA"],
+    "Lojistik": ["HOROZ", "PASEU", "RYSAS", "GSDDE", "HRKET"],
+    "Sağlık": ["ANGEN", "ECILC", "GENIL", "LKMNH", "MEDTR", "MPARK", "ONCSM", "RTALB", "TRILC"],
+    "Tekstil": ["ADEL", "ARSAN", "ATEKS", "BLCYT", "BRKO", "BRLSM", "DAGI", "DERIM", "DESA", "ENSRI", "ISSEN", "KORDS", "LUKSK", "MAVI", "RUBNS", "SUNTK", "SUWEN", "VAKKO", "YUNSA"],
+    "Ambalaj": ["BAKAB", "BARMA", "BNTAS", "DURDO", "GEDZA", "KAPLM", "KARTN", "OZRDN", "RNPOL", "SEKUR"],
+    "Makine": ["BURCE", "BURVA", "BVSAN", "HKTM", "MAKIM", "MAKTK", "TMSN"],
+    "Finans": ["BRKVY", "CRDFA", "GARFA", "GEDIK", "GLBMD", "GLCVY", "INFO", "ISFIN", "ISMEN", "KTLEV", "LIDER", "OYYAT", "SEKFK", "SKYMD", "TERA", "ULUFA", "UNLU"]
+})
+
+# Yazım hatasına açık sembol otomatik olarak eklenmesin; yalnızca geçerli kodlar tutulur.
+SECTOR_MAP["Otomotiv"] = [s for s in SECTOR_MAP["Otomotiv"] if s != "PAR SN"]
+
+
+# ============================================================
 # SEKTÖR → HİSSE TERS HARİTA
 # ============================================================
 
