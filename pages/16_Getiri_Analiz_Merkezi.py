@@ -162,6 +162,8 @@ if run:
                 "all_rows": all_rows,
                 "leaders": leaders,
                 "benchmark_source": benchmark_source,
+                "benchmark_first_date": str(pd.Timestamp(benchmark.index[0]).date()),
+                "benchmark_last_date": str(pd.Timestamp(benchmark.index[-1]).date()),
                 "as_of": str(as_of.date()),
                 "universe_count": len(universe),
                 "downloaded_count": len(stock_series),
@@ -281,6 +283,8 @@ if result:
             )
 
     st.caption(
-        f"Benchmark kaynağı: {result['benchmark_source']}. "
+        f"Benchmark kaynağı: {result['benchmark_source']} | "
+        f"Endeks tarihçesi: {result.get('benchmark_first_date', 'bilinmiyor')} – "
+        f"{result.get('benchmark_last_date', result['as_of'])}. "
         "Geçmiş getiri gelecekteki getiriyi garanti etmez; bu ekran tek başına alım/satım sinyali değildir."
     )
