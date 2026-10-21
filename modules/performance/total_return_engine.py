@@ -157,12 +157,13 @@ def download_adjusted_closes(
 
 
 def download_return_benchmark() -> tuple[Optional[pd.Series], Optional[str]]:
-    """BIST 100 RETURN endeksini dener; XU100 fiyat endeksine fallback yapmaz.
+    """BIST 100 RETURN endeksini dener; fiyat endeksine sessizce dönmez.
 
-    Bazı Yahoo sembollerinde 5y isteği kısmi geçmiş döndürebildiğinden önce
-    max geçmiş denenir. Kullanılabilir veri aralığı hesaplama ekranında ayrıca
-    denetlenir; kısa seri 5 yıllık karşılaştırma varmış gibi kabul edilmez.
+    Tek günlük/kısa bir Yahoo yanıtı geçmiş getiri hesabı için geçerli değildir.
+    Aday sembollerin en uzun tarihçesi seçilir ve yeterli günlük geçmiş yoksa
+    kullanıcıya resmi BIST RETURN CSV'si yüklemesi için None döndürülür.
     """
+    candidates: list[tuple[pd.Series, str]] = []
     for ticker in BENCHMARK_TICKERS:
         for period in ("max", "5y"):
             try:
@@ -174,7 +175,6 @@ def download_return_benchmark() -> tuple[Optional[pd.Series], Optional[str]]:
                     continue
                 series = _extract_adjusted_close(frame, ticker)
                 if series is None:
-                    # Index feed may expose only Close; source remains the RETURN index.
                     if isinstance(frame.columns, pd.MultiIndex):
                         for level in (0, 1):
                             if "Close" in frame.columns.get_level_values(level):
@@ -189,15 +189,24 @@ def download_return_benchmark() -> tuple[Optional[pd.Series], Optional[str]]:
                                     break
                     elif "Close" in frame.columns:
                         series = frame["Close"].dropna().astype(float)
-                if series is not None and not series.empty:
-                    series = series.dropna().astype(float)
-                    series.index = pd.to_datetime(series.index).tz_localize(None)
-                    series = series[~series.index.duplicated(keep="last")].sort_index()
-                    if not series.empty:
-                        return series, ticker
+                if series is None or series.empty:
+                    continue
+                series = series.dropna().astype(float)
+                series.index = pd.to_datetime(series.index).tz_localize(None)
+                series = series[~series.index.duplicated(keep="last")].sort_index()
+                if not series.empty:
+                    candidates.append((series, ticker))
             except Exception:
                 continue
-    return None, None
+
+    if not candidates:
+        return None, None
+
+    # Beş yıllık günlük karşılaştırma için tek günlük veya kısa seri kabul edilmez.
+    series, ticker = max(candidates, key=lambda item: len(item[0]))
+    if len(series) < 750 or (series.index[-1] - series.index[0]).days < 1000:
+        return None, None
+    return series, ticker
 
 
 def _parse_numeric(values: pd.Series) -> pd.Series:
