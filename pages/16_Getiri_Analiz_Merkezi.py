@@ -202,7 +202,38 @@ if result:
                 "Sıralama, endekse göre fark (yüzde puan) esas alınarak yapılır."
             )
             if df.empty:
-                st.warning("Bu dönemde doğrulanmış veriye göre endeksi geçen hisse bulunamadı.")
+                audit = result.get("all_rows", pd.DataFrame())
+                period_label = f"{years} yıl"
+                period_audit = (
+                    audit[audit["Dönem"].eq(period_label)]
+                    if not audit.empty and "Dönem" in audit.columns
+                    else pd.DataFrame()
+                )
+                valid_audit = (
+                    period_audit[period_audit["Veri Durumu"].eq("Uygun")]
+                    if not period_audit.empty and "Veri Durumu" in period_audit.columns
+                    else pd.DataFrame()
+                )
+                if period_audit.empty or valid_audit.empty:
+                    st.warning(
+                        f"{years} yıllık dönem için doğrulanmış karşılaştırma verisi yok. "
+                        "Bu, hisselerin endeksi geçemediği anlamına gelmez; başlangıç/bitiş "
+                        "tarihleri veya fiyat geçmişi yetersiz olabilir."
+                    )
+                    if not period_audit.empty and "Veri Durumu" in period_audit.columns:
+                        st.caption(
+                            f"Denetlenen kayıt: {len(period_audit)} | "
+                            f"Geçerli karşılaştırma: {len(valid_audit)} | "
+                            f"Verisi yetersiz: {len(period_audit) - len(valid_audit)}"
+                        )
+                else:
+                    st.info(
+                        f"Geçerli karşılaştırması yapılan {len(valid_audit)} hissenin "
+                        f"hiçbiri {years} yıllık dönemde BIST 100 RETURN endeksini aşamadı."
+                    )
+                    st.caption(
+                        "Ayrıntılı getiriler ve veri durumları için 'Veri Denetimi' sekmesini aç."
+                    )
             else:
                 st.dataframe(df, use_container_width=True, hide_index=True)
                 st.download_button(
