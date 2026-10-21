@@ -445,8 +445,9 @@ SECTOR_MAP.update({
         "MERCN", "MRSHL", "PETKM", "POLHO", "SASA", "SISE", "TARKM"
     ],
     "Gıda": [
-        "AEFES", "ATAKP", "AVOD", "BANVT", "BORSK", "CCOLA", "DMRGD", "EKSUN",
-        "ELITE", "ERSU", "FADE", "FRIGO", "GOKNR", "KAYSE", "KNFRT", "KRVGD",
+        "AEFES", "ATAKP", "AVOD", "BANVT", "BORSK", "CCOLA", "DARDL", "DMRGD",
+        "DURKN", "EKSUN", "ELITE", "ERSU", "FADE", "FRIGO", "GOKNR", "KAYSE",
+        "KNFRT", "KRVGD",
         "MGROS", "OBAMS", "OFSYM", "OZSUB", "PENGD", "PNSUT", "SOKE", "TATGD",
         "TUKAS", "ULKER", "ULUUN", "YAYLA", "YYLGD"
     ],
@@ -926,6 +927,20 @@ BIST500 = fetch_bist500()
 
 
 # ============================================================
+# EK TAKİP EVRENİ
+#
+# Kullanıcı tarafından web modülünde ayrıca izlenmesi istenen hisseler.
+# Resmî BIST30/50/100/500 üyeliklerini değiştirmez; BIST TÜM havuzuna
+# eklenir. Böylece BIST500'ün 500 sembol doğrulaması bozulmaz.
+# ============================================================
+
+EXTRA_TRACKED_STOCKS = [
+    "ATAKP", "AVOD", "BANVT", "BORSK", "DARDL",
+    "DMRGD", "DURKN", "EKSUN", "ELITE", "FRIGO",
+]
+
+
+# ============================================================
 # SEKTÖR GETİR
 # ============================================================
 
@@ -1050,6 +1065,7 @@ def get_bist_list(
         return sorted(
             set(BIST500)
             | set(BIST100)
+            | set(EXTRA_TRACKED_STOCKS)
         )
 
     return []
