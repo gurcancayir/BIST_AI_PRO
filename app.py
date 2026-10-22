@@ -23,6 +23,13 @@ gunluk_trade = st.Page(
     icon="⚡",
 )
 
+
+hacim_analizi = st.Page(
+    "pages/17_Hacim_Agirlikli_Analiz.py",
+    title="Hacim Ağırlıklı Analiz",
+    icon="📊",
+)
+
 hisse_analiz = st.Page(
     "pages/02_Hisse_Analiz.py",
     title="Hisse Analiz",
@@ -183,6 +190,7 @@ pg = st.navigation(
             gunluk_trade_pro_v3,
             gunluk_trade_v4,
             yatirim_projeksiyonu,
+            hacim_analizi,
             hisse_analiz,
             hisse_karar_aciklayici,
             tarama,
