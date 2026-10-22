@@ -834,7 +834,8 @@ st.caption("Getiri, seçilen dönem içindeki ilk ve son kapanış fiyatlarında
 
 # Her takvim yılı için fiyat değişimi yüzdesi
 st.markdown("#### Yıllık artış / azalış (%)")
-annual = prices[["Close"]].dropna().copy()
+# Yıllık yüzde grafiği, yukarıda seçilen grafik dönemine bağlı olmalı.
+annual = chart_prices[["Close"]].dropna().copy()
 annual.index = pd.to_datetime(annual.index)
 annual = annual.sort_index()
 annual["Yıl"] = annual.index.year
@@ -857,7 +858,7 @@ annual_df = pd.DataFrame(annual_rows)
 if not annual_df.empty:
     st.bar_chart(annual_df.set_index("Yıl")[["Yıllık fiyat değişimi (%)"]], use_container_width=True)
     st.dataframe(annual_df, use_container_width=True, hide_index=True)
-st.caption("Bu oran fiyat değişimidir; temettüler ve sermaye artırımları dahil toplam getiri değildir.")
+st.caption(f"Yıllık yüzde grafiği seçili {period_label} aralığındaki verilerden hesaplanır. İlk yılda seçilen aralığın ilk kapanışından yıl sonuna kadar olan değişim gösterilebilir; bu nedenle ilk yıl kısmi dönem olabilir. Oranlar temettü dahil toplam getiri değildir.")
 
 technical_notes = []
 if np.isfinite(ma21):
