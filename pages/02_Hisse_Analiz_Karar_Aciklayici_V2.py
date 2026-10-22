@@ -52,6 +52,11 @@ def calculate_atr(df, period=14):
     return tr.rolling(period).mean()
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def load_price_history(ticker, period="5y"):
+    return yf.Ticker(ticker).history(period=period, auto_adjust=False)
+
+
 def safe_float(value, default=np.nan):
     return num(value, default)
 
@@ -553,7 +558,7 @@ if not symbol:
     st.stop()
 with st.spinner(f"{symbol} için fiyat, teknik ve temel veriler inceleniyor..."):
     try:
-        prices = yf.Ticker(f"{symbol}.IS").history(period="5y", auto_adjust=False)
+        prices = load_price_history(f"{symbol}.IS", period="5y")
     except Exception as exc:
         st.error(f"Fiyat verisi alınamadı: {exc}")
         st.stop()
@@ -679,8 +684,18 @@ st.dataframe(pd.DataFrame(ma_rows), use_container_width=True, hide_index=True)
 # Dönem seçimi ve 1–5 yıllık performans karşılaştırması
 st.subheader("Fiyat grafiği — 1 ile 5 yıl")
 period_options = {"1 yıl": 252, "2 yıl": 504, "3 yıl": 756, "4 yıl": 1008, "5 yıl": 1260}
-period_label = st.radio("Grafik dönemi", list(period_options.keys()), index=0, horizontal=True)
-bars = period_options[period_label]
+# Form içindeki seçimler kullanıcı "Grafiği uygula" demeden betiği yeniden çalıştırmaz.
+with st.form("karar_aciklayici_grafik_donemi_form", clear_on_submit=False):
+    st.radio(
+        "Grafik dönemi",
+        list(period_options.keys()),
+        index=0,
+        horizontal=True,
+        key="karar_aciklayici_grafik_donemi_secimi"
+    )
+    st.form_submit_button("Grafiği uygula")
+period_label = st.session_state.get("karar_aciklayici_grafik_donemi_secimi", "1 yıl")
+bars = period_options.get(period_label, 252)
 chart_prices = prices.tail(min(bars, len(prices))).copy()
 chart_cols = [c for c in ["Close", "MA21", "MA50", "MA200"] if c in chart_prices.columns]
 st.line_chart(chart_prices[chart_cols], use_container_width=True)
