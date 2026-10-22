@@ -295,6 +295,64 @@ if rows:
 else:
     st.warning("Hiçbir hisse için kullanılabilir 15 dakikalık veri alınamadı. Yahoo Finance bazı BIST sembollerini desteklemeyebilir.")
 
+
+st.divider()
+st.subheader("📝 İstediğim Hisse İçin Hacim Yorumu")
+st.caption("Bir BIST hisse kodu yaz; bu bölüm yalnızca fiyat-hacim ilişkisi, VWAP ve VWMA üzerinden yorum yapar.")
+with st.form("custom_volume_form"):
+    custom_symbol_input = st.text_input("Hisse kodu", placeholder="Örn. ENERY, TUPRS, ASELS")
+    custom_submit = st.form_submit_button("Hacim açısından yorumla", type="primary")
+
+if custom_submit:
+    custom_symbol = normalize_symbol(custom_symbol_input)
+    if not custom_symbol or not custom_symbol.replace(".", "").isalnum():
+        st.warning("Lütfen geçerli bir BIST hisse kodu gir.")
+    else:
+        with st.spinner(f"{custom_symbol} verisi alınıyor…"):
+            try:
+                custom_batch = download_batch((custom_symbol,))
+                custom_data = extract_symbol_frame(custom_batch, custom_symbol)
+                if custom_data.empty:
+                    st.error(f"{custom_symbol} için Yahoo Finance 15 dakikalık veri döndürmedi.")
+                else:
+                    last = custom_data.iloc[-1]
+                    prev = custom_data.iloc[-2] if len(custom_data) > 1 else None
+                    price = float(last["Close"])
+                    vwap = float(last["VWAP"])
+                    vwma20, vwma50 = last["VWMA20"], last["VWMA50"]
+                    ratio = last["Volume_Ratio"]
+                    change = ((price / float(prev["Close"])) - 1) * 100 if prev is not None and float(prev["Close"]) else None
+                    gap = ((price / vwap) - 1) * 100 if vwap else None
+                    a, b, c = st.columns(3)
+                    a.metric("Son 15 dk mum değişimi", "—" if change is None else f"{change:+.2f}%")
+                    b.metric("Hacim / 20 mum ortalaması", "—" if pd.isna(ratio) else f"{float(ratio):.2f}x")
+                    c.metric("Fiyatın VWAP'a uzaklığı", "—" if gap is None else f"{gap:+.2f}%")
+                    notes = []
+                    if change is not None:
+                        notes.append("Son mum yükselişle kapandı." if change > 0.15 else "Son mum düşüşle kapandı." if change < -0.15 else "Son mumun fiyat değişimi sınırlı.")
+                    if pd.notna(ratio):
+                        notes.append("Hacim ortalamanın belirgin üzerinde; hareket yüksek katılımla gerçekleşiyor." if ratio >= 1.5 else "Hacim ortalamanın üzerinde; kısmi hacim teyidi var." if ratio >= 1.2 else "Hacim ortalamanın altında; fiyat hareketinin hacim teyidi zayıf." if ratio < 0.7 else "Hacim olağan seviyelerde; belirgin bir hacim patlaması yok.")
+                    if gap is not None:
+                        notes.append("Fiyat VWAP üzerinde; gün içi hacim ağırlıklı ortalamaya göre konum olumlu." if gap > 0.2 else "Fiyat VWAP altında; gün içi hacim ağırlıklı ortalamaya göre konum zayıf." if gap < -0.2 else "Fiyat VWAP'a yakın; yön için yeni teyit gerekebilir.")
+                    if pd.notna(vwma20) and pd.notna(vwma50):
+                        notes.append("Fiyat VWMA20 ve VWMA50 üzerinde; hacim ağırlıklı kısa vadeli yapı olumlu." if price > float(vwma20) > float(vwma50) else "Fiyat VWMA20 ve VWMA50 altında; hacim ağırlıklı kısa vadeli yapı zayıf." if price < float(vwma20) < float(vwma50) else "VWMA20/VWMA50 sıralaması net bir yön göstermiyor.")
+                    st.markdown(f"### {custom_symbol} — hacim odaklı yorum")
+                    for note in notes:
+                        st.write("• " + note)
+                    positives = sum([gap is not None and gap > 0, pd.notna(vwma20) and price > float(vwma20), pd.notna(vwma50) and price > float(vwma50), pd.notna(ratio) and ratio >= 1.2 and change is not None and change > 0])
+                    negatives = sum([gap is not None and gap < 0, pd.notna(vwma20) and price < float(vwma20), pd.notna(vwma50) and price < float(vwma50), pd.notna(ratio) and ratio >= 1.2 and change is not None and change < 0])
+                    if positives >= 3 and positives > negatives:
+                        st.success("Hacim görünümü: OLUMLU. Fiyatın hacim ağırlıklı seviyeler üzerindeki konumu destekleyici; sonraki mumlarda hacmin korunması izlenmeli.")
+                    elif negatives >= 3 and negatives > positives:
+                        st.warning("Hacim görünümü: ZAYIF. Fiyatın hacim ağırlıklı seviyelere göre konumu satış baskısına işaret ediyor olabilir.")
+                    else:
+                        st.info("Hacim görünümü: KARIŞIK. VWAP çevresindeki fiyat davranışı ve sonraki mumların hacmi izlenmeli.")
+                    chart = custom_data[["Close", "VWAP", "VWMA20", "VWMA50"]].rename(columns={"Close": "Fiyat", "VWMA20": "VWMA 20", "VWMA50": "VWMA 50"})
+                    st.line_chart(chart, use_container_width=True)
+                    st.caption(f"Son mum zamanı: {custom_data.index[-1].strftime('%d.%m.%Y %H:%M')} (İstanbul). Yorum yalnızca hacim/fiyat ilişkisine dayanır; kesin al/sat sinyali değildir.")
+            except Exception as exc:
+                st.error(f"{custom_symbol} analizi sırasında hata oluştu: {exc}")
+
 if errors:
     with st.expander(f"Veri alınamayan hisseler / hata ayrıntısı ({len(errors)})"):
         st.dataframe(pd.DataFrame([{"Hisse": s, "Hata": e} for s, e in errors.items()]), use_container_width=True, hide_index=True)
