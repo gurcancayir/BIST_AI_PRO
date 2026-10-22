@@ -29,6 +29,12 @@ hisse_analiz = st.Page(
     icon="📈",
 )
 
+hisse_karar_aciklayici = st.Page(
+    "pages/02_Hisse_Analiz_Karar_Aciklayici_V2.py",
+    title="Hisse Karar Açıklayıcı V2",
+    icon="🧭",
+)
+
 tarama = st.Page(
     "pages/03_Tarama.py",
     title="Tarama",
@@ -178,10 +184,11 @@ pg = st.navigation(
             gunluk_trade_v4,
             yatirim_projeksiyonu,
             hisse_analiz,
+            hisse_karar_aciklayici,
             tarama,
             bilancolar,
             getiri_analiz,
-            dinamik_portfoy, 
+            dinamik_portfoy,
             firsat_merkezi,
             kurumsal_ortak_portfoy,
             altin_coin,
