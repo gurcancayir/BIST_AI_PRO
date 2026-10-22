@@ -832,6 +832,33 @@ st.markdown("#### 1–5 yıllık fiyat getirisi")
 st.dataframe(pd.DataFrame(performance_rows), use_container_width=True, hide_index=True)
 st.caption("Getiri, seçilen dönem içindeki ilk ve son kapanış fiyatlarından hesaplanır; temettüler ve sermaye artırımları dahil toplam getiri değildir.")
 
+# Her takvim yılı için fiyat değişimi yüzdesi
+st.markdown("#### Yıllık artış / azalış (%)")
+annual = prices[["Close"]].dropna().copy()
+annual.index = pd.to_datetime(annual.index)
+annual = annual.sort_index()
+annual["Yıl"] = annual.index.year
+year_end = annual.groupby("Yıl")["Close"].agg(["first", "last"])
+annual_rows = []
+for year, row in year_end.iterrows():
+    prev = annual.loc[annual["Yıl"] == year - 1, "Close"]
+    if len(prev) and np.isfinite(row["last"]) and np.isfinite(prev.iloc[-1]) and prev.iloc[-1] > 0:
+        pct = (row["last"] / prev.iloc[-1] - 1) * 100
+        basis = "Önceki yıl sonu kapanışına göre"
+    else:
+        pct = (row["last"] / row["first"] - 1) * 100 if row["first"] > 0 else np.nan
+        basis = "İlk mevcut kapanıştan yıl sonuna (kısmi yıl)"
+    annual_rows.append({
+        "Yıl": int(year),
+        "Yıllık fiyat değişimi (%)": round(float(pct), 2) if np.isfinite(pct) else None,
+        "Hesaplama": basis
+    })
+annual_df = pd.DataFrame(annual_rows)
+if not annual_df.empty:
+    st.bar_chart(annual_df.set_index("Yıl")[["Yıllık fiyat değişimi (%)"]], use_container_width=True)
+    st.dataframe(annual_df, use_container_width=True, hide_index=True)
+st.caption("Bu oran fiyat değişimidir; temettüler ve sermaye artırımları dahil toplam getiri değildir.")
+
 technical_notes = []
 if np.isfinite(ma21):
     technical_notes.append("Fiyat MA21 üzerinde" if latest_price > ma21 else "Fiyat MA21 altında")
