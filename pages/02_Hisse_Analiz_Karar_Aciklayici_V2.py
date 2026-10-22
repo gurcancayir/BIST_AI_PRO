@@ -1,3 +1,4 @@
+import sqlite3
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -49,6 +50,66 @@ def calculate_atr(df, period=14):
     prev_close = close.shift(1)
     tr = pd.concat([(high - low), (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
     return tr.rolling(period).mean()
+
+
+def get_financial_score(symbol):
+    """Basit, açıklanabilir finansal özet puanı; KAP financial_statements tablosunu okur."""
+    try:
+        with sqlite3.connect("borsa.db") as conn:
+            tables = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table'", conn)["name"].tolist()
+            if "financial_statements" not in tables:
+                return np.nan, "financial_statements tablosu bulunamadı", 0
+            df = pd.read_sql_query(
+                "SELECT * FROM financial_statements WHERE UPPER(symbol)=? ORDER BY period_end DESC",
+                conn, params=(symbol.upper(),)
+            )
+        if df.empty:
+            return np.nan, "Bu hisse için KAP finansal kaydı yok", 0
+        row = df.iloc[0]
+        def val(*names):
+            for name in names:
+                if name in row.index:
+                    x = num(row.get(name))
+                    if np.isfinite(x):
+                        return x
+            return np.nan
+        current_assets = val("current_assets")
+        current_liabilities = val("current_liabilities")
+        assets = val("total_assets", "assets")
+        equity = val("equity", "total_equity")
+        profit = val("net_profit", "period_profit")
+        revenue = val("revenue", "sales")
+        op_profit = val("operating_profit", "ebit", "main_operating_profit")
+        finance_expense = abs(val("finance_expense", "financial_expense"))
+        ebitda = val("ebitda", "favok")
+        cash = val("cash")
+        debt_parts = [val(k) for k in ["short_term_financial_debt", "current_portion_long_term_debt", "long_term_financial_debt"]]
+        debt_parts = [x for x in debt_parts if np.isfinite(x)]
+        debt = sum(debt_parts) if debt_parts else np.nan
+        metrics = []
+        if np.isfinite(profit) and np.isfinite(revenue) and revenue != 0:
+            margin = profit / revenue * 100
+            metrics.append(90 if margin >= 20 else 80 if margin >= 10 else 65 if margin >= 5 else 50 if margin >= 0 else 20)
+        if np.isfinite(current_assets) and np.isfinite(current_liabilities) and current_liabilities > 0:
+            ratio = current_assets / current_liabilities
+            metrics.append(90 if ratio >= 2 else 75 if ratio >= 1.5 else 60 if ratio >= 1 else 30)
+        if np.isfinite(equity) and np.isfinite(assets) and assets > 0:
+            ratio = equity / assets
+            metrics.append(90 if ratio >= .6 else 75 if ratio >= .4 else 60 if ratio >= .25 else 35 if ratio >= .1 else 15)
+        if np.isfinite(debt) and np.isfinite(ebitda) and ebitda > 0:
+            ratio = (debt - cash) / ebitda if np.isfinite(cash) else debt / ebitda
+            metrics.append(90 if ratio <= 0 else 80 if ratio <= 1 else 65 if ratio <= 2 else 45 if ratio <= 4 else 20)
+        if np.isfinite(op_profit) and np.isfinite(finance_expense) and finance_expense > 0:
+            ratio = op_profit / finance_expense
+            metrics.append(90 if ratio >= 5 else 75 if ratio >= 3 else 60 if ratio >= 1.5 else 35 if ratio >= 1 else 15)
+        if np.isfinite(row.get("revenue_growth_yoy", np.nan)):
+            growth = num(row.get("revenue_growth_yoy"))
+            metrics.append(90 if growth >= 30 else 75 if growth >= 15 else 60 if growth >= 0 else 30)
+        if len(metrics) < 3:
+            return np.nan, f"Yeterli finansal gösterge yok ({len(metrics)}); en az 3 gerekli", len(metrics)
+        return round(float(np.mean(metrics)), 1), f"{len(metrics)} finansal göstergeden özet puan", len(metrics)
+    except Exception as exc:
+        return np.nan, f"Finansal veri okunamadı: {exc}", 0
 
 
 symbol_input = st.text_input("BIST hisse kodu", value="TUPRS", placeholder="Örn. TUPRS").strip().upper()
@@ -139,14 +200,19 @@ tech_points.append(10 if np.isfinite(macd_now) and np.isfinite(macd_sig) and mac
 tech_points.append(10 if np.isfinite(volume_ratio) and volume_ratio >= 1.0 else 0)
 technical_score = float(sum(tech_points))
 
-# A weighted diagnostic is only calculated when the relevant data exists.
-parts = [(technical_score, 0.60)]
+# Finansal puanı aynı uygulamadaki KAP financial_statements tablosundan al.
+financial_score, financial_message, financial_metrics_count = get_financial_score(symbol)
+
+# Bu sayfanın tanı puanı: yalnızca mevcut olan puanlar ağırlıklı ortalamaya girer.
+parts = [(technical_score, 0.50)]
 if np.isfinite(fundamental_score):
     parts.append((max(0, min(100, fundamental_score)), 0.25))
+if np.isfinite(financial_score):
+    parts.append((max(0, min(100, financial_score)), 0.15))
 if np.isfinite(market_score):
-    parts.append((max(0, min(100, market_score)), 0.15))
+    parts.append((max(0, min(100, market_score)), 0.10))
 diagnostic_score = sum(v * w for v, w in parts) / sum(w for _, w in parts)
-coverage = min(100, round((len(prices) / 200) * 25 + (25 if fundamental_available else 0) + (15 if np.isfinite(market_score) else 0) + 35))
+coverage = min(100, round((len(prices) / 200) * 25 + (25 if fundamental_available else 0) + (15 if np.isfinite(market_score) else 0) + (20 if np.isfinite(financial_score) else 0) + 15))
 
 if diagnostic_score > 80:
     diagnostic_decision = "AL ADAYI"
@@ -158,11 +224,14 @@ if coverage < 65 or len(prices) < 50:
     diagnostic_decision = "VERİ YETERSİZ — İZLE"
 
 st.caption(f"Fiyat verisinin son tarihi: **{pd.Timestamp(latest_date).strftime('%d.%m.%Y')}** | Fiyat barı: **{len(prices)}** | Veri kapsamı tahmini: **%{coverage}**")
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Son kapanış", f"{latest_price:,.2f} TL")
-m2.metric("Bu sayfanın teknik puanı", f"{technical_score:.0f}/100")
-m3.metric("Bağımsız tanı puanı", f"{diagnostic_score:.1f}/100")
-m4.metric("Bu sayfanın ön değerlendirmesi", diagnostic_decision)
+m1, m2, m3, m4, m5 = st.columns(5)
+m1.metric("Teknik puan", f"{technical_score:.0f}/100")
+m2.metric("Temel puan", f"{fundamental_score:.1f}/100" if np.isfinite(fundamental_score) else "VERİ YOK")
+m3.metric("Finansal puan", f"{financial_score:.1f}/100" if np.isfinite(financial_score) else "VERİ YOK")
+m4.metric("Piyasa puanı", f"{market_score:.1f}/100" if np.isfinite(market_score) else "VERİ YOK")
+m5.metric("Genel tanı puanı", f"{diagnostic_score:.1f}/100")
+st.caption(f"Finansal puan notu: {financial_message}. Bu sayfadaki finansal puan, ana Hisse Analiz Merkezi'nin tam Financial Skoru ile birebir aynı formül değildir.")
+st.write(f"**Son kapanış:** {latest_price:,.2f} TL  |  **Ön değerlendirme:** {diagnostic_decision}")
 
 st.divider()
 st.subheader("1. Teknik görünüm")
@@ -223,10 +292,12 @@ else:
 
 st.divider()
 st.subheader("3. Temel ve piyasa katmanı")
-f1, f2, f3 = st.columns(3)
+f1, f2, f3, f4 = st.columns(4)
 f1.metric("Temel analiz", f"{fundamental_score:.1f}/100" if np.isfinite(fundamental_score) else "VERİ YOK")
-f2.metric("Piyasa skoru", f"{market_score:.1f}/100" if np.isfinite(market_score) else "VERİ YOK")
-f3.metric("Veri kapsamı", f"%{coverage}")
+f2.metric("Finansal analiz", f"{financial_score:.1f}/100" if np.isfinite(financial_score) else "VERİ YOK")
+f3.metric("Piyasa skoru", f"{market_score:.1f}/100" if np.isfinite(market_score) else "VERİ YOK")
+f4.metric("Veri kapsamı", f"%{coverage}")
+st.caption(financial_message)
 if fundamental_data:
     display_fields = {
         "F/K": ["pe_ratio", "trailing_pe"],
