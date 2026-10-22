@@ -793,26 +793,55 @@ else:
             if quarterly_df.empty:
                 st.info("Finansal raporlarda Mart, Haziran, Eylül veya Aralık dönem sonları bulunamadı.")
             else:
-                quarterly_df = quarterly_df.sort_values("_sort").tail(20)
-                chart_series = quarterly_df.set_index("Dönem")["Çeyreklik net kâr"].dropna()
+                quarterly_df = quarterly_df.sort_values("_sort").tail(20).copy()
+                valid_values = pd.concat([
+                    pd.to_numeric(quarterly_df["Çeyreklik net kâr"], errors="coerce"),
+                    pd.to_numeric(quarterly_df["Rapordaki net kâr"], errors="coerce")
+                ]).dropna()
+                max_abs = float(valid_values.abs().max()) if not valid_values.empty else 0
+                if max_abs >= 1_000_000_000:
+                    scale, unit_label = 1_000_000_000, "milyar"
+                elif max_abs >= 1_000_000:
+                    scale, unit_label = 1_000_000, "milyon"
+                elif max_abs >= 1_000:
+                    scale, unit_label = 1_000, "bin"
+                else:
+                    scale, unit_label = 1, "kaynak birim"
+
+                quarterly_df["Çeyreklik net kâr (ölçekli)"] = pd.to_numeric(
+                    quarterly_df["Çeyreklik net kâr"], errors="coerce"
+                ) / scale
+                quarterly_df["Rapordaki net kâr (ölçekli)"] = pd.to_numeric(
+                    quarterly_df["Rapordaki net kâr"], errors="coerce"
+                ) / scale
+                chart_series = quarterly_df.set_index("Dönem")["Çeyreklik net kâr (ölçekli)"].dropna()
                 if not chart_series.empty:
-                    st.bar_chart(chart_series, use_container_width=True)
-                    st.caption("Grafik, raporlar birikimli ise önceki rapordan fark alınarak hesaplanan çeyreklik net kârı gösterir.")
+                    st.markdown(f"**Çeyreklik net kâr ({unit_label} kaynak birim)**")
+                    st.bar_chart(chart_series, use_container_width=True, height=360)
+                    st.caption("Sıfırın üstü kârı, sıfırın altı zararı gösterir. Grafik son 20 rapor dönemini kapsar.")
                 else:
                     st.warning(
-                        "Rapor tarihleri bulundu ancak çeyreklik kâr hesaplamak için önceki dönem karşılaştırması yetersiz. "
-                        "Aşağıda raporlanan net kârları ayrıca gösteriyorum; bunlar çeyreklik kâr olarak yorumlanmamalıdır."
+                        "Çeyreklik kâr hesaplanamadı; aşağıdaki grafik raporda bildirilen net kârı gösterir. "
+                        "Bu değerler doğrudan çeyreklik kâr olarak yorumlanmamalıdır."
                     )
-                    fallback = quarterly_df.set_index("Dönem")["Rapordaki net kâr"]
-                    st.bar_chart(fallback, use_container_width=True)
-                display_df = quarterly_df.drop(columns=["_sort"]).copy()
+                    fallback = quarterly_df.set_index("Dönem")["Rapordaki net kâr (ölçekli)"].dropna()
+                    st.bar_chart(fallback, use_container_width=True, height=360)
+
+                display_df = quarterly_df[[
+                    "Dönem", "Dönem sonu", "Çeyreklik net kâr",
+                    "Rapordaki net kâr", "Hesaplama"
+                ]].copy()
                 for col in ["Çeyreklik net kâr", "Rapordaki net kâr"]:
-                    display_df[col] = pd.to_numeric(display_df[col], errors="coerce").round(2)
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                    display_df[col] = pd.to_numeric(display_df[col], errors="coerce").map(
+                        lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                        if pd.notna(x) else "—"
+                    )
+                st.markdown("#### Çeyreklik kâr tablosu")
+                st.dataframe(display_df, use_container_width=True, hide_index=True, height=420)
                 st.caption(
-                    "Değerler financial_statements tablosundaki kaynak para birimi/birimindedir. "
-                    "Kaynak verinin dönemlik mi birikimli mi olduğu her şirket için ayrıca doğrulanmalıdır; "
-                    "bu yüzden raporlanan değer ve hesaplama yöntemi tabloda birlikte gösterilir."
+                    f"Grafik değerleri {unit_label} kaynak birim ölçeğindedir; tablo kaynak değeri tam olarak gösterir. "
+                    "Kaynak tablodaki para birimi/birim şirketin finansal rapor yapısına bağlıdır. "
+                    "Raporlanan birikimli kâr ile hesaplanan çeyreklik kâr ayrı sütunlarda tutulur."
                 )
 
 performance_rows = []
