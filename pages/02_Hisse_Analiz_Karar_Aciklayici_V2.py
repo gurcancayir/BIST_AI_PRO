@@ -782,8 +782,9 @@ else:
                     quarterly_rows.append({
                         "Dönem": f"{int(year)} Ç{int(row['quarter'])}",
                         "Dönem sonu": row[date_col].strftime("%d.%m.%Y"),
+                        "Önceki birikimli net kâr": previous_cumulative if month != 3 else 0.0,
                         "Çeyreklik net kâr": quarter_profit,
-                        "Rapordaki net kâr": reported_profit,
+                        "Rapordaki birikimli net kâr": reported_profit,
                         "Hesaplama": method,
                         "_sort": row[date_col]
                     })
@@ -828,20 +829,34 @@ else:
                     st.bar_chart(fallback, use_container_width=True, height=360)
 
                 display_df = quarterly_df[[
-                    "Dönem", "Dönem sonu", "Çeyreklik net kâr",
-                    "Rapordaki net kâr", "Hesaplama"
+                    "Dönem", "Dönem sonu", "Önceki birikimli net kâr",
+                    "Çeyreklik net kâr", "Rapordaki birikimli net kâr", "Hesaplama"
                 ]].copy()
-                for col in ["Çeyreklik net kâr", "Rapordaki net kâr"]:
+                number_cols = [
+                    "Önceki birikimli net kâr",
+                    "Çeyreklik net kâr",
+                    "Rapordaki birikimli net kâr"
+                ]
+                for col in number_cols:
                     display_df[col] = pd.to_numeric(display_df[col], errors="coerce").map(
-                        lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                        lambda x: f"{x:,.0f}".replace(",", ".") if pd.notna(x) else "Hesaplanamadı"
+                    )
+                # Okunması kolay olsun diye aynı çeyreklik kârı milyar biriminde ayrıca göster.
+                display_df.insert(
+                    4,
+                    "Çeyreklik kâr (milyar kaynak birim)",
+                    quarterly_df["Çeyreklik net kâr"].map(
+                        lambda x: f"{float(x) / 1_000_000_000:.3f}".replace(".", ",")
                         if pd.notna(x) else "—"
                     )
+                )
                 st.markdown("#### Çeyreklik kâr tablosu")
-                st.dataframe(display_df, use_container_width=True, hide_index=True, height=420)
+                st.dataframe(display_df, use_container_width=True, hide_index=True, height=460)
                 st.caption(
-                    f"Grafik değerleri {unit_label} kaynak birim ölçeğindedir; tablo kaynak değeri tam olarak gösterir. "
-                    "Kaynak tablodaki para birimi/birim şirketin finansal rapor yapısına bağlıdır. "
-                    "Raporlanan birikimli kâr ile hesaplanan çeyreklik kâr ayrı sütunlarda tutulur."
+                    "Tabloda tam sayılar binlik nokta ile, ek ölçekli sütun milyar kaynak birimiyle gösterilir. "
+                    "Kaynak birim finansal tablonun yapısına bağlıdır; TL olduğu doğrulanmadan TL varsayılmamalıdır. "
+                    "Çeyreklik net kâr = rapordaki birikimli net kâr − önceki birikimli net kâr. "
+                    "Önceki dönem bulunmadığında çeyreklik kâr hesaplanamadı olarak gösterilir."
                 )
 
 performance_rows = []
