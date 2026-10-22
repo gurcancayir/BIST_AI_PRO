@@ -797,7 +797,7 @@ else:
                 quarterly_df = quarterly_df.sort_values("_sort").tail(20).copy()
                 valid_values = pd.concat([
                     pd.to_numeric(quarterly_df["Çeyreklik net kâr"], errors="coerce"),
-                    pd.to_numeric(quarterly_df["Rapordaki net kâr"], errors="coerce")
+                    pd.to_numeric(quarterly_df["Rapordaki birikimli net kâr"], errors="coerce")
                 ]).dropna()
                 max_abs = float(valid_values.abs().max()) if not valid_values.empty else 0
                 if max_abs >= 1_000_000_000:
@@ -812,8 +812,8 @@ else:
                 quarterly_df["Çeyreklik net kâr (ölçekli)"] = pd.to_numeric(
                     quarterly_df["Çeyreklik net kâr"], errors="coerce"
                 ) / scale
-                quarterly_df["Rapordaki net kâr (ölçekli)"] = pd.to_numeric(
-                    quarterly_df["Rapordaki net kâr"], errors="coerce"
+                quarterly_df["Rapordaki birikimli net kâr (ölçekli)"] = pd.to_numeric(
+                    quarterly_df["Rapordaki birikimli net kâr"], errors="coerce"
                 ) / scale
                 chart_series = quarterly_df.set_index("Dönem")["Çeyreklik net kâr (ölçekli)"].dropna()
                 if not chart_series.empty:
@@ -825,7 +825,7 @@ else:
                         "Çeyreklik kâr hesaplanamadı; aşağıdaki grafik raporda bildirilen net kârı gösterir. "
                         "Bu değerler doğrudan çeyreklik kâr olarak yorumlanmamalıdır."
                     )
-                    fallback = quarterly_df.set_index("Dönem")["Rapordaki net kâr (ölçekli)"].dropna()
+                    fallback = quarterly_df.set_index("Dönem")["Rapordaki birikimli net kâr (ölçekli)"].dropna()
                     st.bar_chart(fallback, use_container_width=True, height=360)
 
                 display_df = quarterly_df[[
