@@ -688,6 +688,7 @@ m2.metric("Temel puan", f"{fundamental_score:.1f}/100" if np.isfinite(fundamenta
 m3.metric("Finansal puan", f"{financial_score:.1f}/100" if np.isfinite(financial_score) else "VERİ YOK")
 m4.metric("Piyasa puanı", f"{market_score:.1f}/100" if np.isfinite(market_score) else "VERİ YOK")
 m5.metric("Genel tanı puanı", f"{diagnostic_score:.1f}/100")
+st.caption(f"Teknik puan kaynağı: {technical_score_source}.")
 st.caption(f"Financial Skor ana Hisse Analiz Merkezi ile aynı KAP finansal göstergeleri ve ağırlıklarını kullanır. {financial_message}")
 st.write(f"**Son kapanış:** {latest_price:,.2f} TL  |  **Ön değerlendirme:** {diagnostic_decision}")
 
