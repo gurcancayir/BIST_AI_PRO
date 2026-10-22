@@ -672,7 +672,33 @@ for name, val in [("MA21", ma21), ("MA50", ma50), ("MA200", ma200)]:
     ma_rows.append({"Gösterge": name, "Seviye": round(val, 2) if np.isfinite(val) else None,
                     "Fiyata göre": ("ÜZERİNDE" if latest_price > val else "ALTINDA") if np.isfinite(val) else "Hesaplanamadı"})
 st.dataframe(pd.DataFrame(ma_rows), use_container_width=True, hide_index=True)
-st.line_chart(prices[["Close", "MA21", "MA50", "MA200"]].tail(180), use_container_width=True)
+# Dönem seçimi ve 1–5 yıllık performans karşılaştırması
+st.subheader("Fiyat grafiği — 1 ile 5 yıl")
+period_options = {"1 yıl": 252, "2 yıl": 504, "3 yıl": 756, "4 yıl": 1008, "5 yıl": 1260}
+period_label = st.radio("Grafik dönemi", list(period_options.keys()), index=0, horizontal=True)
+bars = period_options[period_label]
+chart_prices = prices.tail(min(bars, len(prices))).copy()
+chart_cols = [c for c in ["Close", "MA21", "MA50", "MA200"] if c in chart_prices.columns]
+st.line_chart(chart_prices[chart_cols], use_container_width=True)
+if len(chart_prices) < bars:
+    st.caption(f"Seçilen {period_label} için tam veri yok; grafik mevcut {len(chart_prices)} seansı gösteriyor.")
+
+performance_rows = []
+for label, count in period_options.items():
+    window = prices.tail(min(count, len(prices)))
+    start_price = num(window["Close"].iloc[0]) if not window.empty else np.nan
+    end_price = num(window["Close"].iloc[-1]) if not window.empty else np.nan
+    change_pct = (end_price / start_price - 1) * 100 if np.isfinite(start_price) and start_price > 0 and np.isfinite(end_price) else np.nan
+    performance_rows.append({
+        "Dönem": label,
+        "Başlangıç fiyatı (TL)": round(start_price, 2) if np.isfinite(start_price) else None,
+        "Son fiyat (TL)": round(end_price, 2) if np.isfinite(end_price) else None,
+        "Fiyat değişimi (%)": round(change_pct, 2) if np.isfinite(change_pct) else None,
+        "Veri": f"{len(window)} seans" if len(window) < count else "Tam dönem"
+    })
+st.markdown("#### 1–5 yıllık fiyat getirisi")
+st.dataframe(pd.DataFrame(performance_rows), use_container_width=True, hide_index=True)
+st.caption("Getiri, seçilen dönem içindeki ilk ve son kapanış fiyatlarından hesaplanır; temettüler ve sermaye artırımları dahil toplam getiri değildir.")
 
 technical_notes = []
 if np.isfinite(ma21):
