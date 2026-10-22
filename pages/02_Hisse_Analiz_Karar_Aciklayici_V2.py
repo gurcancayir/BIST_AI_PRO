@@ -576,6 +576,8 @@ if len(prices) < 30:
 
 prices["MA21"] = close.rolling(21).mean()
 prices["MA50"] = close.rolling(50).mean()
+prices["MA90"] = close.rolling(90).mean()
+prices["MA120"] = close.rolling(120).mean()
 prices["MA200"] = close.rolling(200).mean()
 prices["RSI14"] = rsi(close)
 prices["EMA12"] = close.ewm(span=12, adjust=False).mean()
@@ -677,9 +679,18 @@ cols[2].metric("60 günlük momentum", f"%{fmt(mom60, 1)}")
 cols[3].metric("Hacim / 20G ort.", f"{fmt(volume_ratio, 2)}x")
 cols[4].metric("ATR(14)", fmt(atr))
 ma_rows = []
-for name, val in [("MA21", ma21), ("MA50", ma50), ("MA200", ma200)]:
-    ma_rows.append({"Gösterge": name, "Seviye": round(val, 2) if np.isfinite(val) else None,
-                    "Fiyata göre": ("ÜZERİNDE" if latest_price > val else "ALTINDA") if np.isfinite(val) else "Hesaplanamadı"})
+for name, val in [
+    ("MA21", num(last["MA21"])),
+    ("MA50", num(last["MA50"])),
+    ("MA90", num(last["MA90"])),
+    ("MA120", num(last["MA120"])),
+    ("MA200", num(last["MA200"])),
+]:
+    ma_rows.append({
+        "Gösterge": name,
+        "Seviye (TL)": round(val, 2) if np.isfinite(val) else None,
+        "Fiyata göre": ("ÜZERİNDE" if latest_price > val else "ALTINDA") if np.isfinite(val) else "Hesaplanamadı"
+    })
 st.dataframe(pd.DataFrame(ma_rows), use_container_width=True, hide_index=True)
 # Dönem seçimi ve 1–5 yıllık performans karşılaştırması
 st.subheader("Fiyat grafiği — 1 ile 5 yıl")
@@ -697,7 +708,7 @@ with st.form("karar_aciklayici_grafik_donemi_form", clear_on_submit=False):
 period_label = st.session_state.get("karar_aciklayici_grafik_donemi_secimi", "1 yıl")
 bars = period_options.get(period_label, 252)
 chart_prices = prices.tail(min(bars, len(prices))).copy()
-chart_cols = [c for c in ["Close", "MA21", "MA50", "MA200"] if c in chart_prices.columns]
+chart_cols = [c for c in ["Close", "MA21", "MA50", "MA90", "MA120", "MA200"] if c in chart_prices.columns]
 st.line_chart(chart_prices[chart_cols], use_container_width=True)
 if len(chart_prices) < bars:
     st.caption(f"Seçilen {period_label} için tam veri yok; grafik mevcut {len(chart_prices)} seansı gösteriyor.")
