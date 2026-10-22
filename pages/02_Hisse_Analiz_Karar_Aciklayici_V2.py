@@ -535,18 +535,22 @@ def get_financial_health(symbol):
         result["message"] = f"Financial Skor hesaplanırken hata oluştu: {exc}"
         return result
 
-symbol_input = st.text_input("BIST hisse kodu", value="TUPRS", placeholder="Örn. TUPRS").strip().upper()
+symbol_input = st.text_input("BIST hisse kodu", value=st.session_state.get("karar_aciklayici_symbol", "TUPRS"), placeholder="Örn. TUPRS").strip().upper()
 horizon = st.selectbox("Analiz vadesi", ["Kısa vade — 1 hafta", "Orta vade — 1–3 ay", "Uzun vade — 6 ay–3 yıl"], index=1)
 run = st.button("🔍 GERÇEK VERİYLE ANALİZ ET", type="primary", use_container_width=True)
 
-if not run:
-    st.warning("Hisse kodunu kontrol edin ve analizi başlatın.")
-    st.stop()
-if not symbol_input or not symbol_input.replace(".", "").isalnum():
-    st.error("Geçerli bir hisse kodu girin.")
-    st.stop()
+# Streamlit her widget değişiminde scripti yeniden çalıştırır. Analiz çalıştırıldıktan
+# sonra seçilen grafik dönemi değişse bile analiz sembolünü session_state'te koru.
+if run:
+    if not symbol_input or not symbol_input.replace(".", "").isalnum():
+        st.error("Geçerli bir hisse kodu girin.")
+        st.stop()
+    st.session_state["karar_aciklayici_symbol"] = symbol_input
 
-symbol = symbol_input
+symbol = st.session_state.get("karar_aciklayici_symbol")
+if not symbol:
+    st.warning("Hisse kodunu girin ve analizi başlatın.")
+    st.stop()
 with st.spinner(f"{symbol} için fiyat, teknik ve temel veriler inceleniyor..."):
     try:
         prices = yf.Ticker(f"{symbol}.IS").history(period="5y", auto_adjust=False)
