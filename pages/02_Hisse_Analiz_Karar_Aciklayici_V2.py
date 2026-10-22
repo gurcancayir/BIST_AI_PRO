@@ -549,7 +549,7 @@ if not symbol_input or not symbol_input.replace(".", "").isalnum():
 symbol = symbol_input
 with st.spinner(f"{symbol} için fiyat, teknik ve temel veriler inceleniyor..."):
     try:
-        prices = yf.Ticker(f"{symbol}.IS").history(period="2y", auto_adjust=False)
+        prices = yf.Ticker(f"{symbol}.IS").history(period="5y", auto_adjust=False)
     except Exception as exc:
         st.error(f"Fiyat verisi alınamadı: {exc}")
         st.stop()
@@ -683,7 +683,7 @@ st.line_chart(chart_prices[chart_cols], use_container_width=True)
 if len(chart_prices) < bars:
     st.caption(f"Seçilen {period_label} için tam veri yok; grafik mevcut {len(chart_prices)} seansı gösteriyor.")
 
-# Çeyreklik net kâr grafiği: aynı SQLite KAP finansal raporlarından okunur.
+# Çeyreklik net kâr grafiği: mevcut KAP finansal tablosunu esnek alan eşlemesiyle okur.
 st.subheader("Çeyreklik net kâr — finansal raporlar")
 try:
     with sqlite3.connect("borsa.db") as conn:
@@ -702,69 +702,87 @@ except Exception as exc:
     st.warning(f"Finansal raporlar okunamadı: {exc}")
 
 if financial_rows.empty:
-    st.info("Bu hisse için borsa.db içindeki financial_statements tablosunda finansal rapor bulunamadı.")
+    st.warning(
+        f"{symbol} için borsa.db içindeki financial_statements tablosunda kayıt bulunamadı. "
+        "Uygulamanın kullandığı veritabanı yolunu ve KAP veri güncellemesini kontrol edin."
+    )
 else:
-    if "period_end" not in financial_rows.columns:
-        st.warning("Finansal rapor tablosunda period_end alanı bulunamadı; çeyreklik grafik oluşturulamadı.")
+    date_col = next((x for x in ["period_end", "report_date", "period", "fiscal_date", "date"] if x in financial_rows.columns), None)
+    profit_col = next((x for x in [
+        "net_profit", "period_profit", "net_income", "net_profit_loss",
+        "profit_loss_for_period", "profit_for_period", "net_income_loss",
+        "consolidated_net_profit", "profit"
+    ] if x in financial_rows.columns), None)
+    if date_col is None:
+        st.warning("Finansal rapor tablosunda dönem tarihi alanı bulunamadı. Bulunan sütunlar: " + ", ".join(map(str, financial_rows.columns)))
+    elif profit_col is None:
+        st.warning("Net kâr sütunu bulunamadı. Bulunan sütunlar: " + ", ".join(map(str, financial_rows.columns)))
     else:
-        financial_rows["period_end"] = pd.to_datetime(financial_rows["period_end"], errors="coerce")
-        profit_col = next((c for c in ["net_profit", "period_profit", "net_income", "net_profit_loss"] if c in financial_rows.columns), None)
-        financial_rows = financial_rows.dropna(subset=["period_end"]).sort_values("period_end")
+        financial_rows[date_col] = pd.to_datetime(financial_rows[date_col], errors="coerce")
+        financial_rows[profit_col] = pd.to_numeric(financial_rows[profit_col], errors="coerce")
+        financial_rows = financial_rows.dropna(subset=[date_col, profit_col]).sort_values(date_col)
         if "updated_at" in financial_rows.columns:
-            financial_rows = financial_rows.sort_values(["period_end", "updated_at"])
-        financial_rows = financial_rows.drop_duplicates(subset=["period_end"], keep="last")
-        if profit_col is None:
-            st.warning("Finansal rapor tablosunda net kâr alanı bulunamadı. Kullanılabilir sütunlar: " + ", ".join(map(str, financial_rows.columns)))
+            financial_rows = financial_rows.sort_values([date_col, "updated_at"])
+        financial_rows = financial_rows.drop_duplicates(subset=[date_col], keep="last")
+        financial_rows["year"] = financial_rows[date_col].dt.year
+        financial_rows["month"] = financial_rows[date_col].dt.month
+        financial_rows["quarter"] = ((financial_rows["month"] - 1) // 3) + 1
+        if financial_rows.empty:
+            st.info("Geçerli tarih ve net kâr verisi bulunamadı.")
         else:
-            financial_rows[profit_col] = pd.to_numeric(financial_rows[profit_col], errors="coerce")
-            financial_rows = financial_rows.dropna(subset=[profit_col])
-            financial_rows["year"] = financial_rows["period_end"].dt.year
-            financial_rows["month"] = financial_rows["period_end"].dt.month
-            financial_rows["quarter"] = ((financial_rows["month"] - 1) // 3) + 1
-            # KAP gelir tablosu çoğunlukla yılbaşından ilgili döneme birikimli gelir taşır.
-            # Çeyrek kârı, aynı yılın bir önceki raporundaki birikimli kâr çıkarılarak türetilir.
+            # Bazı kaynaklar net kârı çeyreklik, bazıları yılbaşından birikimli verir.
+            # Çeyreklik fark yalnızca önceki rapor dönemi varsa hesaplanır.
             quarterly_rows = []
             for year, group in financial_rows.groupby("year"):
-                group = group.sort_values("period_end")
-                prev_cumulative = 0.0
-                previous_month = 0
+                group = group.sort_values(date_col)
+                previous_cumulative = None
                 for _, row in group.iterrows():
                     month = int(row["month"])
-                    cumulative = num(row[profit_col])
-                    if not np.isfinite(cumulative):
+                    if month not in (3, 6, 9, 12):
                         continue
-                    if month in (3, 6, 9, 12):
-                        if month == 3:
-                            q_profit = cumulative
-                        elif previous_month == month - 3:
-                            q_profit = cumulative - prev_cumulative
-                        else:
-                            q_profit = np.nan
-                        quarterly_rows.append({
-                            "Dönem": f"{int(year)} Ç{int(row['quarter'])}",
-                            "Dönem sonu": row["period_end"].strftime("%d.%m.%Y"),
-                            "Çeyreklik net kâr (raporlama para birimi)": q_profit,
-                            "Birikimli net kâr (raporlama para birimi)": cumulative,
-                            "_sort": row["period_end"]
-                        })
-                        prev_cumulative = cumulative
-                        previous_month = month
+                    reported_profit = num(row[profit_col])
+                    quarter_profit = np.nan
+                    method = "Birikimli rapor"
+                    if month == 3:
+                        quarter_profit = reported_profit
+                        method = "1. çeyrek / 3 aylık rapor"
+                    elif previous_cumulative is not None:
+                        quarter_profit = reported_profit - previous_cumulative
+                        method = "Birikimli kârdan fark"
+                    quarterly_rows.append({
+                        "Dönem": f"{int(year)} Ç{int(row['quarter'])}",
+                        "Dönem sonu": row[date_col].strftime("%d.%m.%Y"),
+                        "Çeyreklik net kâr": quarter_profit,
+                        "Rapordaki net kâr": reported_profit,
+                        "Hesaplama": method,
+                        "_sort": row[date_col]
+                    })
+                    previous_cumulative = reported_profit
+
             quarterly_df = pd.DataFrame(quarterly_rows)
             if quarterly_df.empty:
-                st.info("Bu hisse için 3, 6, 9 veya 12 aylık rapor dönemleri bulunamadı.")
+                st.info("Finansal raporlarda Mart, Haziran, Eylül veya Aralık dönem sonları bulunamadı.")
             else:
                 quarterly_df = quarterly_df.sort_values("_sort").tail(20)
-                chart_df = quarterly_df.set_index("Dönem")[["Çeyreklik net kâr (raporlama para birimi)"]]
-                st.bar_chart(chart_df, use_container_width=True)
+                chart_series = quarterly_df.set_index("Dönem")["Çeyreklik net kâr"].dropna()
+                if not chart_series.empty:
+                    st.bar_chart(chart_series, use_container_width=True)
+                    st.caption("Grafik, raporlar birikimli ise önceki rapordan fark alınarak hesaplanan çeyreklik net kârı gösterir.")
+                else:
+                    st.warning(
+                        "Rapor tarihleri bulundu ancak çeyreklik kâr hesaplamak için önceki dönem karşılaştırması yetersiz. "
+                        "Aşağıda raporlanan net kârları ayrıca gösteriyorum; bunlar çeyreklik kâr olarak yorumlanmamalıdır."
+                    )
+                    fallback = quarterly_df.set_index("Dönem")["Rapordaki net kâr"]
+                    st.bar_chart(fallback, use_container_width=True)
                 display_df = quarterly_df.drop(columns=["_sort"]).copy()
-                for col in ["Çeyreklik net kâr (raporlama para birimi)", "Birikimli net kâr (raporlama para birimi)"]:
-                    display_df[col] = display_df[col].round(2)
+                for col in ["Çeyreklik net kâr", "Rapordaki net kâr"]:
+                    display_df[col] = pd.to_numeric(display_df[col], errors="coerce").round(2)
                 st.dataframe(display_df, use_container_width=True, hide_index=True)
                 st.caption(
-                    "Çeyreklik kâr, finansal raporlardaki yılbaşından dönem sonuna birikimli net kârdan "
-                    "önceki çeyreğin birikimli kârı çıkarılarak hesaplanır. Önceki dönem raporu eksikse "
-                    "çeyreklik değer boş bırakılır. Para birimi, kaynak finansal tablodaki birimdir; "
-                    "bu grafik fiyat getirisi değil, raporlanan net kârdır."
+                    "Değerler financial_statements tablosundaki kaynak para birimi/birimindedir. "
+                    "Kaynak verinin dönemlik mi birikimli mi olduğu her şirket için ayrıca doğrulanmalıdır; "
+                    "bu yüzden raporlanan değer ve hesaplama yöntemi tabloda birlikte gösterilir."
                 )
 
 performance_rows = []
