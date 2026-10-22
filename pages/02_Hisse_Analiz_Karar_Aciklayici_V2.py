@@ -622,8 +622,19 @@ try:
 except Exception:
     market_score, market_reasons = np.nan, []
 
-# Rule-based technical diagnostic score. This is explicitly labelled as this page's diagnostic,
-# not as the production engine's General Score.
+# Önce uygulamanın ortak teknik analiz motorundaki gerçek skoru kullan.
+# Eski sürüm technical_data["score"] değerini almasına rağmen hiç kullanmıyor,
+# yalnızca yedi ikili koşulu topluyordu; tüm koşullar negatifse puan 0'a düşüyordu.
+module_technical_score = np.nan
+if isinstance(technical_data, dict):
+    for score_key in ("score", "technical_score", "teknik_puan", "puan"):
+        candidate = num(technical_data.get(score_key), np.nan)
+        if np.isfinite(candidate):
+            module_technical_score = float(np.clip(candidate, 0, 100))
+            break
+
+# Ortak motor skoru mevcutsa onu göster. Motor verisi alınamazsa göstergelerden
+# hesaplanan yerel puanı yedek olarak kullan; veri yokluğunu otomatik olarak 0 sayma.
 tech_points = []
 tech_points.append(20 if np.isfinite(ma21) and latest_price > ma21 else 0)
 tech_points.append(20 if np.isfinite(ma50) and latest_price > ma50 else 0)
@@ -632,7 +643,17 @@ tech_points.append(15 if np.isfinite(mom20) and mom20 > 0 else 0)
 tech_points.append(10 if np.isfinite(mom60) and mom60 > 0 else 0)
 tech_points.append(10 if np.isfinite(macd_now) and np.isfinite(macd_sig) and macd_now > macd_sig else 0)
 tech_points.append(10 if np.isfinite(volume_ratio) and volume_ratio >= 1.0 else 0)
-technical_score = float(sum(tech_points))
+fallback_technical_score = float(sum(tech_points))
+technical_score = (
+    module_technical_score
+    if np.isfinite(module_technical_score)
+    else fallback_technical_score
+)
+technical_score_source = (
+    "Ortak teknik analiz motoru"
+    if np.isfinite(module_technical_score)
+    else "Sayfa içi gösterge puanı (yedek)"
+)
 
 # Finansal puanı aynı uygulamadaki KAP financial_statements tablosundan al.
 financial_data = get_financial_health(symbol)
